@@ -11,8 +11,7 @@ clone_recursive: true
 # the existing arch list, total Linux wall time should fit comfortably in
 # one 6h job, so sequential_checkpoint is dropped. The chain mechanism
 # stays available (action.yml + _chain_link.yml) — just unused unless
-# `sequential_checkpoint: N` is set here. natten_sequential.yml keeps it
-# as a regression check for the resume path.
+# `sequential_checkpoint: N` is set here.
 #
 # Was previously `sharding: 16`, then `sequential_checkpoint: 18000`.
 # Windows is back in scope: patches/natten.py strips sm_100/103 (Blackwell DC)

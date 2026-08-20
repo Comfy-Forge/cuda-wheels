@@ -49,7 +49,6 @@ on:
           - flex_gemm_sharded
           - flex_gemm_sequential
           - pytorch3d_sequential
-          - natten_sequential
           - fused_ssim
           - gsplat_maskgaussian
           - mmcv

@@ -1,4 +1,0 @@
-# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
-# for this package only.
-build_matrix:
-  platforms: ["linux", "windows"]
