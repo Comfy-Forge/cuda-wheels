@@ -67,6 +67,20 @@ runs:
             echo "Installing extra CUDA components:$EXTRA_PKGS"
             dnf install -y -q $EXTRA_PKGS >/dev/null
           fi
+          # Host-compiler pairing: the manylinux_2_28 image ships GCC 14,
+          # but nvcc enforces a max host g++ per CUDA line (12.6 rejects
+          # >= 14: "greater than the maximum required version by CUDA").
+          # AlmaLinux 8 packages older toolchains as gcc-toolset-N; front
+          # the right one for pre-12.8 lines.
+          CUDA_MM="${{ inputs.cuda-version }}"
+          if [ "$(printf '%s\n' "$CUDA_MM" "12.8" | sort -V | head -1)" != "12.8" ]; then
+            dnf install -y -q gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ >/dev/null
+            TS=/opt/rh/gcc-toolset-13/root/usr/bin
+            echo "$TS" >> $GITHUB_PATH
+            echo "CC=$TS/gcc" >> $GITHUB_ENV
+            echo "CXX=$TS/g++" >> $GITHUB_ENV
+            "$TS/g++" --version | head -1
+          fi
         else
           # Bare Ubuntu runner (legacy path / self-hosted).
           [ "$ARCH" = "aarch64" ] && REPO="ubuntu2404/sbsa" || REPO="ubuntu2204/x86_64"
