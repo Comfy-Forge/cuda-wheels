@@ -44,6 +44,16 @@ def load_package(pkg_dir: Path) -> dict:
         p = pkg_dir / extra
         if p.exists():
             cfg.update(yaml.safe_load(p.read_text()) or {})
+    overrides = [e for e in ("pcto_override.yml", "arch_override.yml")
+                 if (pkg_dir / e).exists()]
+    if overrides:
+        readme = pkg_dir / "README.md"
+        if not readme.exists() or "verride" not in readme.read_text():
+            import sys
+            print(f"WARNING: {pkg_dir.name}: has {', '.join(overrides)} but no "
+                  f"README.md explaining the override -- every deviation from "
+                  f"defaults/ must say why (add an '## Overrides' section).",
+                  file=sys.stderr)
     if "links_torch" not in cfg:
         import sys
         print(f"WARNING: {pkg_dir.name}: no links_torch declared -- state it "
