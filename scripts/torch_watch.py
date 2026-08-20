@@ -204,7 +204,7 @@ def newest_patch(upstream: dict, key: str, minor: str) -> str:
 def apply_rows(result: dict, upstream: dict, cfg: dict) -> int:
     raise SystemExit(
         "torch_watch --apply is retired on this line: the grid is generated "
-        "by scripts/derive_defaults.py from data/pcwm_matrix.json. Run "
+        "by scripts/derive_defaults.py from defaults/scraped_torch_matrix.json. Run "
         "fetch_torch_matrix.py then derive_defaults.py instead.")
     """Append new (cuda, torch minor) rows to _defaults.yml. Additive only."""
     sys.path.insert(0, str(Path(__file__).parent))

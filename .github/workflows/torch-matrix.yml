@@ -10,7 +10,7 @@ name: Torch Matrix
 # Splitting them is the fix.
 #
 # Only ONE workflow may deploy to gh-pages (update-index.yml). This workflow
-# commits ONLY the machine-readable snapshot (data/pcwm_matrix.json) -- the
+# commits ONLY the machine-readable snapshot (defaults/scraped_torch_matrix.json) -- the
 # committed PCWM is an INPUT to grid derivation, so it belongs in main; the
 # human-readable matrix PAGE is rendered from that json at deploy time and
 # lives only on gh-pages. The resulting push triggers update-index.yml.
@@ -45,13 +45,13 @@ jobs:
         run: pip install pyyaml
 
       - name: Regenerate matrix
-        run: python scripts/fetch_torch_matrix.py --output data/pcwm_matrix.json
+        run: python scripts/fetch_torch_matrix.py --output defaults/scraped_torch_matrix.json
 
       - name: Commit if upstream moved
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/pcwm_matrix.json
+          git add defaults/scraped_torch_matrix.json
           if git diff --cached --quiet; then
             echo "::notice::upstream unchanged, nothing to commit"
             exit 0

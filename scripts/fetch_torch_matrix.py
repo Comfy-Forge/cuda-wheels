@@ -300,7 +300,7 @@ time this page is generated (on push to <code>main</code>).</p>
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Fetch PyTorch CUDA build matrix")
-    parser.add_argument("--output", default="data/pcwm_matrix.json", help="Output JSON file")
+    parser.add_argument("--output", default="defaults/scraped_torch_matrix.json", help="Output JSON file")
     parser.add_argument("--from-json", default=None, metavar="FILE",
                         help="Render from a committed matrix JSON instead of scraping upstream "
                              "(deploy-time page rendering; no network)")
