@@ -11,7 +11,7 @@ pcto_override.yml`, `arch_override.yml`).
 Which (Python × CUDA × torch × OS) cells exist. Two kinds of content in
 one file, clearly separated:
 
-- **Owned policy** (hand-maintained): `platforms`, `python_min`/`max`,
+- **Owned policy** (hand-maintained): `platforms`, `python_min` (the ceiling is torch's own python coverage, via the scrape),
   `supported_cudas`, and the per-package `defaults` block. Changing these
   is a decision; make it in a reviewed commit.
 - **Generated rows** (`combinations`, the final section): derived from

@@ -14,7 +14,8 @@ Outputs (in place)
 The derivation, per (cuda, torch-minor) present in PCWM:
   - skip CUDA lines not in supported_cudas (loud warning -- wiring the
     toolkit installer is a prerequisite, see .github/actions/setup-cuda)
-  - pythons = PCWM's set for the pair, clamped to [python_min, python_max]
+  - pythons = PCWM's set for the pair, floored at python_min (no ceiling:
+    torch's own python coverage IS the ceiling)
   - pytorch = newest patch PCWM ships for the pair
   - phantom cells = (cuda, torch, python, platform) our platform axis implies
     but PCWM does not ship (e.g. cu129 torch 2.10+ has no Windows)
@@ -43,7 +44,7 @@ def vkey(v):
 def main() -> None:
     policy = yaml.safe_load(PCTO.read_text())
     pcwm = json.loads(MATRIX.read_text())["combos"]
-    pmin, pmax = vkey(str(policy["python_min"])), vkey(str(policy["python_max"]))
+    pmin = vkey(str(policy["python_min"]))
     supported = [str(c) for c in policy["supported_cudas"]]
     platforms = policy["platforms"]
 
@@ -82,7 +83,7 @@ def main() -> None:
         if not info["patches"]:
             continue  # aarch64-only pairing; no x86 torch to pin a row on
         pys = sorted({py for py, plat in info["cells"] if plat != "linux_aarch64"
-                      and pmin <= vkey(py) <= pmax}, key=vkey)
+                      and pmin <= vkey(py)}, key=vkey)
         if not pys:
             continue
         rows.append({
