@@ -1,4 +1,5 @@
 name: detectron2
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: facebookresearch/detectron2
 source_tag: v0.6
 version: '0.6'

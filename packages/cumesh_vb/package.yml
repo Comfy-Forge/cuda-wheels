@@ -1,4 +1,5 @@
 name: cumesh_vb
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: visualbruno/CuMesh
 source_tag: d10e54c30ddd03d11472c1431693f985501c7966
 patch_script: packages/cumesh_vb/patches/cumesh_vb.py

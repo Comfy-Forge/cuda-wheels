@@ -1,4 +1,5 @@
 name: diso
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: SarahWeiii/diso
 source_tag: 9792ad928ccb09bdec938779651ee03e395758a6   # main @ 2025-05-01 (no tags upstream)
 version: "0.1.4"

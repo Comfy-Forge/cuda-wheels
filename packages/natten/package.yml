@@ -1,4 +1,5 @@
 name: natten
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: SHI-Labs/NATTEN
 source_tag: v0.21.6
 patch_script: packages/natten/patches/natten.py

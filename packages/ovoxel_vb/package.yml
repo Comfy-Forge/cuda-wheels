@@ -1,4 +1,5 @@
 name: o_voxel_vb
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: visualbruno/TRELLIS.2
 source_tag: 65d1e13b4a92296036044df0633242bb9e95abf6
 build_subdir: o-voxel

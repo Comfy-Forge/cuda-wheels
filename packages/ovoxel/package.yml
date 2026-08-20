@@ -1,4 +1,5 @@
 name: o_voxel
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: microsoft/TRELLIS.2
 source_tag: 5565d240c4a494caaf9ece7a554542b76ffa36d3
 build_subdir: o-voxel

@@ -1,4 +1,5 @@
 name: mmcv
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 # OpenMMLab CV foundation library, 1.x branch. ~30 CUDA op kernels
 # (NMS, ROI Align/Pool, deformable conv, etc.). Apache 2.0. SANA-WM
 # pins to 1.7.2; mmcv 2.x dropped the ops it uses.

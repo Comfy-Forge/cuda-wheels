@@ -1,11 +1,5 @@
 # Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
 # for this package only.
-# Torch-independent -- see CW-ADR-0011.
-# flashinfer/jit/cpp_ext.py forks torch's cpp_extension but its ldflags
-# are `-lcudart -lcuda` and nothing else. Caveat: it does read
-# torch._C._GLIBCXX_USE_CXX11_ABI into its *compile* flags, so wheels built
-# either side of PyTorch's manylinux_2_28 ABI flip are not interchangeable.
-links_torch: false
 build_matrix:
   combinations:
     - {cuda: "12.4", pytorch: "2.6.0",  python_versions: ["3.10","3.11","3.12","3.13","3.14"]}

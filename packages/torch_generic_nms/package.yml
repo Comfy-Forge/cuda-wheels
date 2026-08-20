@@ -1,3 +1,4 @@
 name: torch_generic_nms
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: ronghanghu/torch_generic_nms
 source_tag: fcf02b41ea9b37988b244ef80583af17baa4a7f0

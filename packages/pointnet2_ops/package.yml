@@ -1,4 +1,5 @@
 name: pointnet2_ops
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: erikwijmans/Pointnet2_PyTorch
 source_tag: b5ceb6d9ca0467ea34beb81023f96ee82228f626   # master @ 2021-07-30 (repo is dormant)
 version: "3.0.0"

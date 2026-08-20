@@ -19,6 +19,7 @@
 # Linux-only POC. Cross-platform Windows chain plumbing (PowerShell timeout
 # + Git Bash tar) is deferred until the Linux mechanism is proven.
 name: natten_sequential
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: SHI-Labs/NATTEN
 source_tag: v0.21.6
 patch_script: packages/natten_sequential/patches/natten_sequential.py

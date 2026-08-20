@@ -16,6 +16,7 @@
 # Once this proves the mechanism end-to-end (and cubins match monolithic
 # flex_gemm), the same machinery moves to NATTEN with a 1h-then-5h30m timeout.
 name: flex_gemm_sequential
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: JeffreyXiang/FlexGEMM
 source_tag: 6dd94a859c26ee8246888502eada3dd8ad85532e
 sequential_checkpoint: 600

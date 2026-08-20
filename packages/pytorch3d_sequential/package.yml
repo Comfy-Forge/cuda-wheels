@@ -14,6 +14,7 @@
 # (or set the build_matrix below) so the test fans out to a single Linux
 # job instead of pytorch3d's full 95-cell matrix.
 name: pytorch3d_sequential
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: facebookresearch/pytorch3d
 source_tag: v0.7.9
 sequential_checkpoint: 180

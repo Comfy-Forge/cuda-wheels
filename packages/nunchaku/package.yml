@@ -1,4 +1,5 @@
 name: nunchaku
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 # SVDQuant 4-bit inference engine for diffusion models.
 # NOTE: repo moved -- mit-han-lab/nunchaku and nunchaku-tech/nunchaku both 301
 # to nunchaku-ai. PyPI `nunchaku` is an UNRELATED project (a changepoint

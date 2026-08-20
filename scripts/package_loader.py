@@ -44,6 +44,13 @@ def load_package(pkg_dir: Path) -> dict:
         p = pkg_dir / extra
         if p.exists():
             cfg.update(yaml.safe_load(p.read_text()) or {})
+    if "links_torch" not in cfg:
+        import sys
+        print(f"WARNING: {pkg_dir.name}: no links_torch declared -- state it "
+              f"explicitly (true: wheel per (cuda x torch); false: torch-free, "
+              f"one wheel per cuda, CW-ADR-0011). Defaulting to true.",
+              file=sys.stderr)
+        cfg["links_torch"] = True
     return cfg
 
 

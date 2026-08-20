@@ -1,4 +1,5 @@
 name: torchsparse
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 # Sparse convolution for point clouds (MIT HAN Lab).
 # Gap this fills: EVERY upstream channel is dead -- pypi.org/simple/torchsparse
 # 404s, the README index pypi.hanlab.ai 404s, the install.py fallback index

@@ -1,4 +1,5 @@
 name: torchao
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 # PyTorch-native quantization/sparsity kernels.
 # Gap this fills: upstream ships NO win_amd64 wheel on ANY channel (PyPI or
 # download.pytorch.org/whl/cu*), so all Windows cells are uncovered; cu124 is

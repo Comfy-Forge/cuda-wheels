@@ -1,4 +1,5 @@
 name: pyg_lib
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: pyg-team/pyg-lib
 source_tag: 0.5.0
 version: 0.5.0

@@ -1,4 +1,5 @@
 name: cubvh
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: ashawkey/cubvh
 source_tag: 7855c000f95e43742081060d869702b2b2b33d1f
 clone_recursive: true

@@ -1,4 +1,5 @@
 name: gsplat_maskgaussian
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 # HY-World 2.0's vendored gsplat fork with MaskGaussian densification +
 # distloss. Lives at hyworld2/worldgen/third_party/gsplat_maskgaussian
 # inside the Tencent-Hunyuan/HY-World-2.0 repo. README:

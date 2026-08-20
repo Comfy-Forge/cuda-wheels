@@ -1,3 +1,4 @@
 name: simple_knn
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: camenduru/simple-knn
 source_tag: 60f461f4a56b7967e5d8045bf92f8c33f36976d0

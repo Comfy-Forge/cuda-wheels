@@ -1,4 +1,5 @@
 name: flash_attn
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: Dao-AILab/flash-attention
 source_tag: v2.8.3
 version: 2.8.3

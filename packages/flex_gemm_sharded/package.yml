@@ -13,6 +13,7 @@
 # flex_gemm has 7 source files (6 .cu + 1 .cpp) and total compile ~5-10min,
 # making iteration on the sharding mechanism cheap.
 name: flex_gemm_sharded
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: JeffreyXiang/FlexGEMM
 source_tag: 6dd94a859c26ee8246888502eada3dd8ad85532e
 sharding: 4

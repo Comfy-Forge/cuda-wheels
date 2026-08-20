@@ -1,4 +1,5 @@
 name: pytorch3d
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: facebookresearch/pytorch3d
 source_tag: v0.7.9
 patch_script: packages/pytorch3d/patches/pytorch3d.py

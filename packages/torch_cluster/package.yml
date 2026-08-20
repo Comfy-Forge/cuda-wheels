@@ -1,4 +1,5 @@
 name: torch_cluster
+links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: rusty1s/pytorch_cluster
 source_tag: af7b9f0af6b74be1594eb3d0a1685470cbb21265
 patch_script: packages/torch_cluster/patches/torch_cluster.py
