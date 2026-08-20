@@ -21,3 +21,7 @@ scripts/.*_cache.json
 # deploy-time site build outputs (never committed; gh-pages only)
 _site/
 previous-site/
+
+# generate_matrix.py local dry-run droppings (CI output, never committed)
+/matrix.json
+.ipynb_checkpoints/
