@@ -1,6 +1,4 @@
 name: llama_cpp_python
-# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
-# for this package only.
 # Torch-independent -- see CW-ADR-0011.
 # scikit-build-core over GGML's CMake. No torch in the build or the link.
 links_torch: false

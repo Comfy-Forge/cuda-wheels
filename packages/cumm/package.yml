@@ -1,6 +1,4 @@
 name: cumm
-# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
-# for this package only.
 # Torch-independent -- see CW-ADR-0011.
 # pccm/PCCMExtension build; setup.py deps are [pccm]. No torch at
 # build, compile or link time.

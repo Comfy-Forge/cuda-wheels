@@ -1,6 +1,4 @@
 name: flashinfer
-# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
-# for this package only.
 # Torch-independent -- see CW-ADR-0011.
 # flashinfer/jit/cpp_ext.py forks torch's cpp_extension but its ldflags
 # are `-lcudart -lcuda` and nothing else. Caveat: it does read
