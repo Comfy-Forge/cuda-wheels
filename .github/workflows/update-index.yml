@@ -18,6 +18,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The previous index is the LIVE gh-pages branch, not a committed copy
+      # in main: check it out so the never-publish-a-shorter-index guard
+      # compares against reality. Absent on the very first deploy.
+      - name: Checkout current gh-pages (for the shorter-index guard)
+        id: prev
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: previous-site
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -26,14 +37,18 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml
 
+      - name: Render matrix page from the committed PCWM snapshot
+        run: python scripts/fetch_torch_matrix.py --from-json data/pcwm_matrix.json --html _site/matrix
+
       - name: Generate PEP 503 index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/generate_index.py
+          CUW_SITE_DIR: _site
+        run: python scripts/generate_index.py --out _site --previous previous-site
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
+          publish_dir: ./_site
           force_orphan: true

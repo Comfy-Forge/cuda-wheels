@@ -1,0 +1,35 @@
+# The farm's OWNED arch policy (CW-ADR-0012). Hand-maintained; arch list
+# changes go through the ADR process, never through automation. This file is
+# the ONLY arch source: scripts/generate_matrix.py reads it directly at
+# build time. Cell axes live in defaults/python_cuda_torch_os_policy.yml.
+
+arch_policy:
+  "12.4": "6.0;7.0;7.5;8.0;8.6;9.0+PTX"
+  "12.6": "6.0;7.0;7.5;8.0;8.6;9.0+PTX"
+  "12.8": "7.0;7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "12.9": "7.0;7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "13.0": "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "13.2": "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+# aarch64 (SBSA/Jetson) policy -- a different world from x86: no pre-Ampere
+# server ARM exists, Grace pairs with Hopper (9.0), and 13.x adds Thor (11.0)
+# as a NATIVE target. Derived from PyTorch's own aarch64 tables (CW-ADR-0012
+# derivation rule applied per platform).
+# A CUDA line ABSENT from this table is deliberately not built for aarch64.
+# 12.4 is absent: NVIDIA's ubuntu2404/sbsa apt repo starts at CUDA 12.5, so
+# the toolkit is uninstallable on GitHub's hosted ARM runners -- and the
+# audience (torch 2.4/2.5 on Grace) is negligible.
+arch_policy_aarch64:
+  "12.6": "8.0;9.0+PTX"
+  "12.8": "8.0;9.0+PTX;10.0;12.0+PTX"
+  "12.9": "8.0;9.0+PTX;10.0;12.0+PTX"
+  "13.0": "8.0;9.0+PTX;10.0;11.0;12.0+PTX"
+  "13.2": "8.0;9.0+PTX;10.0;11.0;12.0+PTX"
+# Per-(cuda, torch-minor) exceptions, hand-maintained (CW-ADR-0012's clamp,
+# applied by hand): torch itself ships no sm_70 on these pairings, so a
+# Volta cubin would be unreachable inside that torch process.
+arch_exceptions:
+  "12.8/2.7":  "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "12.8/2.11": "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "12.9/2.11": "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "12.9/2.12": "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"
+  "12.9/2.13": "7.5;8.0;8.6;9.0+PTX;10.0;12.0+PTX"

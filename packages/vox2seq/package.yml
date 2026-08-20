@@ -1,0 +1,4 @@
+name: vox2seq
+source_repo: microsoft/TRELLIS
+source_tag: f17fdf12d8f17a6a09225f01756d141285dc848f
+build_subdir: extensions/vox2seq

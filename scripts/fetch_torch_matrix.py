@@ -300,16 +300,25 @@ time this page is generated (on push to <code>main</code>).</p>
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Fetch PyTorch CUDA build matrix")
-    parser.add_argument("--output", default="matrix.json", help="Output JSON file")
-    parser.add_argument("--html", default=None, help="Output HTML directory (e.g. docs/matrix)")
+    parser.add_argument("--output", default="data/pcwm_matrix.json", help="Output JSON file")
+    parser.add_argument("--from-json", default=None, metavar="FILE",
+                        help="Render from a committed matrix JSON instead of scraping upstream "
+                             "(deploy-time page rendering; no network)")
+    parser.add_argument("--html", default=None, help="Output HTML directory (e.g. _site/matrix)")
     args = parser.parse_args()
 
-    matrix = build_matrix()
+    if args.from_json:
+        matrix = json.load(open(args.from_json))
+        print(f"Rendering from committed {args.from_json} "
+              f"({matrix['total']} combos, no upstream scrape)", file=sys.stderr)
+    else:
+        matrix = build_matrix()
 
-    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output, "w") as f:
-        json.dump(matrix, f, indent=2)
-    print(f"Wrote {len(matrix['combos'])} combos to {args.output}", file=sys.stderr)
+    if not args.from_json:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump(matrix, f, indent=2)
+        print(f"Wrote {len(matrix['combos'])} combos to {args.output}", file=sys.stderr)
 
     if args.html:
         generate_html(matrix, Path(args.html))

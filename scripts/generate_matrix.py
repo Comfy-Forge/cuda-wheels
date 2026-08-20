@@ -61,14 +61,15 @@ def fetch_package_info(repo: str, tag: str, subdir: str = "") -> tuple[Optional[
 
 # Loaded once; provides standard combinations + arch_list_by_cuda + per-build defaults
 # inherited by package YAMLs that don't override them.
-_DEFAULTS_FILE = Path(__file__).parent.parent / "packages" / "_defaults.yml"
-DEFAULTS = yaml.safe_load(_DEFAULTS_FILE.read_text())
+import sys as _sys0
+_sys0.path.insert(0, str(Path(__file__).parent))
+from package_loader import load_pcto as _load_pcto, load_arch_policy as _load_arch_policy, iter_packages as _iter_packages  # noqa: E402
+DEFAULTS = _load_pcto()
 
 # The owned arch policy (CW-ADR-0012): per-CUDA rows plus hand-maintained
 # per-(cuda, torch-minor) exceptions. Read at BUILD time -- _defaults.yml
 # carries cells only, never arch data, so there is exactly one arch source.
-_ARCH_POLICY_FILE = Path(__file__).parent.parent / "packages" / "_arch_policy.yml"
-_ARCH_POLICY = yaml.safe_load(_ARCH_POLICY_FILE.read_text())
+_ARCH_POLICY = _load_arch_policy()
 
 
 def policy_arch_list(cuda_version: str, pytorch_version: str,
@@ -89,7 +90,7 @@ def policy_arch_list(cuda_version: str, pytorch_version: str,
         except KeyError:
             raise KeyError(
                 f"No aarch64 arch policy for cuda={cuda_version}; add a row to "
-                f"packages/_arch_policy.yml's arch_policy_aarch64."
+                f"defaults/arch_policy.yml's arch_policy_aarch64."
             ) from None
     exc = (_ARCH_POLICY.get("arch_exceptions") or {}).get(f"{cuda_version}/{minor}")
     if exc:
@@ -100,7 +101,7 @@ def policy_arch_list(cuda_version: str, pytorch_version: str,
         raise KeyError(
             f"No arch policy for cuda={cuda_version} "
             f"(pytorch={pytorch_version}); add a row to "
-            f"packages/_arch_policy.yml's arch_policy."
+            f"defaults/arch_policy.yml's arch_policy."
         ) from None
 
 
@@ -167,7 +168,7 @@ def resolve_arch_list(pkg: dict, cuda_version: str,
 
     raise KeyError(
         f"No arch_list resolved for cuda={cuda_version} pytorch={pytorch_version} "
-        f"pkg={pkg.get('name')}; add an entry to packages/_arch_policy.yml "
+        f"pkg={pkg.get('name')}; add an entry to defaults/arch_policy.yml "
         f"or to the package YAML."
     )
 
@@ -264,7 +265,7 @@ def wheel_exists(existing_wheels: set, package: str, cuda_short: str,
                    for p in patterns for w in existing_wheels)
 
 
-def _validate_filters(packages_dir, package_filter, platform_filter,
+def _validate_filters(package_filter, platform_filter,
                       cuda_filter, pytorch_filter, python_filter) -> None:
     """Reject filters that match nothing, before an empty matrix goes green.
 
@@ -283,18 +284,12 @@ def _validate_filters(packages_dir, package_filter, platform_filter,
             "reports success."
         )
 
-    names = set()
-    for f in packages_dir.glob("*.yml"):
-        if f.name.startswith("_"):
-            continue
-        cfg = yaml.safe_load(f.read_text())
-        if isinstance(cfg, dict) and cfg.get("name"):
-            names.add(cfg["name"])
+    names = {cfg["name"] for _d, cfg in _iter_packages() if cfg.get("name")}
     if package_filter != "all" and package_filter not in names:
         fail("package", package_filter, names)
 
-    if platform_filter != "all" and platform_filter not in {"linux", "windows"}:
-        fail("platform", platform_filter, {"linux", "windows"})
+    if platform_filter != "all" and platform_filter not in {"linux", "windows", "linux_aarch64"}:
+        fail("platform", platform_filter, {"linux", "windows", "linux_aarch64"})
 
     combos = DEFAULTS.get("combinations", [])
     cudas = {str(c["cuda"]) for c in combos if "cuda" in c}
@@ -314,18 +309,13 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                     platform_filter: str = "all", cuda_filter: str = "all",
                     pytorch_filter: str = "all", python_filter: str = "all") -> list:
     """Generate build matrix from package configs, excluding existing wheels."""
-    packages_dir = Path(__file__).parent.parent / "packages"
     matrix = []
     skipped = 0
 
-    _validate_filters(packages_dir, package_filter, platform_filter,
+    _validate_filters(package_filter, platform_filter,
                       cuda_filter, pytorch_filter, python_filter)
 
-    for pkg_file in packages_dir.glob("*.yml"):
-        # Skip files starting with underscore (e.g. _defaults.yml — inherited config, not a package)
-        if pkg_file.name.startswith("_"):
-            continue
-        pkg = yaml.safe_load(pkg_file.read_text())
+    for pkg_name_dir, pkg in _iter_packages():
 
         if package_filter != "all" and pkg["name"] != package_filter:
             continue

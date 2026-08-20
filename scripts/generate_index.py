@@ -30,38 +30,33 @@ def _next_link(link_header):
 _PYTAG_RE = re.compile(r"-(cp\d+)-cp\d+t?-")
 
 
-def load_torch_free_packages(pkg_dir=Path("packages")) -> set:
+def load_torch_free_packages() -> set:
     """Index-normalised names of packages declaring `links_torch: false`.
 
     These do not link libtorch, so one built wheel is valid for every torch in
     its CUDA line. See CW-ADR-0011.
     """
+    import sys as _s
+    _s.path.insert(0, str(Path(__file__).resolve().parent))
+    from package_loader import iter_packages
     names = set()
-    if not pkg_dir.is_dir():
-        return names
-    for path in sorted(pkg_dir.glob("*.yml")):
-        if path.stem.startswith("_"):
-            continue
-        try:
-            cfg = yaml.safe_load(path.read_text()) or {}
-        except yaml.YAMLError as e:
-            raise RuntimeError(f"{path}: unparseable package config: {e}") from None
+    for stem, cfg in iter_packages():
         if cfg.get("links_torch") is False:
-            name = (cfg.get("name") or path.stem).lower().replace("_", "-")
-            names.add(name)
+            names.add((cfg.get("name") or stem).lower().replace("_", "-"))
     return names
 
 
-def load_grid(defaults_path=Path("packages/_defaults.yml")) -> dict:
+def load_grid(defaults_path=None) -> dict:
     """{"cu128": {"torch2.9": {"cp310", ...}, ...}, ...} from the shared grid.
 
     The alias set is derived from the grid rather than hardcoded so that adding
     a CUDA or torch line to _defaults.yml automatically widens the aliases.
     """
+    import sys as _s
+    _s.path.insert(0, str(Path(__file__).resolve().parent))
+    from package_loader import load_pcto
     grid = {}
-    if not defaults_path.is_file():
-        return grid
-    cfg = yaml.safe_load(defaults_path.read_text()) or {}
+    cfg = load_pcto() or {}
     for combo in cfg.get("combinations", []):
         cuda = "cu" + str(combo["cuda"]).replace(".", "")
         torch = "torch" + ".".join(str(combo["pytorch"]).split(".")[:2])
@@ -158,6 +153,17 @@ def get_releases(repo: str, token: str = None) -> list:
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default="_site",
+                    help="Directory to write the generated site into (never committed; "
+                         "deployed wholesale to gh-pages)")
+    ap.add_argument("--previous", default="previous-site",
+                    help="Checkout of the CURRENT gh-pages branch, used by the "
+                         "never-publish-a-shorter-index guard. Missing dir = guard "
+                         "skipped with a loud warning (first deploy only).")
+    args = ap.parse_args()
+
     token = os.environ.get("GITHUB_TOKEN")
     repo = os.environ.get("GITHUB_REPOSITORY", "PozzettiAndrea/cuda-wheels")
 
@@ -202,20 +208,26 @@ def main():
     # fetch, an auth failure, or an API hiccup must fail the run rather than
     # quietly dropping packages -- losing them produces no error anywhere
     # downstream, and the per-package pages keep serving stale wheel lists.
-    v2_dir = Path("docs/v2")
-    previous = {d.name for d in v2_dir.iterdir() if d.is_dir()} if v2_dir.is_dir() else set()
+    v2_dir = Path(args.previous) / "v2"
+    if v2_dir.is_dir():
+        previous = {d.name for d in v2_dir.iterdir() if d.is_dir()}
+    else:
+        previous = set()
+        print(f"WARNING: no previous index at {v2_dir} -- the shorter-index "
+              f"guard is SKIPPED. Expected only on the very first deploy.")
     lost = previous - set(packages)
     if lost:
         print(f"ERROR: {len(lost)} package(s) in the previous index are absent now:")
         for name in sorted(lost):
             print(f"  - {name}")
         print("Refusing to publish a shorter index. If a package was removed")
-        print("deliberately, delete its docs/v2/<name>/ directory in the same commit.")
+        print("deliberately, delete its release and re-run -- the guard compares")
+        print("against the live gh-pages content, not a committed copy.")
         raise SystemExit(1)
     print(f"{len(packages)} packages, {sum(len(v) for v in packages.values())} wheels")
 
     # Create docs directory
-    docs = Path("docs")
+    docs = Path(args.out)
     docs.mkdir(exist_ok=True)
 
     all_packages = sorted(packages.keys())

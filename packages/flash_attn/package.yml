@@ -1,0 +1,7 @@
+name: flash_attn
+source_repo: Dao-AILab/flash-attention
+source_tag: v2.8.3
+version: 2.8.3
+patch_script: packages/flash_attn/patches/flash_attn.py
+extra_deps: psutil
+nvcc_flags: -diag-suppress=221

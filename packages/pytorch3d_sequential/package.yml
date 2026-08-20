@@ -1,0 +1,29 @@
+# Sequential-checkpoint chain-exercise test bed.
+#
+# Mirrors packages/pytorch3d.yml except:
+#   - name is pytorch3d_sequential (so wheels don't collide with the canonical
+#     pytorch3d release)
+#   - sequential_checkpoint: 180 caps each compile job at 3 minutes.
+#     pytorch3d's full compile is ~35-41min per matrix cell (observed in
+#     run 25066925045), so a 3min timeout fires aggressively -- exercises
+#     the checkpoint/restore mechanism many times per chain. Each cycle
+#     costs ~7min wall (3min setup + 3min compile + ~30s save+upload), so
+#     iteration on the chain mechanics is cheap.
+#
+# Trigger with workflow_dispatch filters cuda=13.0 pytorch=2.11 python=3.10
+# (or set the build_matrix below) so the test fans out to a single Linux
+# job instead of pytorch3d's full 95-cell matrix.
+name: pytorch3d_sequential
+source_repo: facebookresearch/pytorch3d
+source_tag: v0.7.9
+sequential_checkpoint: 180
+patch_script: packages/pytorch3d_sequential/patches/pytorch3d_sequential.py
+clone_recursive: true
+# Two prior runs (26026982493, 26028337250) died at ~1m30s into the compile
+# with rc=143 -- classic OOM kill. pytorch3d builds CUDA kernels for 7
+# architectures (sm_75 ... sm_120) per file, each nvcc peaking ~4-8GB. With
+# ninja's default 4-way parallelism on a 4-vCPU runner that's ~24GB peak vs
+# 16GB available. Mitigations match the natten setup: cap ninja to 2
+# parallel jobs, force nvcc to a single internal thread per file (--threads=1
+# via NVCC_APPEND_FLAGS), and add 8GB swap in build.yml.
+max_jobs: 2

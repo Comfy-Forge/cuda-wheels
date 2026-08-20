@@ -1,0 +1,7 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+# Sequential-checkpoint path is Linux-only for the POC; Windows version of
+# the timeout/trigger plumbing is deferred until the Linux mechanism is
+# proven.
+build_matrix:
+  platforms: ["linux"]

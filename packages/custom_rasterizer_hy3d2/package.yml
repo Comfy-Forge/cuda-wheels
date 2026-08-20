@@ -1,0 +1,6 @@
+name: custom_rasterizer_hy3d2
+source_repo: Tencent-Hunyuan/Hunyuan3D-2.1
+source_tag: 82920d643c0dc2f7bfd7255f45f62d386edfe60c   # main @ 2025-10-17
+version: "0.1"
+build_subdir: hy3dpaint/custom_rasterizer
+patch_script: packages/custom_rasterizer_hy3d2/patches/custom_rasterizer_hy3d2.py

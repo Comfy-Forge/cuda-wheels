@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analyze build gaps: compare package YAMLs against published release assets.
 
-Reads each packages/*.yml, builds the expected wheel matrix (excluding patch
+Reads each packages/<name>/ config, builds the expected wheel matrix (excluding patch
 releases), fetches actual assets from GitHub, and prints a summary of what's
 missing.
 """
@@ -21,6 +21,8 @@ REPO = "PozzettiAndrea/cuda-wheels"
 # absence would otherwise swamp the real gaps.
 EXCLUDE_TORCH = set()
 PACKAGES_DIR = Path(__file__).parent.parent / "packages"
+import sys as _s0; _s0.path.insert(0, str(Path(__file__).parent))
+from package_loader import load_pcto as _load_pcto, iter_packages as _iter_packages
 PATCH_VERSIONS = {"2.4.1", "2.5.1", "2.7.1", "2.9.1"}
 
 # Combos upstream PyTorch never shipped. Imported from generate_matrix so the
@@ -76,16 +78,14 @@ _DEFAULTS_CACHE = {}
 def load_defaults():
     """Shared build matrix from packages/_defaults.yml."""
     if not _DEFAULTS_CACHE:
-        with open(PACKAGES_DIR / "_defaults.yml") as f:
-            _DEFAULTS_CACHE.update(yaml.safe_load(f) or {})
+        _DEFAULTS_CACHE.update(_load_pcto())
     return _DEFAULTS_CACHE
 
 
-def load_expected(yml_path):
+def load_expected(cfg):
     """Load a package YAML and return set of expected (cuda, torch, py, os) tuples,
     excluding patch releases."""
-    with open(yml_path) as f:
-        cfg = yaml.safe_load(f)
+    pass
 
     name = cfg["name"]
     matrix = cfg.get("build_matrix", {})
@@ -143,10 +143,9 @@ def main():
             sys.argv[sys.argv.index("--exclude-torch") + 1].split(",")
         )
 
-    # _defaults.yml holds the shared build matrix, not a package.
-    ymls = [p for p in sorted(PACKAGES_DIR.glob("*.yml")) if not p.name.startswith("_")]
-    if not ymls:
-        print(f"No YAML files found in {PACKAGES_DIR}")
+    pkgs = list(_iter_packages())
+    if not pkgs:
+        print(f"No packages found in {PACKAGES_DIR}")
         return
 
     print(f"{'Package':<25} {'Expected':>8} {'Actual':>8} {'Missing':>8} {'%':>6}")
@@ -157,8 +156,8 @@ def main():
     total_missing = 0
     incomplete = []
 
-    for yml in ymls:
-        name, tag, expected = load_expected(yml)
+    for _pname, _cfg in pkgs:
+        name, tag, expected = load_expected(_cfg)
         wheels = get_actual_wheels(tag)
 
         # Parse actual wheels into combo tuples

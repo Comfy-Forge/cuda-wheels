@@ -1,0 +1,3 @@
+# Overrides of the shared arch policy (defaults/arch_policy.yml)
+# for this package only.
+arch_list: 10.0 12.0+PTX

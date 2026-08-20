@@ -59,11 +59,9 @@ PACKAGES_DIR = Path(__file__).parent.parent / "packages"
 def load_package_configs() -> dict:
     """Load all package YAMLs into a dict keyed by normalized name."""
     configs = {}
-    for f in PACKAGES_DIR.glob("*.yml"):
-        # _defaults.yml holds shared build matrix, not a package.
-        if f.name.startswith("_"):
-            continue
-        pkg = yaml.safe_load(f.read_text())
+    import sys as _s; _s.path.insert(0, str(Path(__file__).parent))
+    from package_loader import iter_packages
+    for _pname, pkg in iter_packages():
         name = pkg["name"].replace("-", "_")
         configs[name] = pkg
     return configs

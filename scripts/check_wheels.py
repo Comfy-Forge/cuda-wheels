@@ -93,8 +93,9 @@ def get_source_version(source_repo: str, source_tag: str, build_subdir: str = ""
 
 def load_defaults() -> dict:
     """The shared grid from packages/_defaults.yml, which most packages inherit."""
-    path = Path(__file__).parent.parent / "packages" / "_defaults.yml"
-    return yaml.safe_load(path.read_text()) if path.exists() else {}
+    import sys as _s; _s.path.insert(0, str(Path(__file__).parent))
+    from package_loader import load_pcto
+    return load_pcto()
 
 
 def get_expected_counts(pkg_config: dict, defaults: dict = None) -> tuple[int, int]:
@@ -145,7 +146,8 @@ def check_wheel_versions(wheels: list, expected_version: str, pkg_name: str) -> 
 
 
 def main():
-    packages_dir = Path(__file__).parent.parent / "packages"
+    import sys as _s2; _s2.path.insert(0, str(Path(__file__).parent))
+    from package_loader import iter_packages
 
     print("Wheel Status Report")
     print("=" * 80)
@@ -157,12 +159,7 @@ def main():
     print(f"\n{'Package':<20} {'Expected':<10} {'Actual':<10} {'Missing':<10} {'Version':<12} {'Status'}")
     print("-" * 80)
 
-    for yml in sorted(packages_dir.glob("*.yml")):
-        # _defaults.yml is inherited config, not a package -- it has no `name`.
-        # Same skip as generate_matrix.py and gap_analysis.py.
-        if yml.name.startswith("_"):
-            continue
-        pkg = yaml.safe_load(yml.read_text())
+    for _pname, pkg in iter_packages():
         name = pkg["name"]
         source_repo = pkg["source_repo"]
         source_tag = pkg.get("source_tag", "")

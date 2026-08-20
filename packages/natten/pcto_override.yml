@@ -1,0 +1,7 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+# NATTEN v0.21.6's setup.py line 53 hard-asserts `torch_ver >= [2, 5]`;
+# any cu12.4/torch2.4.x dispatch fails immediately at metadata-generation
+# with "AssertionError: NATTEN only supports PyTorch >= 2.5". Floor was
+# bumped from 2.0 -> 2.5 around NATTEN v0.20.0. Skip those combos.
+min_pytorch: "2.5"

@@ -46,7 +46,7 @@ from pathlib import Path
 import yaml
 
 PACKAGES_DIR = Path(__file__).parent.parent / "packages"
-DEFAULTS = PACKAGES_DIR / "_defaults.yml"
+DEFAULTS = Path(__file__).parent.parent / "defaults" / "python_cuda_torch_os_policy.yml"
 BASE_URL = "https://download.pytorch.org/whl/{key}/torch/"
 
 # Probed every run so a new CUDA index cannot be missed by omission. Being on
@@ -202,6 +202,10 @@ def newest_patch(upstream: dict, key: str, minor: str) -> str:
 
 
 def apply_rows(result: dict, upstream: dict, cfg: dict) -> int:
+    raise SystemExit(
+        "torch_watch --apply is retired on this line: the grid is generated "
+        "by scripts/derive_defaults.py from data/pcwm_matrix.json. Run "
+        "fetch_torch_matrix.py then derive_defaults.py instead.")
     """Append new (cuda, torch minor) rows to _defaults.yml. Additive only."""
     sys.path.insert(0, str(Path(__file__).parent))
     from fetch_pytorch_arch_lists import fetch as fetch_archs

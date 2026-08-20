@@ -1,0 +1,4 @@
+name: faithc_aot
+source_repo: PozzettiAndrea/faithc-aot
+source_tag: v1.5.0-aot          # pinned tag on the fork (master @ 193bb9f)
+clone_recursive: false

@@ -1,0 +1,6 @@
+name: sageattn3
+source_repo: thu-ml/SageAttention
+source_tag: v2.2.0
+version: 1.0.0
+build_subdir: sageattention3_blackwell
+patch_script: packages/sageattn3/patches/sageattn3.py

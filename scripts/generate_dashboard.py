@@ -666,7 +666,7 @@ def main():
     print(f"  {total_runs} runs across {len(workflow_runs)} packages")
 
     # Generate dashboard
-    generate_dashboard(built_packages, Path("docs") / "dashboard",
+    generate_dashboard(built_packages, Path(os.environ.get("CUW_SITE_DIR", "_site")) / "dashboard",
                        release_urls=release_urls, workflow_runs=workflow_runs, repo=repo,
                        token=token)
 

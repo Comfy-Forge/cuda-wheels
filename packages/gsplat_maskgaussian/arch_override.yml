@@ -1,0 +1,12 @@
+# Overrides of the shared arch policy (defaults/arch_policy.yml)
+# for this package only.
+# Inherit the full combinations matrix from _defaults.yml; restrict to
+# Linux only. Override arch_list_by_cuda for cu12.4/12.6 to drop sm_5.0
+# and sm_6.0 (Maxwell/Pascal) — gsplat HEAD uses cg::labeled_partition
+# which requires sm_70+. Without this override, cu12.4/12.6 builds fail
+# with "namespace 'cooperative_groups' has no member 'labeled_partition'".
+# cu12.8+ default arch_lists already start at 7.0 / 7.5 so no override
+# is needed there.
+arch_list_by_cuda:
+  "12.4": "7.0;7.5;8.0;8.6;9.0+PTX"
+  "12.6": "7.0;7.5;8.0;8.6;9.0+PTX"

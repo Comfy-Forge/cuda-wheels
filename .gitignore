@@ -17,3 +17,7 @@ venv/
 # `git add` succeeds and the file simply is not there.
 scripts/.wheel_contents_cache.json
 scripts/.*_cache.json
+
+# deploy-time site build outputs (never committed; gh-pages only)
+_site/
+previous-site/

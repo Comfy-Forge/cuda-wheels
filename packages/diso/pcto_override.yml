@@ -1,0 +1,8 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+build_matrix:
+  # Combinations inherited from _defaults.yml: cu124-cu130 x torch 2.4-2.11 x
+  # py3.10-3.14. Arch lists inherit too, except the two overridden above --
+  # arch_list_by_cuda outranks _defaults' per-combo list (generate_matrix.py
+  # resolve_arch_list, step 2 beats step 4).
+  platforms: ["linux", "windows"]

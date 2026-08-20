@@ -1,0 +1,13 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+# Torch-independent -- see CW-ADR-0011.
+# scikit-build-core over GGML's CMake. No torch in the build or the link.
+links_torch: false
+build_matrix:
+  combinations:
+    - {cuda: "12.4", pytorch: "2.6.0",  python_versions: ["3.10","3.11","3.12","3.13","3.14"]}
+    - {cuda: "12.6", pytorch: "2.6.0",  python_versions: ["3.10","3.11","3.12","3.13","3.14"]}
+    - {cuda: "12.8", pytorch: "2.8.0",  python_versions: ["3.10","3.11","3.12","3.13","3.14"]}
+    - {cuda: "12.9", pytorch: "2.9.0",  python_versions: ["3.10","3.11","3.12","3.13","3.14"]}
+    - {cuda: "13.0", pytorch: "2.10.0", python_versions: ["3.10","3.11","3.12","3.13","3.14"]}
+  platforms: ["linux", "windows"]

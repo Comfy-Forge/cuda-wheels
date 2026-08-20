@@ -1,0 +1,7 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+# Sharded build path is Linux-only in this iteration. Windows compile-shard
+# adapter not implemented yet; restricting platforms prevents the matrix
+# from generating windows entries for this test bed.
+build_matrix:
+  platforms: ["linux"]

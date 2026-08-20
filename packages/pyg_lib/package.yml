@@ -1,0 +1,6 @@
+name: pyg_lib
+source_repo: pyg-team/pyg-lib
+source_tag: 0.5.0
+version: 0.5.0
+patch_script: packages/pyg_lib/patches/pyg_lib.py
+clone_recursive: true

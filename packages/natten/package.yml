@@ -1,0 +1,34 @@
+name: natten
+source_repo: SHI-Labs/NATTEN
+source_tag: v0.21.6
+patch_script: packages/natten/patches/natten.py
+# NATTEN vendors CUTLASS as a submodule under third_party/.
+clone_recursive: true
+# Blackwell autogen .cu files are now restricted to sm_100/103 (see
+# patches/natten.py's set_source_files_properties block); this cuts the
+# heaviest part of the compile to ~1/5 of its prior cost. Combined with
+# the existing arch list, total Linux wall time should fit comfortably in
+# one 6h job, so sequential_checkpoint is dropped. The chain mechanism
+# stays available (action.yml + _chain_link.yml) — just unused unless
+# `sequential_checkpoint: N` is set here. natten_sequential.yml keeps it
+# as a regression check for the resume path.
+#
+# Was previously `sharding: 16`, then `sequential_checkpoint: 18000`.
+# Windows is back in scope: patches/natten.py strips sm_100/103 (Blackwell DC)
+# from NATTEN_CUDA_ARCH on Windows so the MSVC-incompatible
+# sm100_fmha_bwd_kernel_tma_warpspecialized.hpp (C2061) doesn't get pulled in.
+# sm_120 (RTX 5090 / Blackwell consumer) is unaffected and still ships.
+# CUTLASS template instantiations have large peak memory. max_jobs=4 OOM'd
+# (exit 143 + runner shutdown signal) ~3min into Blackwell FMHA compile on
+# 16GB Linux runner — each .cu peaks above the assumed 3.5GB. Backed off
+# to 2 slots (with 8GB swap added in build.yml) paired with nvcc --threads=1
+# (via nvcc_flags below) for single-threaded per-file compiles.
+max_jobs: 2
+# Force nvcc to single-threaded per file (NATTEN's CMakeLists doesn't pass
+# --threads; without this, nvcc default is 1 anyway, but we make it explicit
+# so the parallelism story is documented and stays stable across nvcc
+# versions). Forwarded to every nvcc invocation via NVCC_APPEND_FLAGS.
+nvcc_flags: --threads=1
+# cmake is required by NATTEN's setup.py (checks for the executable at build
+# time). Ninja generator is used.
+extra_deps: cmake ninja
