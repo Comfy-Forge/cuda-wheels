@@ -39,38 +39,60 @@ runs:
       shell: bash
       run: |
         CUDA_APT=$(echo "${{ inputs.cuda-version }}" | tr '.' '-')
-        # x86 runners are ubuntu-22.04; ARM hosted runners start at 24.04 and
-        # use NVIDIA's sbsa repo.
-        if [ "$(uname -m)" = "aarch64" ]; then
-          REPO="ubuntu2404/sbsa"
-        else
-          REPO="ubuntu2204/x86_64"
-        fi
-        wget -q https://developer.download.nvidia.com/compute/cuda/repos/${REPO}/cuda-keyring_1.1-1_all.deb
-        sudo dpkg -i cuda-keyring_1.1-1_all.deb
-        sudo apt-get update
-        sudo apt-get install -y \
-          cuda-nvcc-${CUDA_APT} \
-          cuda-cudart-dev-${CUDA_APT} \
-          cuda-nvrtc-dev-${CUDA_APT} \
-          libcublas-dev-${CUDA_APT} \
-          libcusparse-dev-${CUDA_APT} \
-          libcurand-dev-${CUDA_APT} \
-          libcusolver-dev-${CUDA_APT}
-
-        # Install extra components if specified (e.g., "cufft_dev nvtx")
+        ARCH=$(uname -m); [ "$ARCH" = "aarch64" ] && NVARCH="sbsa" || NVARCH="x86_64"
         EXTRA="${{ inputs.extra-components }}"
-        if [ -n "$EXTRA" ]; then
-          EXTRA_PKGS=""
-          for comp in $EXTRA; do
-            case "$comp" in
-              *_dev) EXTRA_PKGS="$EXTRA_PKGS lib${comp%_dev}-dev-${CUDA_APT}" ;;
-              nvtx)  EXTRA_PKGS="$EXTRA_PKGS cuda-nvtx-${CUDA_APT}" ;;
-              *)     EXTRA_PKGS="$EXTRA_PKGS cuda-${comp}-${CUDA_APT}" ;;
-            esac
-          done
-          echo "Installing extra CUDA components:$EXTRA_PKGS"
-          sudo apt-get install -y $EXTRA_PKGS
+        if [ -f /etc/redhat-release ]; then
+          # manylinux_2_28 container (AlmaLinux 8): NVIDIA's rhel8 dnf repo.
+          # Package names differ from Debian: -devel-, not -dev-.
+          dnf install -y -q 'dnf-command(config-manager)' >/dev/null
+          dnf config-manager --add-repo \
+            https://developer.download.nvidia.com/compute/cuda/repos/rhel8/${NVARCH}/cuda-rhel8.repo >/dev/null
+          dnf install -y -q \
+            cuda-nvcc-${CUDA_APT} \
+            cuda-cudart-devel-${CUDA_APT} \
+            cuda-nvrtc-devel-${CUDA_APT} \
+            libcublas-devel-${CUDA_APT} \
+            libcusparse-devel-${CUDA_APT} \
+            libcurand-devel-${CUDA_APT} \
+            libcusolver-devel-${CUDA_APT} >/dev/null
+          if [ -n "$EXTRA" ]; then
+            EXTRA_PKGS=""
+            for comp in $EXTRA; do
+              case "$comp" in
+                *_dev) EXTRA_PKGS="$EXTRA_PKGS lib${comp%_dev}-devel-${CUDA_APT}" ;;
+                nvtx)  EXTRA_PKGS="$EXTRA_PKGS cuda-nvtx-${CUDA_APT}" ;;
+                *)     EXTRA_PKGS="$EXTRA_PKGS cuda-${comp}-${CUDA_APT}" ;;
+              esac
+            done
+            echo "Installing extra CUDA components:$EXTRA_PKGS"
+            dnf install -y -q $EXTRA_PKGS >/dev/null
+          fi
+        else
+          # Bare Ubuntu runner (legacy path / self-hosted).
+          [ "$ARCH" = "aarch64" ] && REPO="ubuntu2404/sbsa" || REPO="ubuntu2204/x86_64"
+          wget -q https://developer.download.nvidia.com/compute/cuda/repos/${REPO}/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
+          sudo apt-get install -y \
+            cuda-nvcc-${CUDA_APT} \
+            cuda-cudart-dev-${CUDA_APT} \
+            cuda-nvrtc-dev-${CUDA_APT} \
+            libcublas-dev-${CUDA_APT} \
+            libcusparse-dev-${CUDA_APT} \
+            libcurand-dev-${CUDA_APT} \
+            libcusolver-dev-${CUDA_APT}
+          if [ -n "$EXTRA" ]; then
+            EXTRA_PKGS=""
+            for comp in $EXTRA; do
+              case "$comp" in
+                *_dev) EXTRA_PKGS="$EXTRA_PKGS lib${comp%_dev}-dev-${CUDA_APT}" ;;
+                nvtx)  EXTRA_PKGS="$EXTRA_PKGS cuda-nvtx-${CUDA_APT}" ;;
+                *)     EXTRA_PKGS="$EXTRA_PKGS cuda-${comp}-${CUDA_APT}" ;;
+              esac
+            done
+            echo "Installing extra CUDA components:$EXTRA_PKGS"
+            sudo apt-get install -y $EXTRA_PKGS
+          fi
         fi
 
         # Copy to cacheable workspace location
@@ -88,7 +110,7 @@ runs:
       if: inputs.platform == 'linux' && steps.cuda-cache-linux.outputs.cache-hit == 'true'
       shell: bash
       run: |
-        sudo cp -r .cuda-cache/cuda-${{ inputs.cuda-version }} /usr/local/
+        $([ -f /etc/redhat-release ] && echo "" || echo sudo) cp -r .cuda-cache/cuda-${{ inputs.cuda-version }} /usr/local/
 
     - name: Set CUDA environment (Linux)
       if: inputs.platform == 'linux'
@@ -97,7 +119,7 @@ runs:
         echo "/usr/local/cuda-${{ inputs.cuda-version }}/bin" >> $GITHUB_PATH
         echo "CUDA_HOME=/usr/local/cuda-${{ inputs.cuda-version }}" >> $GITHUB_ENV
         # Create /usr/local/cuda symlink for packages that expect it (e.g., cumm/spconv)
-        sudo ln -sf /usr/local/cuda-${{ inputs.cuda-version }} /usr/local/cuda
+        $([ -f /etc/redhat-release ] && echo "" || echo sudo) ln -sf /usr/local/cuda-${{ inputs.cuda-version }} /usr/local/cuda
 
     # ============== WINDOWS ==============
     - name: Restore CUDA cache (Windows)
