@@ -46,9 +46,6 @@ on:
           - diff_gaussian_rasterization
           - simple_knn
           - natten
-          - flex_gemm_sharded
-          - flex_gemm_sequential
-          - pytorch3d_sequential
           - fused_ssim
           - gsplat_maskgaussian
           - mmcv
@@ -239,7 +236,7 @@ jobs:
           extra-deps: ${{ matrix.extra_deps }}
 
       - name: Add swap space
-        if: steps.check.outputs.exists != 'true' && (matrix.package == 'sageattention' || matrix.package == 'sageattn3' || matrix.package == 'natten' || matrix.package == 'pytorch3d_sequential')
+        if: steps.check.outputs.exists != 'true' && (matrix.package == 'sageattention' || matrix.package == 'sageattn3' || matrix.package == 'natten')
         run: |
           # container runs as root (--privileged for swapon)
           fallocate -l 8G /mnt/swapfile

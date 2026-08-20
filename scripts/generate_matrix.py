@@ -484,7 +484,7 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         # The build-wheel action wraps the compile in `timeout`
                         # and, when the timer fires, tars the build/ tree to
                         # an artifact and triggers a successor workflow_dispatch
-                        # to resume. See packages/flex_gemm_sequential.yml.
+                        # to resume. See .github/workflows/_chain_link.yml.
                         "sequential_checkpoint": int(pkg.get("sequential_checkpoint", 0)),
                     }
 

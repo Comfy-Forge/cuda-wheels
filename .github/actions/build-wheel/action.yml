@@ -673,7 +673,7 @@ runs:
         # cmake reconfigure on resume bumps CMakeFiles/*.make rule files
         # past the restored .o mtimes, triggering full rebuild. With Ninja
         # we get the same chain-resume mechanism that works for
-        # cpp_extension packages (pytorch3d_sequential). NATTEN's setup.py
+        # cpp_extension packages. NATTEN's setup.py
         # only adds -G Ninja inside `if IS_WINDOWS:`; this env var fills
         # the gap on Linux. cmake honors CMAKE_GENERATOR globally.
         export CMAKE_GENERATOR=Ninja
