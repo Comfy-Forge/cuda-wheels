@@ -1,0 +1,4 @@
+# sageattn3 — build notes
+- **Source:** thu-ml/SageAttention (v2.2.0), `build_subdir: sageattention3_blackwell`
+- **Quirks:** Blackwell-only (SM 10.0, 12.0, 12.1). `max_jobs: 1`. Complex MSVC patches: kernel_traits.h dependent-name workaround, kernel_ws.h parameter passing (pointer vs CUTE_GRID_CONSTANT), launch.h device-side parameter packing.
+- **Arch list:** Global `"10.0 12.0"`. Only builds for cu128+.
