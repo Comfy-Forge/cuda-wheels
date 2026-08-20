@@ -1,0 +1,4 @@
+name: nvdiffrast
+source_repo: NVlabs/nvdiffrast
+source_tag: v0.4.0
+extra_deps: numpy

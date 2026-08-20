@@ -1,0 +1,1235 @@
+name: 'Build Wheel'
+description: 'Clone source, apply patches, build wheel, rename with CUDA+PyTorch suffix'
+
+inputs:
+  source-repo:
+    description: 'Source repository (e.g., thu-ml/SageAttention)'
+    required: true
+  source-tag:
+    description: 'Git tag or branch to checkout'
+    required: false
+    default: ''
+  pre-build-script:
+    description: 'Script to run before building (patches, etc.)'
+    required: false
+    default: ''
+  arch-list:
+    description: 'CUDA architectures to build for (auto-computed by generate_matrix.py)'
+    required: true
+  cuda-version:
+    description: 'Full CUDA version (e.g., 12.4)'
+    required: true
+  cuda-short:
+    description: 'Short CUDA version (e.g., 124)'
+    required: true
+  pytorch-version:
+    description: 'PyTorch version (e.g., 2.4.0)'
+    required: true
+  platform:
+    description: 'Platform (linux or windows)'
+    required: true
+  max-jobs:
+    description: 'Max parallel compilation jobs'
+    required: false
+    default: '1'
+  clone-recursive:
+    description: 'Clone with --recursive for submodules'
+    required: false
+    default: 'false'
+  patch-script:
+    description: 'Path to patch script (Python file) to run before building'
+    required: false
+    default: ''
+  build-subdir:
+    description: 'Subdirectory to build from (for monorepos)'
+    required: false
+    default: ''
+  nvcc-flags:
+    description: 'Extra flags to pass to nvcc via NVCC_APPEND_FLAGS (e.g. -diag-suppress 221)'
+    required: false
+    default: ''
+  shard-index:
+    description: '1-based shard number for this job (default 0 = unsharded). Only meaningful with shard-count > 0.'
+    required: false
+    default: '0'
+  shard-count:
+    description: 'Total shard count for this package (default 0 = unsharded). When > 0, this job compiles only its slice of sources.'
+    required: false
+    default: '0'
+  link-only:
+    description: 'When "true", download all shard artifacts and run link only. No compile.'
+    required: false
+    default: 'false'
+  package:
+    description: 'Package name (used in shard artifact naming to disambiguate concurrent sharded builds).'
+    required: false
+    default: ''
+  python-version:
+    description: 'Python version (e.g. 3.10). Used in shard artifact naming because the cpp_extension build dir is python-version-specific.'
+    required: false
+    default: ''
+  sequential-checkpoint:
+    description: 'Seconds before forced checkpoint handoff. 0 (default) = no checkpointing. When > 0 the compile is wrapped in `timeout`; on timer-fire the build state is tarred to an in-run artifact (checkpoint-iter-N) and the next chain-link job picks it up.'
+    required: false
+    default: '0'
+  checkpoint-iter:
+    description: 'Chain-link iteration counter. 0 = first link (does a fresh clone). > 0 = resume: skips clone/patch/pre-build, downloads checkpoint-iter-(N-1) artifact, and extracts source/ from it. The chain orchestration lives in .github/workflows/build.yml as N sequential jobs gated on the previous link''s done output.'
+    required: false
+    default: '0'
+
+outputs:
+  wheel-path:
+    description: 'Path to the built wheel (set only in full-build or link-only modes; empty in compile-shard mode).'
+    value: ${{ steps.rename.outputs.wheel-path }}
+  done:
+    description: 'Sequential-checkpoint mode: "true" if the build completed (a wheel was produced or already existed), "false" if the chain link hit the timeout and saved a checkpoint for the next link. Empty string outside sequential-checkpoint mode.'
+    value: ${{ steps.build_outcome.outputs.done }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Clone source
+      # Sequential-checkpoint chain links with iter>0 SKIP cloning -- the
+      # source/ tree is restored from the prior link's checkpoint tarball
+      # (preserving all source mtimes so ninja's restat against the .o files
+      # in the same tarball still passes). Only iter=0 (first link) or
+      # non-checkpointed builds do a fresh clone.
+      if: inputs.checkpoint-iter == '0'
+      shell: bash
+      run: |
+        RECURSIVE_FLAG=""
+        if [ "${{ inputs.clone-recursive }}" == "true" ]; then
+          RECURSIVE_FLAG="--recursive"
+        fi
+        git clone $RECURSIVE_FLAG https://github.com/${{ inputs.source-repo }}.git source
+        cd source
+        if [ -n "${{ inputs.source-tag }}" ]; then
+          git checkout ${{ inputs.source-tag }}
+          # Re-sync submodules to the gitlinks recorded at the tag —
+          # `git clone --recursive` initialized them at the default branch's
+          # HEAD, which can be far ahead of what the tagged release pinned.
+          if [ "${{ inputs.clone-recursive }}" == "true" ]; then
+            git submodule update --init --recursive
+          fi
+        fi
+
+    - name: Apply patch script
+      # Patches already applied in the prior chain link; their changes are
+      # preserved in the source/ tarball. Skip on chain-link resume.
+      if: inputs.patch-script != '' && inputs.checkpoint-iter == '0'
+      shell: bash
+      run: |
+        cd source
+        # Set CUDA_HOME for patch scripts that need it (e.g. cumm header bundling)
+        if [ -z "$CUDA_HOME" ]; then
+          if [ -d "/usr/local/cuda-${{ inputs.cuda-version }}" ]; then
+            export CUDA_HOME="/usr/local/cuda-${{ inputs.cuda-version }}"
+          elif [ -n "$CUDA_PATH" ]; then
+            export CUDA_HOME="$CUDA_PATH"
+          fi
+        fi
+        python $GITHUB_WORKSPACE/${{ inputs.patch-script }}
+
+    - name: Pre-build script
+      # Already ran on iter=0; effects preserved in the source/ tarball.
+      if: inputs.pre-build-script != '' && inputs.checkpoint-iter == '0'
+      shell: bash
+      run: |
+        cd source
+        ${{ inputs.pre-build-script }}
+
+    - name: Apply shard filter (compile-shard mode)
+      # In compile-shard mode, monkeypatch torch.utils.cpp_extension.CUDAExtension
+      # to filter its `sources=[...]` list to this shard's slice. The filter is
+      # injected at the top of setup.py so it applies before CUDAExtension is
+      # called.
+      #
+      # Partition: sorted(sources) round-robin'd to shards (file at sorted-index
+      # i goes to shard (i % shard_count) + 1). Sorted-and-modulo guarantees
+      # balance for small file counts -- with 7 files across 4 shards you get
+      # sizes 2,2,2,1 instead of the unbalanced 0,1,3,3 you can hit with
+      # hash-mod. Deterministic across runs and shards (every shard and the
+      # link job see the same sort order from the same input list), so the
+      # partition is consistent.
+      if: inputs.shard-count != '0' && inputs.link-only != 'true' && inputs.platform == 'windows'
+      shell: bash
+      run: |
+        cd source
+        BUILD_DIR="."
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="${{ inputs.build-subdir }}"
+        fi
+        SETUP_PY="$BUILD_DIR/setup.py"
+        if [ ! -f "$SETUP_PY" ]; then
+          echo "::error::shard filter expects $SETUP_PY (cpp_extension build); cmake adapter not implemented yet"
+          exit 1
+        fi
+        SHARD_INDEX="${{ inputs.shard-index }}"
+        SHARD_COUNT="${{ inputs.shard-count }}"
+        python3 - "$SETUP_PY" "$SHARD_INDEX" "$SHARD_COUNT" <<'PYEOF'
+        import sys, textwrap
+        setup_path, shard_index, shard_count = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+        prelude = textwrap.dedent(f"""
+            # --- cuda-wheels shard filter (injected) ---
+            _CUW_SHARD_INDEX = {shard_index}
+            _CUW_SHARD_COUNT = {shard_count}
+            try:
+                from torch.utils import cpp_extension as _cuw_cpp_extension
+                _cuw_orig_CUDAExtension = _cuw_cpp_extension.CUDAExtension
+                def _cuw_sharded_CUDAExtension(*args, **kwargs):
+                    sources = kwargs.get('sources', None)
+                    if sources is None and len(args) >= 2:
+                        sources = args[1]
+                    if sources is None:
+                        sources = []
+                    # Sorted round-robin keeps the partition balanced (a, b)
+                    # and deterministic across shards and the link job.
+                    sources_sorted = sorted(str(s) for s in sources)
+                    kept = [s for i, s in enumerate(sources_sorted)
+                            if i % _CUW_SHARD_COUNT == (_CUW_SHARD_INDEX - 1)]
+                    print(f'[cuda-wheels shard {{_CUW_SHARD_INDEX}}/{{_CUW_SHARD_COUNT}}] keeping {{len(kept)}}/{{len(sources)}} sources:')
+                    for s in kept:
+                        print(f'    {{s}}')
+                    if not kept:
+                        raise RuntimeError(
+                            f'cuda-wheels: shard {{_CUW_SHARD_INDEX}}/{{_CUW_SHARD_COUNT}} '
+                            f'is empty (only {{len(sources)}} sources). Reduce the '
+                            f'`sharding:` field in the package yaml to at most {{len(sources)}}.'
+                        )
+                    if 'sources' in kwargs:
+                        kwargs['sources'] = kept
+                    else:
+                        args = list(args)
+                        if len(args) >= 2:
+                            args[1] = kept
+                        else:
+                            kwargs['sources'] = kept
+                        args = tuple(args)
+                    return _cuw_orig_CUDAExtension(*args, **kwargs)
+                _cuw_cpp_extension.CUDAExtension = _cuw_sharded_CUDAExtension
+            except ImportError:
+                pass
+            # --- end cuda-wheels shard filter ---
+            """)
+        content = open(setup_path).read()
+        if '_cuw_sharded_CUDAExtension' in content:
+            print('shard filter already applied -- skipping')
+        else:
+            open(setup_path, 'w').write(prelude + content)
+            print(f'injected shard filter at top of {setup_path}')
+        PYEOF
+
+    - name: Force-disable ninja in setup.py (link-only mode)
+      # torch 2.8's BuildExtension does NOT read USE_NINJA env var (checked
+      # in torch/utils/cpp_extension.py:_use_ninja: only reads kwargs).
+      # The reliable way to disable ninja is to wrap BuildExtension so its
+      # default kwarg becomes use_ninja=False. Inject a prelude at the top
+      # of setup.py that monkeypatches torch.utils.cpp_extension.BuildExtension
+      # before the package's `from torch.utils.cpp_extension import
+      # BuildExtension` line resolves -- the import then binds locally to
+      # the wrapped class with ninja disabled.
+      #
+      # We disable ninja because (a) the .ninja_log merge approach fails
+      # ("build log version is too old" + command_hash mismatch under
+      # setuptools' regenerated build.ninja), and (b) the distutils
+      # fallback honors mtime natively and the shard's touched .o files
+      # are recognized as up-to-date, collapsing compile to a no-op.
+      if: inputs.link-only == 'true' && inputs.platform == 'windows'
+      shell: bash
+      run: |
+        cd source
+        BUILD_DIR="."
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="${{ inputs.build-subdir }}"
+        fi
+        SETUP_PY="$BUILD_DIR/setup.py"
+        if [ ! -f "$SETUP_PY" ]; then
+          echo "::error::setup.py not found at $SETUP_PY -- only cpp_extension flow supported in link-only mode"
+          exit 1
+        fi
+        python3 - "$SETUP_PY" <<'PYEOF'
+        import sys, textwrap
+        setup_path = sys.argv[1]
+        prelude = textwrap.dedent("""
+            # --- cuda-wheels link-only ninja disabler + compile no-op (injected) ---
+            # (1) Disable ninja: torch 2.8 ignores USE_NINJA env var; only
+            #     respects kwargs. Wrap BuildExtension so any
+            #     `BuildExtension(...)` defaults use_ninja=False.
+            # (2) No-op compile(): in link-only mode the .o files are already
+            #     on disk from shard extraction. distutils' mtime-based skip
+            #     proved unreliable across the shard->link runner transition
+            #     (mtimes don't always survive the path setuptools takes),
+            #     so we monkeypatch CCompiler.compile to return the expected
+            #     .o paths without invoking gcc/nvcc -- but only if every
+            #     expected .o file actually exists on disk; otherwise we
+            #     fall back to the real compile to avoid silent breakage.
+            import os as _cuw_os
+            try:
+                from torch.utils import cpp_extension as _cuw_cppext_l
+                _cuw_orig_BE = _cuw_cppext_l.BuildExtension
+                class _CuwLinkOnlyBuildExtension(_cuw_orig_BE):
+                    def __init__(self, *args, **kwargs):
+                        kwargs['use_ninja'] = False
+                        super().__init__(*args, **kwargs)
+                    @classmethod
+                    def with_options(cls, **kwargs):
+                        kwargs['use_ninja'] = False
+                        return _cuw_orig_BE.with_options(**kwargs)
+                _cuw_cppext_l.BuildExtension = _CuwLinkOnlyBuildExtension
+                print('[cuda-wheels link-only] BuildExtension wrapped with use_ninja=False')
+            except ImportError:
+                pass
+            try:
+                from distutils import ccompiler as _cuw_dccc
+                _cuw_orig_compile = _cuw_dccc.CCompiler.compile
+                def _cuw_noop_compile(self, sources, output_dir=None, macros=None,
+                                      include_dirs=None, debug=0, extra_preargs=None,
+                                      extra_postargs=None, depends=None):
+                    outdir = output_dir if output_dir is not None else (self.output_dir or '')
+                    objs = self.object_filenames(sources, strip_dir=0, output_dir=outdir)
+                    missing = [o for o in objs if not _cuw_os.path.exists(o)]
+                    if missing:
+                        print(f'[cuda-wheels link-only] {len(missing)}/{len(objs)} .o files missing; '
+                              f'falling back to real compile. First missing: {missing[0]!r}')
+                        return _cuw_orig_compile(self, sources, output_dir=output_dir,
+                                                 macros=macros, include_dirs=include_dirs,
+                                                 debug=debug, extra_preargs=extra_preargs,
+                                                 extra_postargs=extra_postargs, depends=depends)
+                    print(f'[cuda-wheels link-only] CCompiler.compile no-op: all {len(objs)} .o files present, skipping compile')
+                    for o in objs:
+                        print(f'    {o} ({_cuw_os.path.getsize(o)} bytes)')
+                    return objs
+                _cuw_dccc.CCompiler.compile = _cuw_noop_compile
+                print('[cuda-wheels link-only] CCompiler.compile patched to no-op when objects exist')
+            except ImportError:
+                pass
+            # --- end cuda-wheels link-only patches ---
+            """)
+        content = open(setup_path).read()
+        if '_CuwLinkOnlyBuildExtension' in content:
+            print('ninja disabler already applied -- skipping')
+        else:
+            open(setup_path, 'w').write(prelude + content)
+            print(f'injected ninja disabler at top of {setup_path}')
+        PYEOF
+
+    - name: Download shard artifacts (link-only mode)
+      if: inputs.link-only == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        # Glob pattern matching every shard artifact for this (package, platform,
+        # python, cuda, torch) tuple. Each shard uploaded its tarball under a
+        # distinct name `shard-<pkg>-<platform>-py<py>-cu<cuda>-torch<torch>-<shard_index>-of-<shard_count>`.
+        pattern: shard-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-*-of-${{ inputs.shard-count }}
+        path: /tmp/shard-artifacts
+
+    - name: Restore shard objects (link-only mode)
+      # Each shard uploaded a tarball of its `build/` tree (containing the
+      # produced .o files plus possibly ninja/cmake state). Extract all
+      # tarballs and copy the .o files into the source's build/ tree at the
+      # same relative paths. Then:
+      #
+      #  - Delete every shard's ninja/cmake state (.ninja_log, .ninja_deps,
+      #    build.ninja, CMakeCache.txt). Cross-shard merging would have
+      #    needed exact command_hash matches; in practice we let the build
+      #    system regenerate state from scratch and fall back to mtime-only
+      #    skip. For cpp_extension packages the CCompiler.compile no-op
+      #    monkey-patch (injected separately at setup.py top) bypasses the
+      #    mtime check entirely. For cmake-style packages we rely on
+      #    ninja's mtime check.
+      #
+      #  - `touch -m` every .o so its mtime is comfortably after any .cu/
+      #    .cpp source's mtime in the freshly-cloned source tree.
+      if: inputs.link-only == 'true' && inputs.platform == 'windows'
+      shell: bash
+      run: |
+        cd source
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          cd "${{ inputs.build-subdir }}"
+        fi
+        mkdir -p build
+        shopt -s nullglob
+        TEMP_DIR=$(mktemp -d)
+        found=0
+        for tarball in /tmp/shard-artifacts/*/objects.tar.gz; do
+          found=$((found+1))
+          shard_dir=$(mktemp -d -p "$TEMP_DIR" shard.XXXX)
+          echo "extracting $tarball -> $shard_dir"
+          tar -xzf "$tarball" -C "$shard_dir"
+          # Copy every .o file at its tarball-relative path into the
+          # final build/ tree. Partition design guarantees no two shards
+          # produced the same output path.
+          find "$shard_dir/build" \( -name '*.o' -o -name '*.obj' \) | while read -r objfile; do
+            rel="${objfile#$shard_dir/}"
+            mkdir -p "$(dirname "$rel")"
+            cp -p "$objfile" "$rel"
+          done
+        done
+        if [ "$found" = "0" ]; then
+          echo "::error::no shard artifacts found at /tmp/shard-artifacts -- did the upstream compile-shard jobs succeed?"
+          ls -laR /tmp/shard-artifacts || true
+          exit 1
+        fi
+        # Strip stale ninja/cmake state so the link job's build system
+        # regenerates fresh state and falls back to mtime-based skip.
+        find build -name 'build.ninja' -delete 2>/dev/null || true
+        find build -name '.ninja_deps' -delete 2>/dev/null || true
+        find build -name '.ninja_log' -delete 2>/dev/null || true
+        find build -name 'CMakeCache.txt' -delete 2>/dev/null || true
+        find build -name 'CMakeFiles' -type d -prune -exec sh -c 'find "$1" -name "*.cmake" -delete; find "$1" -name "Makefile*" -delete' _ {} \; 2>/dev/null || true
+        echo "Restored $found shard archive(s). Object tree (first 50):"
+        # `set -o pipefail` is on, so SIGPIPE from `head` closing early would
+        # exit the script. Append `|| true` to swallow it -- listing is purely
+        # informational.
+        find build \( -name '*.o' -o -name '*.obj' \) -printf '  %P (%s bytes)\n' 2>/dev/null | head -50 || true
+        OBJ_COUNT=$(find build \( -name '*.o' -o -name '*.obj' \) | wc -l)
+        echo "Total object files: $OBJ_COUNT"
+        if [ "$OBJ_COUNT" = "0" ]; then
+          echo "::error::no object files restored from shard artifacts -- tarballs may be empty"
+          exit 1
+        fi
+        echo "(touching every .o so mtime > checkout mtime of .cu/.cpp sources)"
+        find build \( -name '*.o' -o -name '*.obj' \) -exec touch -m {} +
+        rm -rf "$TEMP_DIR"
+
+    - name: Compute prev iter (sequential mode, resume)
+      # GH Actions expressions don't support arithmetic, so we can't compute
+      # iter-1 inline as a step input. Write it to $GITHUB_ENV here and the
+      # Download step below references it via env.
+      if: inputs.checkpoint-iter != '0' && inputs.checkpoint-iter != ''
+      shell: bash
+      run: |
+        echo "CUW_PREV_ITER=$((${{ inputs.checkpoint-iter }} - 1))" >> $GITHUB_ENV
+
+    - name: Download checkpoint (sequential mode, resume)
+      # Same-run artifact from the previous chain link (build-linux-chain-link
+      # or build-windows-chain-link iter N-1 in build.yml). No run-id needed
+      # -- v4 picks up artifacts from the current run by default.
+      # Use runner.temp so this works on both Linux (/home/runner/work/_temp)
+      # and Windows (D:\a\_temp).
+      if: inputs.checkpoint-iter != '0' && inputs.checkpoint-iter != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: checkpoint-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-iter-${{ env.CUW_PREV_ITER }}
+        path: ${{ runner.temp }}/checkpoint
+
+    - name: Restore checkpoint (sequential mode, resume)
+      # Earlier sequential-checkpoint design tarred only source/build/ and
+      # re-cloned source/ fresh on each chain link. That broke incremental
+      # resume because: (a) the freshly-cloned source files had mtimes
+      # newer than the restored .o files, so ninja's source-newer-than-.o
+      # check triggered a full rebuild; and (b) the touch -m workaround
+      # bumped .o mtimes to "now," which then mismatched the .ninja_log's
+      # recorded mtime field and tripped ninja's restat check.
+      #
+      # New design: skip clone/patch/pre-build on resume (gated above on
+      # checkpoint-iter == '0') and tar the ENTIRE source/ tree on save.
+      # Restore here extracts source/ wholesale at its prior position --
+      # all source-file and .o mtimes are preserved through tar (which is
+      # mtime-preserving by default), so ninja's restat against .ninja_log
+      # entries works on the first try.
+      if: inputs.checkpoint-iter != '0' && inputs.checkpoint-iter != ''
+      shell: bash
+      run: |
+        # Use $RUNNER_TEMP for cross-platform; on Windows the bash translation
+        # resolves it correctly via MSYS path mapping.
+        CHECKPOINT_DIR="$RUNNER_TEMP/checkpoint"
+        if [ ! -f "$CHECKPOINT_DIR/source.tar.gz" ]; then
+          echo "::error::no source.tar.gz in $CHECKPOINT_DIR -- prior chain link's upload may have failed"
+          ls -laR "$CHECKPOINT_DIR" || true
+          exit 1
+        fi
+        echo "Extracting checkpoint tarball into $(pwd)"
+        # Extract into the workspace root so source/ is recreated.
+        # --force-local on Windows Git Bash so $CHECKPOINT_DIR's "D:\..." path
+        # isn't interpreted as a remote host.
+        tar --force-local -xzf "$CHECKPOINT_DIR/source.tar.gz"
+        if [ ! -d source ]; then
+          echo "::error::tarball did not extract a source/ directory"
+          tar --force-local -tzf "$CHECKPOINT_DIR/source.tar.gz" | head -20
+          exit 1
+        fi
+        BUILD_DIR="source/build"
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="source/${{ inputs.build-subdir }}/build"
+        fi
+        OBJ_COUNT=$(find "$BUILD_DIR" -name '*.o' 2>/dev/null | wc -l)
+        echo "Restored source/ tree: $OBJ_COUNT object files in $BUILD_DIR"
+        echo "First 30 build/ entries:"
+        find "$BUILD_DIR" -type f -printf '  %P (%s bytes, mtime=%T@)\n' 2>/dev/null | head -30 || true
+        # Two failure modes in tension here:
+        #  (1) Touching .o files to "now" makes them newer than the freshly-
+        #      installed torch/python/CUDA include headers (so ninja's
+        #      "input newer than output" check passes), BUT it also makes
+        #      the .o newer than the .ninja_deps's stored-deps-info
+        #      timestamp ("ninja explain: stored deps info out of date"),
+        #      tripping a different rebuild rule.
+        #  (2) Leaving .o mtimes preserved fixes (1)'s rebuild-via-deps-info
+        #      but reintroduces (1)'s input-newer-than-output trip.
+        # Resolution: don't touch .o; instead touch the EXTERNAL header
+        # roots (torch, Python, CUDA) to epoch 1 so they're guaranteed
+        # older than any restored .o file. This satisfies BOTH ninja
+        # checks: the .o is older than its stored deps-info (no "modified
+        # externally"), AND newer than all external headers.
+        echo "Resolving freshly-installed include headers to touch to epoch 1..."
+        TORCH_INC_DIRS=$(python -c "
+        try:
+            from torch.utils import cpp_extension as e
+            for p in e.include_paths():
+                print(p)
+        except Exception:
+            pass
+        " 2>/dev/null)
+        PYTHON_INC_DIR=$(python -c "import sysconfig; print(sysconfig.get_path('include'))" 2>/dev/null || echo "")
+        # CUDA headers live in two paths on Linux:
+        #   /usr/local/cuda-X.Y/include  (often empty or symlink-stub)
+        #   /usr/local/cuda-X.Y/targets/<arch>/include  (canonical, where
+        #       sm_20_intrinsics.h, cuda_runtime.h, etc. actually live)
+        # Touch BOTH. ninja sees the canonical path in compile commands and
+        # checks its mtime, not the stub path. Missing the targets path is
+        # what made our v1 touch ineffective on NATTEN (run 26046924674).
+        # Platform-conditional CUDA include paths.
+        # Linux: /usr/local/cuda-X.Y/{include,targets/x86_64-linux/include}
+        # Windows: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/vX.Y/include
+        #          (Git Bash maps to /c/Program Files/NVIDIA GPU Computing Toolkit/...).
+        if [ "${{ inputs.platform }}" = "windows" ]; then
+          CUDA_INC_DIR_TOP="/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${{ inputs.cuda-version }}/include"
+          CUDA_INC_DIR_TARGETS=""  # Windows install is flat under /include (no targets/ split)
+        else
+          CUDA_INC_DIR_TOP="/usr/local/cuda-${{ inputs.cuda-version }}/include"
+          CUDA_INC_DIR_TARGETS="/usr/local/cuda-${{ inputs.cuda-version }}/targets"
+        fi
+        # CUDA is apt-installed as root, so its headers are root-owned and a
+        # runner-user touch fails silently (Permission denied, swallowed by
+        # 2>/dev/null). Use sudo for the CUDA paths. Torch+Python live under
+        # hostedtoolcache which IS runner-owned, no sudo needed.
+        for d in $TORCH_INC_DIRS $PYTHON_INC_DIR; do
+          if [ -d "$d" ]; then
+            COUNT=$(find "$d" -type f 2>/dev/null | wc -l)
+            echo "  touching $d ($COUNT files, no sudo) -> epoch 1"
+            find "$d" -type f -exec touch -m -d "@1" {} + 2>/dev/null || true
+          fi
+        done
+        # Windows CUDA dir is admin-installed but Git Bash on a GHA Windows
+        # runner has effective admin (the runner user is local admin), so
+        # `sudo` is a no-op. On Linux, `sudo` is needed for the apt-installed
+        # root-owned headers. The single sudo path works on both: it's a
+        # passthrough on Windows.
+        if [ "${{ inputs.platform }}" = "windows" ]; then
+          SUDO=""
+        else
+          SUDO="sudo"
+        fi
+        for d in "$CUDA_INC_DIR_TOP" "$CUDA_INC_DIR_TARGETS"; do
+          if [ -n "$d" ] && [ -d "$d" ]; then
+            COUNT=$($SUDO find "$d" -type f 2>/dev/null | wc -l)
+            echo "  touching $d ($COUNT files) -> epoch 1"
+            $SUDO find "$d" -type f -exec touch -m -d "@1" {} + 2>/dev/null || true
+          fi
+        done
+        echo "Sample source vs .o mtime (source SHOULD be older than .o):"
+        find source -name '*.cu' -printf '  CU  %p (mtime=%T@)\n' 2>/dev/null | head -1 || true
+        find "$BUILD_DIR" -name '*.o' -printf '  O   %p (mtime=%T@)\n' 2>/dev/null | head -1 || true
+        echo ".ninja_log (first 10 lines, if present):"
+        find "$BUILD_DIR" -name '.ninja_log' -exec head -10 {} + 2>/dev/null || true
+        # Diagnostic: ask ninja itself WHY each output would be rebuilt.
+        # `-n -d explain` is dry-run with explanations; doesn't compile.
+        # Also back up build.ninja so we can diff vs the regenerated one
+        # after cpp_extension rewrites it.
+        NINJA_BUILD_DIR=$(find "$BUILD_DIR" -name 'build.ninja' -printf '%h\n' 2>/dev/null | head -1)
+        if [ -n "$NINJA_BUILD_DIR" ]; then
+          echo "ninja build dir: $NINJA_BUILD_DIR"
+          cp "$NINJA_BUILD_DIR/build.ninja" /tmp/build.ninja.before 2>/dev/null || true
+          echo "build.ninja head (40 lines):"
+          head -40 "$NINJA_BUILD_DIR/build.ninja" | sed 's/^/    /' || true
+          echo "ninja -n -d explain (why would it rebuild?):"
+          ( cd "$NINJA_BUILD_DIR" && ninja -n -d explain 2>&1 | head -40 ) | sed 's/^/    /' || true
+        fi
+
+    - name: Setup shard wrapper + compiler cache (Linux shard/link mode)
+      # Zero-shim sharding (CW hacker-panel design C): a wrapper first in the
+      # nvcc seat hash-partitions translation units across shard jobs -- no
+      # per-package code, works below setup.py and cmake alike. Handoff
+      # between shard jobs and the link job is a content-addressed compiler
+      # cache (ccache), not the build tree: the link job re-runs the full
+      # build and every compile is a cache hit, so there is no mtime dance,
+      # no ninja-state merging, and a partial restore self-heals (missing
+      # objects simply recompile, slowly but correctly).
+      if: inputs.platform == 'linux' && inputs.shard-count != '0'
+      shell: bash
+      run: |
+        sudo apt-get install -y -qq ccache >/dev/null
+        CUW=$RUNNER_TEMP/cuw
+        mkdir -p "$CUW" "$RUNNER_TEMP/ccache"
+        cc -x c -c /dev/null -o "$CUW/empty.o"
+        REAL_NVCC="$(command -v nvcc || echo /usr/local/cuda/bin/nvcc)"
+        cat > "$CUW/nvcc" <<'WRAP'
+        #!/bin/sh
+        # cuda-wheels shard wrapper: compile my partition, stub the rest.
+        src=""; out=""; dep=""; prev=""
+        for a in "$@"; do
+          case "$prev" in
+            -o) out="$a";;
+            --dependency-output) dep="$a";;
+          esac
+          case "$a" in
+            *.cu|*.cpp|*.cc|*.cxx|*.c) src="$a";;
+          esac
+          prev="$a"
+        done
+        if [ -n "$src" ] && [ -n "$out" ] && [ "${CUW_SHARD_COUNT:-0}" != "0" ]; then
+          h=$(printf %s "$src" | md5sum | cut -c1-8)
+          if [ $(( 0x$h % CUW_SHARD_COUNT )) -ne "${CUW_SHARD_INDEX0:-0}" ]; then
+            cp "$CUW_EMPTY_OBJ" "$out"
+            [ -n "$dep" ] && printf '%s:\n' "$out" > "$dep"
+            exit 0
+          fi
+        fi
+        if [ -n "$CUW_CACHE_TOOL" ]; then exec "$CUW_CACHE_TOOL" "$CUW_REAL_NVCC" "$@"; fi
+        exec "$CUW_REAL_NVCC" "$@"
+        WRAP
+        sed -i 's/^        //' "$CUW/nvcc"
+        chmod +x "$CUW/nvcc"
+        {
+          echo "CUW_REAL_NVCC=$REAL_NVCC"
+          echo "CUW_EMPTY_OBJ=$CUW/empty.o"
+          echo "CUW_CACHE_TOOL=$(command -v ccache)"
+          # torch's ninja writer honours PYTORCH_NVCC; cmake honours CUDACXX.
+          echo "PYTORCH_NVCC=$CUW/nvcc"
+          echo "CUDACXX=$CUW/nvcc"
+          # keep nvcc's dependency generation out of the cached command line
+          # (torch >= 2.12 knob; older torch ignores it and the wrapper still
+          # writes stub depfiles where asked)
+          echo "TORCH_EXTENSION_SKIP_NVCC_GEN_DEPENDENCIES=1"
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+          echo "CCACHE_COMPILERCHECK=content"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_NOHASHDIR=1"
+          echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros,locale"
+          echo "CCACHE_MAXSIZE=0"
+        } >> $GITHUB_ENV
+        if [ "${{ inputs.link-only }}" != "true" ]; then
+          echo "CUW_SHARD_COUNT=${{ inputs.shard-count }}" >> $GITHUB_ENV
+          echo "CUW_SHARD_INDEX0=$(( ${{ inputs.shard-index }} - 1 ))" >> $GITHUB_ENV
+        fi
+        ccache -z || true
+        echo "wrapper installed at $CUW/nvcc (real: $REAL_NVCC)"
+
+    - name: Restore shard caches (Linux link-only mode)
+      # Union every shard's ccache into one dir: the layout is content-
+      # addressed, so extraction over the same tree merges trivially and any
+      # collision is byte-identical by construction.
+      if: inputs.platform == 'linux' && inputs.link-only == 'true'
+      shell: bash
+      run: |
+        found=0
+        for tarball in /tmp/shard-artifacts/*/ccache.tar.gz; do
+          [ -f "$tarball" ] || continue
+          found=$((found+1))
+          echo "merging $tarball"
+          tar -xzf "$tarball" -C "$RUNNER_TEMP/ccache"
+        done
+        if [ "$found" = "0" ]; then
+          echo "::error::no shard ccache artifacts found -- did the shard jobs succeed?"
+          ls -laR /tmp/shard-artifacts || true
+          exit 1
+        fi
+        echo "merged $found shard cache(s):"
+        du -sh "$RUNNER_TEMP/ccache"
+
+    - name: Build wheel (Linux)
+      id: build_linux
+      if: inputs.platform == 'linux'
+      shell: bash
+      run: |
+        # Background resource monitor: prints a one-line snapshot every 120s
+        # for the lifetime of this step. GH Actions kills background subshells
+        # at step end, so no explicit teardown needed. Useful for diagnosing
+        # OOM kills (exit code 143 + runner shutdown) on heavy CUTLASS builds.
+        ( while true; do
+            mem=$(awk '/MemAvailable/{a=$2/1024/1024} /MemTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB free", a, t}' /proc/meminfo 2>/dev/null || echo "?")
+            swap=$(awk '/SwapFree/{f=$2/1024/1024} /SwapTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB swap free", f, t}' /proc/meminfo 2>/dev/null || echo "?")
+            load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo "?")
+            top3=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | head -3 | awk '{printf "%s(%.1fGB) ", $2, $1/1024/1024}' || echo "?")
+            echo "[resmon $(date -u +%H:%M:%SZ)] mem: $mem | swap: $swap | load: $load | top3: $top3"
+            sleep 120
+        done ) &
+        RESMON_PID=$!
+        trap "kill $RESMON_PID 2>/dev/null || true" EXIT
+        BUILD_DIR="source"
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="source/${{ inputs.build-subdir }}"
+        fi
+        cd $BUILD_DIR
+        export TORCH_CUDA_ARCH_LIST="${{ inputs.arch-list }}"
+        export CUDA_HOME=/usr/local/cuda-${{ inputs.cuda-version }}
+        # Force cmake's Ninja generator on Linux. Default is "Unix Makefiles"
+        # which lacks build.ninja + .ninja_log -- breaks sequential-checkpoint
+        # resume because there's no command_hash check (only mtime), and
+        # cmake reconfigure on resume bumps CMakeFiles/*.make rule files
+        # past the restored .o mtimes, triggering full rebuild. With Ninja
+        # we get the same chain-resume mechanism that works for
+        # cpp_extension packages (pytorch3d_sequential). NATTEN's setup.py
+        # only adds -G Ninja inside `if IS_WINDOWS:`; this env var fills
+        # the gap on Linux. cmake honors CMAKE_GENERATOR globally.
+        export CMAKE_GENERATOR=Ninja
+        # `0` means "unset" here, not "unlimited". [ -n "0" ] is TRUE, so the
+        # old guard exported MAX_JOBS=0, which torch passes to ninja as `-j 0`
+        # -- and ninja reads that as INT_MAX. On a 16GB hosted runner that OOMs
+        # under CUDA template instantiation, which is why several packages carry
+        # a hand-set `max_jobs: 2`. Leaving it unset lets torch size the job
+        # count from cpu_count(). build.yml already treats '0' as unset for the
+        # dispatch input; this makes the action agree.
+        if [ -n "${{ inputs.max-jobs }}" ] && [ "${{ inputs.max-jobs }}" != "0" ]; then
+          export MAX_JOBS=${{ inputs.max-jobs }}
+        fi
+        # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
+        export FORCE_CUDA=1
+        # Add CUDA stubs to library path for linking (libcuda.so)
+        export LIBRARY_PATH=/usr/local/cuda-${{ inputs.cuda-version }}/lib64/stubs:${LIBRARY_PATH:-}
+        # For cumm/spconv: set CUDA version for prebuilt mode
+        export CUMM_CUDA_VERSION="${{ inputs.cuda-version }}"
+        export CUMM_CUDA_ARCH_LIST="${{ inputs.arch-list }}"
+        # For cumm/spconv: disable JIT to force ahead-of-time CUDA compilation
+        export CUMM_DISABLE_JIT=1
+        export SPCONV_DISABLE_JIT=1
+        # Auto-tune NVCC_THREADS based on available RAM (each cicc ~4GB)
+        if [ -z "$NVCC_THREADS" ]; then
+          FREE_GB=$(free -g | awk '/Mem:/{print $7}')
+          if [ "$FREE_GB" -lt 20 ]; then export NVCC_THREADS=2
+          else export NVCC_THREADS=4; fi
+          echo "Auto-set NVCC_THREADS=$NVCC_THREADS (${FREE_GB}GB free RAM)"
+        fi
+        # Per-package nvcc flags (e.g. warning suppression)
+        if [ -n "${{ inputs.nvcc-flags }}" ]; then
+          export NVCC_APPEND_FLAGS="${{ inputs.nvcc-flags }}"
+        fi
+        # Shard env vars for cmake-style packages (e.g. NATTEN). The
+        # cpp_extension shard filter monkey-patches CUDAExtension at
+        # setup.py import time; cmake-style packages can't intercept that
+        # way and instead read these env vars at runtime to filter their
+        # autogen output (see patches/natten.py). Set only in compile-shard
+        # mode; link-only mode wants the full file set restored.
+        if [ "${{ inputs.shard-count }}" != "0" ] && [ "${{ inputs.link-only }}" != "true" ]; then
+          export CUDA_WHEELS_SHARD_INDEX="${{ inputs.shard-index }}"
+          export CUDA_WHEELS_SHARD_COUNT="${{ inputs.shard-count }}"
+          echo "[compile-shard] CUDA_WHEELS_SHARD_INDEX=$CUDA_WHEELS_SHARD_INDEX of $CUDA_WHEELS_SHARD_COUNT"
+        fi
+        # Link-only mode: pre-build artifacts already on disk (build/temp.*/),
+        # touch-stamped newer than .cu/.cpp sources. Disable ninja so torch's
+        # BuildExtension falls back to distutils' CCompiler, which honors
+        # output-presence + mtime and SKIPS .o files that are up-to-date.
+        # The earlier ninja-log merge approach didn't work — ninja's
+        # command_hash check rejected the merged log because setuptools'
+        # regenerated build.ninja produced subtly different command strings
+        # than what the shards recorded.
+        if [ "${{ inputs.link-only }}" = "true" ]; then
+          export USE_NINJA=0
+          echo "[link-only] USE_NINJA=0 (distutils mtime-based skip)"
+          # Diagnostic: show the merged .ninja_log + build/temp tree before
+          # the build runs, so if pip still rebuilds we can see what state
+          # it started from.
+          echo "[diag] build/temp tree before pip wheel:"
+          find build -type f -printf '  %P (%s bytes, mtime=%T@)\n' 2>/dev/null | head -30 || true
+          echo "[diag] (.ninja_log contents -- ignored when USE_NINJA=0)"
+          find build -name '.ninja_log' -exec head -10 {} +  || true
+          echo "[diag] earliest source mtime:"
+          find . -name '*.cu' -o -name '*.cpp' 2>/dev/null | head -1 | xargs -I{} stat -c '%y %n' {} || true
+          echo "[diag] sample .o mtime (should be newer than source mtime):"
+          find build -name '*.o' | head -1 | xargs -I{} stat -c '%y %n' {} || true
+        fi
+        # Sequential-checkpoint mode: when sequential-checkpoint > 0, wrap the
+        # compile in `timeout`. Exit codes from coreutils' `timeout`:
+        #   0   -- command completed within the time limit (success)
+        #   124 -- command was killed because the time limit was reached
+        #   N>0 -- command's own exit code (real failure, propagated)
+        # We treat 124 as "timeout fired, save checkpoint for next link" and
+        # any other non-zero as a real build failure (chain breaks).
+        # Output `done`: 'true' = build complete (wheel produced, chain may
+        # terminate); 'false' = need next chain link to resume.
+        SECS="${{ inputs.sequential-checkpoint }}"
+        if [ -n "$SECS" ] && [ "$SECS" != "0" ]; then
+          echo "[sequential-checkpoint] wrapping compile in 'timeout $SECS python -m pip wheel ...'"
+          set +e
+          timeout "$SECS" python -m pip wheel . --no-build-isolation --no-deps -v -w dist
+          rc=$?
+          set -e
+          echo "[sequential-checkpoint] wrapped command exit code: $rc"
+          if [ "$rc" = "0" ]; then
+            echo "[sequential-checkpoint] build COMPLETED in time -- done=true"
+            echo "done=true" >> $GITHUB_OUTPUT
+          elif [ "$rc" = "124" ]; then
+            echo "[sequential-checkpoint] TIMEOUT fired (rc=124) -- saving checkpoint for next link; done=false"
+            echo "done=false" >> $GITHUB_OUTPUT
+          else
+            echo "::error::build failed with rc=$rc (not a timeout). Chain breaks."
+            echo "done=true" >> $GITHUB_OUTPUT
+            exit $rc
+          fi
+        else
+          python -m pip wheel . --no-build-isolation --no-deps -v -w dist
+          echo "done=true" >> $GITHUB_OUTPUT
+        fi
+
+
+    - name: Repair wheel (Linux)
+      # Skip when we're in compile-shard mode (we threw away the partial wheel
+      # and uploaded objects instead). Also skip in sequential-checkpoint
+      # mid-chain mode (the timeout fired, done='false', no wheel produced
+      # this iteration). Runs in full or link-only mode and in the FINAL
+      # sequential-checkpoint chain link where a wheel was actually built.
+      if: inputs.platform == 'linux' && (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      shell: bash
+      run: |
+        python -m pip install auditwheel patchelf
+        # Hosted x86 runners are ubuntu-22.04 (glibc 2.35); ARM runners are
+        # ubuntu-24.04 (glibc 2.39). The plat is the runner's honest floor --
+        # auditwheel verifies the binary against it either way.
+        if [ "$(uname -m)" = "aarch64" ]; then
+          AUDITWHEEL_PLAT="manylinux_2_39_aarch64"
+        else
+          AUDITWHEEL_PLAT="manylinux_2_35_x86_64"
+        fi
+        BUILD_DIR="source"
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="source/${{ inputs.build-subdir }}"
+        fi
+        # Add CUDA toolkit libs so auditwheel can find and bundle them (e.g. libnvrtc-builtins.so)
+        export LD_LIBRARY_PATH=/usr/local/cuda-${{ inputs.cuda-version }}/lib64:${LD_LIBRARY_PATH:-}
+        cd $BUILD_DIR/dist
+        for whl in *.whl; do
+          # Skip pure Python wheels
+          if [[ "$whl" == *"-py3-none-any.whl" ]]; then
+            continue
+          fi
+          # Bundle external shared libs into the wheel. See CW-ADR-0009.
+          #
+          # auditwheel fnmatches these against the SONAME, not the filename.
+          # NVIDIA versions its libraries (libcudart.so.12); PyTorch does not
+          # (libtorch.so) -- which is why the torch patterns below work bare and
+          # the CUDA one needs a glob.
+          #
+          # An excluded library gets NO rpath, so it must already be resident
+          # when the extension is dlopen'd. Only exclude libraries torch loads
+          # eagerly at `import torch`. Do NOT add excludes "for safety": a
+          # missing exclude costs megabytes, a wrong one costs a broken import.
+          # The assertion below catches anything unexpected instead.
+          if auditwheel repair "$whl" \
+            --plat "$AUDITWHEEL_PLAT" \
+            -w repaired/ \
+            --exclude libcuda.so \
+            --exclude libcuda.so.1 \
+            --exclude 'libcudart.so*' \
+            --exclude libtorch.so \
+            --exclude libtorch_cpu.so \
+            --exclude libtorch_cuda.so \
+            --exclude libtorch_cuda_linalg.so \
+            --exclude libtorch_python.so \
+            --exclude libcaffe2_nvrtc.so \
+            --exclude libc10.so \
+            --exclude libc10_cuda.so; then
+            rm "$whl"
+          else
+            echo "::error::auditwheel repair failed for $whl"
+            exit 1
+          fi
+        done
+
+        # Assert nothing unexpected was vendored (CW-ADR-0009).
+        # libnvrtc/libnvrtc-builtins are deliberate: cumm DT_NEEDEDs them for
+        # runtime JIT, and torch only preloads NVRTC when torch itself came from
+        # the pip nvidia-* wheels. Everything else is a leak -- most likely a
+        # package that started linking a CUDA math library, where the transitive
+        # closure runs to hundreds of MB.
+        for whl in repaired/*.whl; do
+          [ -e "$whl" ] || continue
+          bundled=$(unzip -Z1 "$whl" 2>/dev/null \
+            | grep -oE '[^/]+\.libs/lib[^/]+\.so[^/]*$' \
+            | sed -E 's#.*/##; s/-[0-9a-f]{8}\.so.*//; s/\.so.*//' \
+            | sort -u || true)
+          unexpected=$(echo "$bundled" \
+            | grep -vE '^(libnvrtc|libnvrtc-builtins)$' | grep -v '^$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::$whl vendored unexpected libraries:"
+            echo "$unexpected" | sed 's/^/  /'
+            echo "See CW-ADR-0009. If this library is genuinely required at"
+            echo "runtime, record it there; if torch loads it eagerly, add an"
+            echo "exclude. Do not silence this."
+            exit 1
+          fi
+        done
+        if [ -d repaired ] && ls repaired/*.whl 1>/dev/null 2>&1; then
+          mv repaired/*.whl .
+          rm -rf repaired/
+        fi
+
+    - name: Allow unresolved symbols at shard stage (Windows compile-shard mode)
+      # A shard's .pyd link only has this shard's objects; Linux ld -shared
+      # tolerates the missing symbols, MSVC's link.exe refuses. link.exe
+      # reads extra options from the LINK env var regardless of caller, so
+      # /FORCE:UNRESOLVED here covers every package generically -- the
+      # shard's .pyd is garbage by design and is discarded; only the .obj
+      # tarball ships. NOT set in link-only mode, where all objects are
+      # present and a real unresolved symbol must fail the build.
+      if: inputs.platform == 'windows' && inputs.shard-count != '0' && inputs.link-only != 'true'
+      shell: bash
+      run: echo "LINK=/FORCE:UNRESOLVED" >> $GITHUB_ENV
+
+    - name: Setup MSVC (Windows)
+      if: inputs.platform == 'windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Build wheel (Windows)
+      id: build_windows
+      if: inputs.platform == 'windows'
+      shell: powershell
+      run: |
+        # Ensure ninja is in PATH (pip Scripts directory)
+        $pythonPath = (python -c "import sys; print(sys.prefix)")
+        $scriptsPath = "$pythonPath\Scripts"
+        $env:PATH = "$scriptsPath;$env:PATH"
+
+        # CUDA 13.2's bundled CCCL headers hard-#error under MSVC's traditional
+        # preprocessor; they require the standards-conforming one. cl.exe reads
+        # extra flags from the CL env var -- including when nvcc invokes it --
+        # and torch's cpp_extension does not pass the flag itself. Scoped to
+        # 13.2+ so working 12.x/13.0 builds are untouched.
+        $cudaParts = "${{ inputs.cuda-version }}".Split('.')
+        if ([int]$cudaParts[0] -gt 13 -or ([int]$cudaParts[0] -eq 13 -and [int]$cudaParts[1] -ge 2)) {
+          $env:CL = "/Zc:preprocessor $env:CL".Trim()
+          Write-Host "CUDA >= 13.2: CL=$env:CL (conforming preprocessor for CCCL)"
+        }
+
+        # Verify ninja is available
+        Write-Host "Checking ninja..."
+        ninja --version
+
+        $buildDir = "source"
+        if ("${{ inputs.build-subdir }}" -ne "") {
+          $buildDir = "source/${{ inputs.build-subdir }}"
+        }
+        cd $buildDir
+        $env:TORCH_CUDA_ARCH_LIST = "${{ inputs.arch-list }}"
+        if ("${{ inputs.max-jobs }}" -ne "") {
+          $env:MAX_JOBS = "${{ inputs.max-jobs }}"
+        }
+        $env:DISTUTILS_USE_SDK = "1"
+        # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
+        $env:FORCE_CUDA = "1"
+        # For cumm/spconv: set CUDA version for prebuilt mode
+        $env:CUMM_CUDA_VERSION = "${{ inputs.cuda-version }}"
+        $env:CUMM_CUDA_ARCH_LIST = "${{ inputs.arch-list }}"
+        # For cumm/spconv: disable JIT to force ahead-of-time CUDA compilation
+        $env:CUMM_DISABLE_JIT = "1"
+        $env:SPCONV_DISABLE_JIT = "1"
+        # Auto-tune NVCC_THREADS based on available RAM (each cicc ~4GB)
+        if (-not $env:NVCC_THREADS) {
+          $freeGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB)
+          if ($freeGB -lt 20) { $env:NVCC_THREADS = "2" }
+          else { $env:NVCC_THREADS = "4" }
+          Write-Host "Auto-set NVCC_THREADS=$($env:NVCC_THREADS) (${freeGB}GB free RAM)"
+        }
+        # Per-package nvcc flags (e.g. warning suppression)
+        if ("${{ inputs.nvcc-flags }}" -ne "") {
+          $env:NVCC_APPEND_FLAGS = "${{ inputs.nvcc-flags }}"
+        }
+        # Shard env vars for cmake-style packages (e.g. NATTEN). See the
+        # equivalent block in the Linux build step for rationale -- the
+        # cpp_extension shard filter monkey-patches CUDAExtension at
+        # setup.py import time, but cmake-style packages can't intercept
+        # that way and read these env vars at runtime to filter their
+        # autogen output (see patches/natten.py).
+        if ("${{ inputs.shard-count }}" -ne "0" -and "${{ inputs.link-only }}" -ne "true") {
+          $env:CUDA_WHEELS_SHARD_INDEX = "${{ inputs.shard-index }}"
+          $env:CUDA_WHEELS_SHARD_COUNT = "${{ inputs.shard-count }}"
+          Write-Host "[compile-shard] CUDA_WHEELS_SHARD_INDEX=$($env:CUDA_WHEELS_SHARD_INDEX) of $($env:CUDA_WHEELS_SHARD_COUNT)"
+        }
+        # Link-only mode: same USE_NINJA=0 fallback that the Linux step uses
+        # (torch 2.8's BuildExtension does respect the kwargs we patched in,
+        # but defensively set this too in case some code path checks env).
+        if ("${{ inputs.link-only }}" -eq "true") {
+          $env:USE_NINJA = "0"
+          Write-Host "[link-only] USE_NINJA=0"
+        }
+        # Sequential-checkpoint mode (Windows): wrap pip wheel in `timeout`
+        # via Git Bash (PowerShell doesn't ship `timeout` as a process-killer
+        # -- its `timeout` is just a pause). Same exit-code semantics as
+        # Linux: rc=0 success, rc=124 timeout fired (save checkpoint), other
+        # = real failure.
+        $secs = "${{ inputs.sequential-checkpoint }}"
+        if ($secs -ne "" -and $secs -ne "0") {
+          Write-Host "[sequential-checkpoint] wrapping compile in 'timeout $secs python -m pip wheel ...' (via Git Bash)"
+          $bash = "C:\Program Files\Git\bin\bash.exe"
+          if (-not (Test-Path $bash)) { $bash = "bash" }
+          # bash inherits Windows env vars (TORCH_CUDA_ARCH_LIST, MAX_JOBS,
+          # NVCC_THREADS, NVCC_APPEND_FLAGS, CUMM_*, FORCE_CUDA, etc.) set
+          # above, so the compile sees the same environment as the
+          # PowerShell-direct path. cd via bash to handle path translation.
+          # GH Actions sets $PSNativeCommandUseErrorActionPreference=$true,
+          # which would halt this script when the wrapped bash returns
+          # 124 (timeout). Disable for this block so we can inspect rc
+          # and branch on done=true|false.
+          $PSNativeCommandUseErrorActionPreference = $false
+          & $bash -lc "timeout $secs python -m pip wheel . --no-build-isolation --no-deps -v -w dist"
+          $rc = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          Write-Host "[sequential-checkpoint] wrapped command exit code: $rc"
+          if ($rc -eq 0) {
+            Write-Host "[sequential-checkpoint] build COMPLETED in time -- done=true"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "done=true"
+            # Explicit exit 0 -- otherwise GH Actions reads $LASTEXITCODE
+            # (still set from the bash call, possibly non-zero) and marks
+            # the step failed even though our handler succeeded.
+            exit 0
+          } elseif ($rc -eq 124) {
+            Write-Host "[sequential-checkpoint] TIMEOUT fired (rc=124) -- saving checkpoint for next link; done=false"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "done=false"
+            exit 0
+          } else {
+            Write-Host "::error::build failed with rc=$rc (not a timeout). Chain breaks."
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "done=true"
+            exit $rc
+          }
+        } else {
+          python -m pip wheel . --no-build-isolation --no-deps -v -w dist
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "done=true"
+        }
+    - name: Assert cache hit rate (Linux link-only mode)
+      # The failure mode of compiler caches is cliff-edged: one bad flag and
+      # the hit rate silently drops to 0, the link job recompiles everything
+      # and dies at the cap looking "slow" rather than "broken". Make it
+      # loud instead.
+      if: inputs.platform == 'linux' && inputs.link-only == 'true'
+      shell: bash
+      run: |
+        ccache -s || true
+        STATS=$(ccache --print-stats 2>/dev/null || true)
+        HITS=$(echo "$STATS" | awk -F'\t' '$1 ~ /^(direct_cache_hit|preprocessed_cache_hit)$/ {n+=$2} END{print n+0}')
+        MISSES=$(echo "$STATS" | awk -F'\t' '$1 == "cache_miss" {n+=$2} END{print n+0}')
+        TOTAL=$((HITS+MISSES))
+        echo "cache: $HITS hits / $MISSES misses"
+        if [ "$TOTAL" -gt 0 ] && [ $((HITS * 100 / TOTAL)) -lt 90 ]; then
+          echo "::error::link-job cache hit rate $((HITS * 100 / TOTAL))% (< 90%) -- shard caches did not transfer (flag mismatch, path mismatch, or nondeterministic codegen). The build 'worked' only by recompiling, which defeats sharding."
+          exit 1
+        fi
+
+    - name: Compute build outcome (sequential mode)
+      # Either build_linux or build_windows runs (mutually exclusive on
+      # platform). Read whichever's `done` output exists and re-emit as a
+      # single output so downstream gates don't have to branch on platform.
+      id: build_outcome
+      shell: bash
+      run: |
+        LINUX="${{ steps.build_linux.outputs.done }}"
+        WINDOWS="${{ steps.build_windows.outputs.done }}"
+        if [ -n "$LINUX" ]; then
+          DONE="$LINUX"
+        elif [ -n "$WINDOWS" ]; then
+          DONE="$WINDOWS"
+        else
+          DONE=""
+        fi
+        echo "done=$DONE" >> $GITHUB_OUTPUT
+        echo "build_outcome: done='$DONE' (linux='$LINUX', windows='$WINDOWS')"
+
+    - name: Save checkpoint tarball (sequential mode, save)
+      # Runs when the compile hit the timeout. Tars the ENTIRE source/ tree
+      # (sources + patches + build/ with .ninja_log + .o files) for the next
+      # chain link's job to extract. The whole-source approach preserves all
+      # mtimes (vs an earlier build/-only design that re-cloned source and
+      # broke ninja's restat check). tar preserves mtimes by default. Cross-
+      # platform: tar/find via Git Bash on Windows.
+      if: steps.build_outcome.outputs.done == 'false'
+      shell: bash
+      run: |
+        if [ ! -d source ]; then
+          echo "::error::no source/ directory to checkpoint -- earlier steps may have failed"
+          ls -la
+          exit 1
+        fi
+        BUILD_DIR="source/build"
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="source/${{ inputs.build-subdir }}/build"
+        fi
+        OBJ_COUNT=$(find "$BUILD_DIR" -name '*.o' 2>/dev/null | wc -l)
+        TOTAL_FILES=$(find source -type f 2>/dev/null | wc -l)
+        echo "Checkpoint state: $OBJ_COUNT .o files in $BUILD_DIR, $TOTAL_FILES total files in source/"
+        echo "Newest .o files (top 10 by mtime):"
+        find "$BUILD_DIR" -name '*.o' -printf '  %T@ %P (%s bytes)\n' 2>/dev/null | sort -rn | head -10 || true
+        # Diagnostic: how did build.ninja change vs the version we restored?
+        # cpp_extension regenerates build.ninja in-place; if its content
+        # differs (even subtly), command_hash mismatches and ninja rebuilds
+        # everything despite restored .o files.
+        NINJA_BUILD_DIR=$(find "$BUILD_DIR" -name 'build.ninja' -printf '%h\n' 2>/dev/null | head -1)
+        if [ -n "$NINJA_BUILD_DIR" ] && [ -f /tmp/build.ninja.before ]; then
+          echo "build.ninja diff (restored vs regenerated by cpp_extension):"
+          diff /tmp/build.ninja.before "$NINJA_BUILD_DIR/build.ninja" | head -60 | sed 's/^/    /' || true
+        fi
+        mkdir -p $GITHUB_WORKSPACE/checkpoint-out
+        # CRITICAL: use --format=posix (PAX). The default ustar format stores
+        # mtimes at second precision, but ninja's .ninja_log records mtimes
+        # at nanosecond precision (Linux ext4 native). After a default tar
+        # extract, .o file mtimes are truncated to whole seconds, ninja's
+        # restat compares disk_mtime (e.g. 1779103894.000000000) against
+        # log_mtime (1779103894.789712106), sees them differ, and rebuilds
+        # every restored target. PAX preserves nanoseconds via extended
+        # headers -- GNU tar reads them transparently on extract.
+        # --force-local: on Windows Git Bash, $GITHUB_WORKSPACE is a path like
+        # "D:\a\cuda-wheels\cuda-wheels". Without this flag, tar interprets
+        # "D:" as a remote SSH host ("rsh: D: resolve failed"). --force-local
+        # tells tar to treat the colon literally. No-op on Linux.
+        tar --force-local --format=posix -czf "$GITHUB_WORKSPACE/checkpoint-out/source.tar.gz" source/
+        ls -lh $GITHUB_WORKSPACE/checkpoint-out/
+
+    - name: Upload checkpoint artifact (sequential mode, save)
+      if: steps.build_outcome.outputs.done == 'false'
+      uses: actions/upload-artifact@v4
+      with:
+        # Per-iter artifact name. The next chain-link job (iter N+1) reads
+        # `checkpoint-<...>-iter-N` produced by THIS job (iter N). Same-run
+        # download in v4 needs no run-id/github-token.
+        name: checkpoint-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-iter-${{ inputs.checkpoint-iter }}
+        path: checkpoint-out/source.tar.gz
+        # Short retention -- checkpoint is consumed within minutes by the
+        # next job in the same run, then never read again.
+        retention-days: 1
+
+    - name: Package shard cache (Linux compile-shard mode)
+      # The compiler cache IS the shard's product: content-addressed, so the
+      # link job unions all shards' caches and replays the full build as
+      # cache hits. No object paths, no mtimes.
+      if: inputs.platform == 'linux' && inputs.shard-count != '0' && inputs.link-only != 'true'
+      shell: bash
+      run: |
+        ccache -s || true
+        FILES=$(find "$RUNNER_TEMP/ccache" -type f | wc -l)
+        if [ "$FILES" = "0" ]; then
+          echo "::error::shard produced an empty compiler cache -- the wrapper was never invoked (build system bypassed PYTORCH_NVCC/CUDACXX?)"
+          exit 1
+        fi
+        mkdir -p $GITHUB_WORKSPACE/shard-out
+        tar -czf $GITHUB_WORKSPACE/shard-out/ccache.tar.gz -C "$RUNNER_TEMP/ccache" .
+        ls -lh $GITHUB_WORKSPACE/shard-out/
+
+    - name: Package shard objects (Windows compile-shard mode)
+      if: inputs.platform == 'windows' && inputs.shard-count != '0' && inputs.link-only != 'true'
+      shell: bash
+      run: |
+        cd source
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          cd "${{ inputs.build-subdir }}"
+        fi
+        if [ ! -d build ]; then
+          echo "::error::no build/ directory after compile -- did setup.py build_ext run?"
+          ls -la
+          exit 1
+        fi
+        echo "Object tree this shard produced (first 50):"
+        # `|| true` to swallow SIGPIPE under pipefail if find > head -50.
+        find build \( -name '*.o' -o -name '*.obj' \) -printf '  %P (%s bytes)\n' 2>/dev/null | head -50 || true
+        OBJ_COUNT=$(find build \( -name '*.o' -o -name '*.obj' \) | wc -l)
+        echo "Total objects: $OBJ_COUNT"
+        if [ "$OBJ_COUNT" = "0" ]; then
+          echo "::error::no object files produced by this shard -- shard filter may have dropped everything, or compile failed silently"
+          exit 1
+        fi
+        # Tar the entire build/ tree. Captures both cpp_extension layout
+        # (build/temp.<plat>-cpython-<py>/.../*.o) and cmake-style layout
+        # (build/natten_cmake/CMakeFiles/natten.dir/.../*.o for NATTEN).
+        # The link job extracts at the same relative path and the build
+        # system's mtime check finds the .o files in place.
+        mkdir -p $GITHUB_WORKSPACE/shard-out
+        tar -czf $GITHUB_WORKSPACE/shard-out/objects.tar.gz build/
+        ls -lh $GITHUB_WORKSPACE/shard-out/
+
+    - name: Upload shard artifact (compile-shard mode)
+      if: inputs.shard-count != '0' && inputs.link-only != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        # Naming key must include every dimension that produces different .o
+        # output (package, platform, python, cuda, torch). The link job
+        # downloads with a `*-of-<shard_count>` glob to gather all shards.
+        name: shard-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-${{ inputs.shard-index }}-of-${{ inputs.shard-count }}
+        path: shard-out/*.tar.gz
+        retention-days: 1
+
+    - name: Rename wheel with CUDA+PyTorch suffix (Linux)
+      # Skip in compile-shard mode -- no wheel was kept. Also skip in
+      # sequential-checkpoint mid-chain mode -- compile timed out, no wheel.
+      if: inputs.platform == 'linux' && (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      id: rename-linux
+      shell: bash
+      run: |
+        BUILD_DIR="source"
+        if [ -n "${{ inputs.build-subdir }}" ]; then
+          BUILD_DIR="source/${{ inputs.build-subdir }}"
+        fi
+        cd $BUILD_DIR/dist
+        CUDA_SHORT="${{ inputs.cuda-short }}"
+        TORCH_MM=$(echo "${{ inputs.pytorch-version }}" | cut -d. -f1,2)
+        for f in *.whl; do
+          # Skip pure Python wheels (py3-none-any) - they don't have CUDA code
+          if [[ "$f" == *"-py3-none-any.whl" ]]; then
+            echo "WARNING: Built pure Python wheel $f - CUDA compilation may have failed"
+            newname="$f"
+          else
+            newname=$(echo "$f" | sed "s/-cp/+cu${CUDA_SHORT}torch${TORCH_MM}-cp/")
+            mv "$f" "$newname"
+          fi
+          echo "wheel-path=$BUILD_DIR/dist/$newname" >> $GITHUB_OUTPUT
+        done
+        mkdir -p $GITHUB_WORKSPACE/dist
+        cp *.whl $GITHUB_WORKSPACE/dist/
+
+    - name: Rename wheel with CUDA+PyTorch suffix (Windows)
+      # Skip in compile-shard mode -- no wheel was kept. Also skip in
+      # sequential-checkpoint mid-chain mode -- compile timed out, no wheel.
+      if: inputs.platform == 'windows' && (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      id: rename-windows
+      shell: powershell
+      run: |
+        $buildDir = "source"
+        if ("${{ inputs.build-subdir }}" -ne "") {
+          $buildDir = "source/${{ inputs.build-subdir }}"
+        }
+        cd "$buildDir\dist"
+        $cudaShort = "${{ inputs.cuda-short }}"
+        $torchMM = "${{ inputs.pytorch-version }}".Split('.')[0..1] -join '.'
+        Get-ChildItem *.whl | ForEach-Object {
+          # Skip pure Python wheels (py3-none-any) - they don't have CUDA code
+          if ($_.Name -like "*-py3-none-any.whl") {
+            Write-Host "WARNING: Built pure Python wheel $($_.Name) - CUDA compilation may have failed"
+            $newName = $_.Name
+          } else {
+            # Only replace first occurrence of -cp (use regex with explicit pattern)
+            $newName = $_.Name -replace '^([^-]+-[^-]+)-cp', "`$1+cu${cudaShort}torch${torchMM}-cp"
+            Rename-Item $_.FullName $newName
+          }
+          echo "wheel-path=$buildDir/dist/$newName" >> $env:GITHUB_OUTPUT
+        }
+        New-Item -ItemType Directory -Force -Path $env:GITHUB_WORKSPACE\dist | Out-Null
+        Copy-Item *.whl $env:GITHUB_WORKSPACE\dist\
+
+    - name: Fix wheel METADATA version
+      # Skip in compile-shard mode -- no wheel exists yet. Also skip in
+      # sequential-checkpoint mid-chain mode -- compile timed out, no wheel.
+      if: (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      shell: bash
+      run: |
+        # The wheel filename includes the local version (e.g., +cu130torch29)
+        # but the internal METADATA still has the base version from pyproject.toml.
+        # Fix the METADATA to match the filename so pip/uv see consistent versions.
+        python $GITHUB_WORKSPACE/scripts/patch_wheel_version.py $GITHUB_WORKSPACE/dist
+
+    - name: Set wheel-path output
+      # Empty in compile-shard mode and in sequential-checkpoint mid-chain
+      # mode; populated otherwise.
+      if: (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      id: rename
+      shell: bash
+      run: |
+        if [ "${{ inputs.platform }}" == "linux" ]; then
+          echo "wheel-path=${{ steps.rename-linux.outputs.wheel-path }}" >> $GITHUB_OUTPUT
+        else
+          echo "wheel-path=${{ steps.rename-windows.outputs.wheel-path }}" >> $GITHUB_OUTPUT
+        fi

@@ -1,0 +1,6 @@
+name: drtk
+source_repo: facebookresearch/DRTK
+source_tag: c5a3e523435b4daa37572c0653d6686531c787b2
+version: 0.1.0
+patch_script: patches/drtk.py
+extra_deps: numpy

@@ -1,0 +1,5 @@
+name: pytorch3d
+source_repo: facebookresearch/pytorch3d
+source_tag: v0.7.9
+patch_script: patches/pytorch3d.py
+clone_recursive: true

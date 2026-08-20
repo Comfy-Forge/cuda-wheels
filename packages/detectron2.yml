@@ -1,0 +1,4 @@
+name: detectron2
+source_repo: facebookresearch/detectron2
+source_tag: v0.6
+version: '0.6'
