@@ -14,7 +14,12 @@ supported_cudas: ["12.4", "12.6", "12.8", "12.9", "13.0", "13.2"]
 # Python axis policy (CW-ADR-0005): stable, released CPython only.
 python_min: "3.10"
 python_max: "3.14"
-platforms: ["linux", "windows"]
+# linux = x86_64 (manylinux_2_28); linux_aarch64 = ARM (SBSA/Jetson,
+# manylinux_2_28_aarch64). ARM was per-package opt-in during the pilot
+# (CW-ADR-0015); promoted to a default platform after 112/112 green.
+# cu124 still never builds on ARM (absent from arch_policy_aarch64 --
+# NVIDIA's sbsa repo starts at 12.5).
+platforms: ["linux", "windows", "linux_aarch64"]
 
 # Default per-package settings inherited unless overridden.
 defaults:

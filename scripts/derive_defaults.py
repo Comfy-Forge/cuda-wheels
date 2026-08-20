@@ -91,7 +91,7 @@ def main() -> None:
             "python_versions": pys,
         })
         for py in pys:
-            for plat in platforms + ["linux_aarch64"]:
+            for plat in dict.fromkeys(platforms + ["linux_aarch64"]):
                 key = plat if plat in ("windows", "linux_aarch64") else "linux"
                 if (py, key) not in info["cells"]:
                     phantoms.append([cuda.replace(".", ""), minor,
