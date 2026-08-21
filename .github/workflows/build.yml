@@ -496,11 +496,11 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────────────
-  # Sequential-checkpoint chain (6 links x 3h checkpoint = 18h capacity; Each `uses:` call invokes the
-  # reusable workflow `_chain_link.yml`, which contains the full per-link
-  # completed chains skip the remaining links). Each `uses:` call invokes
-  # the reusable workflow, which contains the full per-link logic. Links
-  # are wired with `needs:` so they run sequentially in the
+  # Sequential-checkpoint chain: 6 links per platform x 3h checkpoint =
+  # 18h total capacity; a completed chain skips its remaining links at
+  # zero cost. Each `uses:` call invokes the reusable workflow
+  # (_chain_link.yml / _chain_link_windows.yml), which contains the full
+  # per-link logic. Links are wired with `needs:` so they run sequentially in the
   # SAME workflow run. The `if:` clause gates each link on the previous
   # one's `done` output: as soon as a link completes the build (done=true),
   # every subsequent link is skipped. Setting `result == 'success' &&
