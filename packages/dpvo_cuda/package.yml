@@ -2,6 +2,9 @@ name: dpvo_cuda
 links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: princeton-vl/DPVO
 source_tag: 859bbbfdac6c6185f345003b3c473901fcd13ace
-version: 1.0.0
+# No version pin: upstream's setup.py declares none (setuptools default
+# 0.0.0) and the legacy farm shipped 0.0.0 too. A pinned 1.0.0 was
+# invented and the gate blocked the mismatch -- and it would sort ABOVE
+# any real upstream version forever.
 patch_script: packages/dpvo_cuda/patches/dpvo_cuda.py
 extra_deps: numpy

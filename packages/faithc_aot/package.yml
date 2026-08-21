@@ -4,4 +4,7 @@ source_repo: PozzettiAndrea/faithc-aot
 source_tag: v1.5.0-aot          # pinned tag on the fork (master @ 193bb9f)
 clone_recursive: false
 verify:
-  expect_device_error: true  # __init__ probes the GPU at import; device errors expected on CI
+  # __init__ asserts CUDA availability at import ("AssertionError: CUDA is
+  # not available.") -- not a torch device error, so the default patterns
+  # miss it; the string form appends it as a forgivable pattern.
+  expect_device_error: "CUDA is not available"
