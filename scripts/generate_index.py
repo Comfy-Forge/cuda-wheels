@@ -203,8 +203,9 @@ def main():
         # Root-level package dirs; skip the non-package families (combo
         # channels cuXXX/, matrix/, dashboard/).
         previous = {d.name for d in prev_root.iterdir() if d.is_dir()
-                    and d.name not in ("matrix", "dashboard")
-                    and not d.name.startswith("cu")}
+                    and d.name not in ("matrix", "dashboard", "v2")
+                    and not d.name.startswith("cu")
+                    and not d.name.startswith(".")}
     else:
         previous = set()
         print(f"WARNING: no previous index at {prev_root} -- the shorter-index "

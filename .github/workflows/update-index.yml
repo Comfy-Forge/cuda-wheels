@@ -1,9 +1,10 @@
 name: Update Index
 
+# Deploys ONLY on manual dispatch -- pushing to main must never touch the
+# live index. Run it deliberately once the builds you care about landed
+# (or dispatch build.yml with update_index=true).
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 concurrency:
   group: gh-pages-deploy
