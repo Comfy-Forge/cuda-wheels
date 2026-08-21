@@ -32,7 +32,7 @@ runs:
       uses: actions/cache/restore@v4
       with:
         path: .cuda-cache/cuda-${{ inputs.cuda-version }}
-        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v4
+        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v5
 
     - name: Install CUDA toolkit (Linux)
       if: inputs.platform == 'linux' && steps.cuda-cache-linux.outputs.cache-hit != 'true'
@@ -51,6 +51,7 @@ runs:
             cuda-nvcc-${CUDA_APT} \
             cuda-cuobjdump-${CUDA_APT} \
             cuda-cudart-devel-${CUDA_APT} \
+            cuda-driver-devel-${CUDA_APT} \
             cuda-nvrtc-devel-${CUDA_APT} \
             libcublas-devel-${CUDA_APT} \
             libcusparse-devel-${CUDA_APT} \
@@ -120,7 +121,7 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: .cuda-cache/cuda-${{ inputs.cuda-version }}
-        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v4
+        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v5
 
     - name: Restore CUDA from cache (Linux)
       if: inputs.platform == 'linux' && steps.cuda-cache-linux.outputs.cache-hit == 'true'
