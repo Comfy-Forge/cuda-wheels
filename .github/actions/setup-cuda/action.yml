@@ -75,7 +75,10 @@ runs:
           # AlmaLinux 8 packages older toolchains as gcc-toolset-N; front
           # the right one for pre-12.8 lines.
           CUDA_MM="${{ inputs.cuda-version }}"
-          if [ "$(printf '%s\n' "$CUDA_MM" "12.8" | sort -V | head -1)" != "12.8" ]; then
+          # <= 12.8, not < 12.8: torch 2.11's cpp_extension enforces g++ < 14
+          # for CUDA 12.8 (the image ships g++ 14). Toolset-13 is fine for
+          # every 12.x line; 12.9+ accepts g++ 14.
+          if [ "$(printf '%s\n' "$CUDA_MM" "12.9" | sort -V | head -1)" != "12.9" ]; then
             dnf install -y -q gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ >/dev/null
             TS=/opt/rh/gcc-toolset-13/root/usr/bin
             echo "$TS" >> $GITHUB_PATH
