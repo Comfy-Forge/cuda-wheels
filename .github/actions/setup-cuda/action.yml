@@ -271,6 +271,35 @@ runs:
         }
         Write-Host "CUDA installed successfully"
 
+    - name: Install extra CUDA components on cache-hit (Windows)
+      # Mirror of the Linux extras-on-cache-hit step: the Windows cache key
+      # ignores extra-components, so a cache populated by an extras-free job
+      # restores a toolkit without them and the installer step is skipped
+      # (nunchaku's nvtx again, Windows edition). Re-run the network
+      # installer for just the missing components. URL map duplicated from
+      # the install step above -- same file, keep them in sync.
+      if: inputs.platform == 'windows' && steps.cuda-cache-windows.outputs.cache-hit == 'true' && inputs.extra-components != ''
+      shell: powershell
+      run: |
+        $cudaVersion = "${{ inputs.cuda-version }}"
+        $networkUrls = @{
+          "12.4" = "https://developer.download.nvidia.com/compute/cuda/12.4.1/network_installers/cuda_12.4.1_windows_network.exe"
+          "12.6" = "https://developer.download.nvidia.com/compute/cuda/12.6.3/network_installers/cuda_12.6.3_windows_network.exe"
+          "12.8" = "https://developer.download.nvidia.com/compute/cuda/12.8.1/network_installers/cuda_12.8.1_windows_network.exe"
+          "12.9" = "https://developer.download.nvidia.com/compute/cuda/12.9.0/network_installers/cuda_12.9.0_windows_network.exe"
+          "13.0" = "https://developer.download.nvidia.com/compute/cuda/13.0.1/network_installers/cuda_13.0.1_windows_network.exe"
+          "13.2" = "https://developer.download.nvidia.com/compute/cuda/13.2.2/network_installers/cuda_13.2.2_windows_network.exe"
+        }
+        Invoke-WebRequest -Uri $networkUrls[$cudaVersion] -OutFile "cuda_extras.exe" -UseBasicParsing
+        $components = @()
+        "${{ inputs.extra-components }}".Split(' ') | ForEach-Object {
+          if ($_) { $components += "${_}_$cudaVersion" }
+        }
+        Write-Host "Installing extra CUDA components on cache-hit: $($components -join ', ')"
+        $args = @("-s", "-n") + $components
+        $proc = Start-Process -FilePath ".\cuda_extras.exe" -ArgumentList $args -Wait -PassThru -NoNewWindow
+        if ($proc.ExitCode -ne 0) { throw "extras installer exited $($proc.ExitCode)" }
+
     - name: Verify CUDA installation (Windows)
       if: inputs.platform == 'windows'
       shell: powershell
