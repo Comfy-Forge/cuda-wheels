@@ -181,6 +181,9 @@ def main():
             packages.setdefault(pkg_name, []).append({
                 "filename": name,      # the actual asset name
                 "url": url,
+                # GitHub's releases API serves a sha256 digest per asset --
+                # free hash verification for the manifest, no downloads.
+                "sha256": (asset.get("digest") or "").removeprefix("sha256:"),
             })
 
     # One built wheel, many display names, for packages that never link
@@ -300,6 +303,40 @@ def main():
                 for wheel in sorted(wheels, key=lambda w: w["filename"]):
                     f.write(f'<a href="{wheel["url"]}">{wheel["filename"]}</a><br>\n')
                 f.write("</body>\n</html>\n")
+
+    # Machine-readable manifest: consumers (comfy-env first) stop
+    # regex-scraping the PEP 503 HTML and gain sha256 verification. Real
+    # assets only -- aliases are derivable from torch_free + the grid.
+    import sys as _s2
+    _s2.path.insert(0, str(Path(__file__).resolve().parent))
+    from audit import parse_wheel as _parse_wheel
+    manifest = {"schema": 1, "repo": repo, "packages": {}}
+    for pkg, wheels in packages.items():
+        entries = []
+        for w in wheels:
+            if w.get("alias_of"):
+                continue
+            parsed = _parse_wheel(w["filename"])
+            if not parsed:
+                continue
+            entries.append({
+                "filename": w["filename"],
+                "version": parsed["version"],
+                "cuda": parsed["cuda"],
+                "torch": parsed["torch_short"],
+                "python": parsed["python"],
+                "platform": parsed["platform"],
+                "url": w["url"],
+                "sha256": w.get("sha256", ""),
+            })
+        manifest["packages"][pkg] = {
+            "torch_free": pkg in torch_free,
+            "wheels": sorted(entries, key=lambda e: e["filename"]),
+        }
+    (docs / "packages.json").write_text(json.dumps(manifest, indent=1) + "\n")
+    print(f"Wrote packages.json manifest: "
+          f"{sum(len(v['wheels']) for v in manifest['packages'].values())} wheels, "
+          f"{len(manifest['packages'])} packages")
 
     print(f"Generated {len(combos)} per-combo indexes "
           f"({sum(len(p) for p in combos.values())} package entries)")

@@ -869,6 +869,10 @@ jobs:
               --latest=false \
               "$pkg_dir"/*.whl \
             || gh release upload "${pkg}-latest" "$pkg_dir"/*.whl --clobber
+            # Rolling-release hygiene (CW-ADR-0002): for every cell that now
+            # holds wheels from multiple versions, keep only the highest.
+            pip install -q pyyaml 2>/dev/null || true
+            python scripts/prune_superseded.py --repo "$GITHUB_REPOSITORY" --package "$pkg"
           done
 
   update-index:
