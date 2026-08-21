@@ -1,9 +1,10 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-# INT4/FP4 SVDQuant kernels need Ampere or newer; FP4 paths need Blackwell.
+# DOCUMENTS REALITY rather than steering it: nunchaku's setup.py ignores
+# TORCH_CUDA_ARCH_LIST entirely and derives its targets from
+# NUNCHAKU_INSTALL_MODE=ALL -- at v1.2.1 that is sm_75/80/86/89(/120 on
+# CUDA >= 12.8). No sm_90/100: the INT4/FP4 kernels target consumer GPUs;
+# Hopper/B200 are not in upstream's ALL list. This override exists so the
+# verify gate's arch assert matches what the build actually produces.
 arch_list_by_cuda:
-  '12.4': 8.0 8.6 8.9 9.0+PTX
-  '12.6': 8.0 8.6 8.9 9.0+PTX
-  '12.8': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
-  '12.9': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
-  '13.0': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
+  "12.8": "7.5;8.0;8.6;8.9;12.0"
