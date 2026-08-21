@@ -20,11 +20,6 @@ on:
         description: 'The full matrix JSON from generate-matrix (we read .linux_chain from it).'
         type: string
         required: true
-      runner:
-        description: 'Runner type: github (default) or self-hosted.'
-        type: string
-        required: false
-        default: 'github'
       max_jobs_override:
         description: 'Workflow-dispatch override for max parallel compile jobs (0 = use package default).'
         type: string
@@ -43,7 +38,7 @@ on:
 jobs:
   build:
     name: chain ${{ inputs.iter }} ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","linux","cuda"]') || 'ubuntu-22.04' }}
+    runs-on: ubuntu-22.04
     # Same container as build.yml's build-linux: the glibc-2.28 floor is
     # policy (tracks PyTorch's manylinux baseline), and setup-build-env
     # expects the image's /opt/python interpreters. Without this block the

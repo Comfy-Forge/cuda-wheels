@@ -49,7 +49,7 @@ runs:
           echo "$PYBIN" >> $GITHUB_PATH
           "$PYBIN/python" -V
         else
-          # bare runner (self-hosted legacy path): fall back to system python
+          # bare runner (legacy fallback): fall back to system python
           python3 -V
         fi
 

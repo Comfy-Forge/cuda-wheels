@@ -20,11 +20,6 @@ on:
         description: 'Full matrix JSON from generate-matrix (reads .windows_chain).'
         type: string
         required: true
-      runner:
-        description: 'Runner type: github (default) or self-hosted.'
-        type: string
-        required: false
-        default: 'github'
       max_jobs_override:
         description: 'Workflow-dispatch override for max parallel compile jobs.'
         type: string
@@ -43,7 +38,7 @@ on:
 jobs:
   build:
     name: win-chain ${{ inputs.iter }} ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","windows"]') || 'windows-2022' }}
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(inputs.matrix_json).windows_chain }}

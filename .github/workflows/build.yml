@@ -1,5 +1,5 @@
 name: Build Wheels
-run-name: "Build ${{ inputs.package }} wheels${{ inputs.platform != 'all' && format(' [{0}]', inputs.platform) || '' }}${{ inputs.cuda != 'all' && format(' cu{0}', inputs.cuda) || '' }}${{ inputs.pytorch != 'all' && inputs.pytorch != '' && format(' torch{0}', inputs.pytorch) || '' }}${{ inputs.python != 'all' && inputs.python != '' && format(' py{0}', inputs.python) || '' }}${{ inputs.overwrite == true && ' (overwrite)' || '' }}${{ inputs.runner == 'self-hosted' && ' [self-hosted]' || '' }}${{ inputs.max_jobs != '0' && format(' max_jobs={0}', inputs.max_jobs) || '' }}"
+run-name: "Build ${{ inputs.package }} wheels${{ inputs.platform != 'all' && format(' [{0}]', inputs.platform) || '' }}${{ inputs.cuda != 'all' && format(' cu{0}', inputs.cuda) || '' }}${{ inputs.pytorch != 'all' && inputs.pytorch != '' && format(' torch{0}', inputs.pytorch) || '' }}${{ inputs.python != 'all' && inputs.python != '' && format(' py{0}', inputs.python) || '' }}${{ inputs.overwrite == true && ' (overwrite)' || '' }}${{ inputs.max_jobs != '0' && format(' max_jobs={0}', inputs.max_jobs) || '' }}"
 
 on:
   workflow_dispatch:
@@ -44,14 +44,6 @@ on:
         required: false
         type: string
         default: 'all'
-      runner:
-        description: 'Runner type'
-        required: false
-        type: choice
-        options:
-          - github
-          - self-hosted
-        default: github
       max_jobs:
         description: 'Max parallel compilation jobs (0 = use package default)'
         required: false
@@ -91,11 +83,7 @@ jobs:
     needs: generate-matrix
     # Skip when the linux matrix is empty (mirrors build-windows guard).
     if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux.include[0] != null }}
-    # GitHub imposes a DEFAULT job timeout of 360 min even on self-hosted
-    # runners; without raising it the homelab has a phantom 6h cap. Hosted
-    # runners stay hard-capped at 6h regardless of this value.
-    timeout-minutes: 2880
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","linux","cuda"]') || 'ubuntu-22.04' }}
+    runs-on: ubuntu-22.04
     # Builds run inside the manylinux_2_28 container (AlmaLinux 8, glibc
     # 2.28): the wheel's glibc floor is a POLICY that tracks PyTorch's
     # manylinux baseline, not an accident of the runner image. --privileged
@@ -237,12 +225,7 @@ jobs:
     name: ARM ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
     needs: generate-matrix
     if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64.include[0] != null }}
-    # GitHub's hosted ARM runners (free for public repos). No self-hosted
-    # ARM machines exist in the homelab, so no runner switch here.
-    # GitHub imposes a DEFAULT job timeout of 360 min even on self-hosted
-    # runners; without raising it the homelab has a phantom 6h cap. Hosted
-    # runners stay hard-capped at 6h regardless of this value.
-    timeout-minutes: 2880
+    # GitHub's hosted ARM runners (free for public repos).
     runs-on: ubuntu-24.04-arm
     # Same policy as x86: the ARM floor is manylinux_2_28 (fixes the 2.39
     # accident that excluded Ubuntu-22.04 Grace hosts and JetPack 6).
@@ -355,11 +338,7 @@ jobs:
     # GH Actions only exposes outputs from direct needs.
     needs: [generate-matrix, build-linux]
     if: ${{ needs.build-linux.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_link.include[0] != null }}
-    # GitHub imposes a DEFAULT job timeout of 360 min even on self-hosted
-    # runners; without raising it the homelab has a phantom 6h cap. Hosted
-    # runners stay hard-capped at 6h regardless of this value.
-    timeout-minutes: 2880
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","linux","cuda"]') || 'ubuntu-22.04' }}
+    runs-on: ubuntu-22.04
     container:
       image: quay.io/pypa/manylinux_2_28_x86_64
       options: --privileged
@@ -460,7 +439,6 @@ jobs:
     with:
       iter: 0
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -472,7 +450,6 @@ jobs:
     with:
       iter: 1
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -485,7 +462,6 @@ jobs:
     with:
       iter: 2
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -497,7 +473,6 @@ jobs:
     with:
       iter: 3
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -509,7 +484,6 @@ jobs:
     with:
       iter: 4
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -521,7 +495,6 @@ jobs:
     with:
       iter: 5
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -537,7 +510,6 @@ jobs:
     with:
       iter: 0
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -549,7 +521,6 @@ jobs:
     with:
       iter: 1
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -561,7 +532,6 @@ jobs:
     with:
       iter: 2
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -573,7 +543,6 @@ jobs:
     with:
       iter: 3
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -585,7 +554,6 @@ jobs:
     with:
       iter: 4
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -597,7 +565,6 @@ jobs:
     with:
       iter: 5
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
-      runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
@@ -610,11 +577,7 @@ jobs:
     # "matrix must define at least one vector" and flags the whole
     # workflow as failure even though release succeeds.
     if: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows.include[0] != null }}
-    # GitHub imposes a DEFAULT job timeout of 360 min even on self-hosted
-    # runners; without raising it the homelab has a phantom 6h cap. Hosted
-    # runners stay hard-capped at 6h regardless of this value.
-    timeout-minutes: 2880
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","windows"]') || 'windows-2022' }}
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows }}
@@ -745,11 +708,7 @@ jobs:
     # Mirror of link-linux for sharded Windows packages.
     needs: [generate-matrix, build-windows]
     if: ${{ needs.build-windows.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).windows_link.include[0] != null }}
-    # GitHub imposes a DEFAULT job timeout of 360 min even on self-hosted
-    # runners; without raising it the homelab has a phantom 6h cap. Hosted
-    # runners stay hard-capped at 6h regardless of this value.
-    timeout-minutes: 2880
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","windows"]') || 'windows-2022' }}
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows_link }}

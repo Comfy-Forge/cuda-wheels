@@ -82,7 +82,7 @@ runs:
             "$TS/g++" --version | head -1
           fi
         else
-          # Bare Ubuntu runner (legacy path / self-hosted).
+          # Bare Ubuntu runner (legacy fallback; all farm jobs run in manylinux containers).
           [ "$ARCH" = "aarch64" ] && REPO="ubuntu2404/sbsa" || REPO="ubuntu2204/x86_64"
           wget -q https://developer.download.nvidia.com/compute/cuda/repos/${REPO}/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
