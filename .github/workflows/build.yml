@@ -168,11 +168,14 @@ jobs:
         # running it narrower. 8GB exists so a brief peak becomes a slow
         # minute instead of a SIGKILL at hour 3.
         run: |
-          # container runs as root (--privileged for swapon)
-          fallocate -l 8G /mnt/swapfile
-          chmod 600 /mnt/swapfile
-          mkswap /mnt/swapfile
-          swapon /mnt/swapfile
+          # container runs as root (--privileged for swapon).
+          # The swapfile MUST live on a host bind-mount (RUNNER_TEMP -> host
+          # ext4): the container's own paths (/mnt included) are overlayfs,
+          # and swapon on overlayfs fails with "Invalid argument".
+          fallocate -l 8G "$RUNNER_TEMP/swapfile"
+          chmod 600 "$RUNNER_TEMP/swapfile"
+          mkswap "$RUNNER_TEMP/swapfile"
+          swapon "$RUNNER_TEMP/swapfile"
 
       - name: Setup build environment
         if: steps.check.outputs.exists != 'true'
