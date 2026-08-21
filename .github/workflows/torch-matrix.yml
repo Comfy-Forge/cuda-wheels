@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: write
+  issues: write   # derivation dry-run opens an issue when it breaks
 
 concurrency:
   group: torch-matrix
@@ -46,6 +47,40 @@ jobs:
 
       - name: Regenerate matrix
         run: python scripts/fetch_torch_matrix.py --output defaults/scraped_torch_matrix.json
+
+      # Exercise the FULL grid derivation against the fresh snapshot without
+      # writing anything. If upstream's schema drifted or the policy file's
+      # splice anchor rotted, this is where it surfaces -- the day upstream
+      # moved, not months later at a maintainer's keyboard. Failure opens a
+      # deduplicated issue (torch-watch's pattern: the title carries the
+      # fingerprint, so the same breakage does not re-file every run).
+      - name: Validate grid derivation (dry run)
+        id: derive-check
+        run: |
+          set +e
+          out=$(python scripts/derive_defaults.py --dry-run 2>&1)
+          rc=$?
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            title="derive_defaults.py broken against fresh PCWM snapshot"
+            if ! gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+                 --search "\"$title\" in:title" --json number -q '.[0].number' | grep -q .; then
+              {
+                echo "torch-matrix.yml refreshed defaults/scraped_torch_matrix.json and the derivation dry run failed. The committed grid is now stale relative to upstream until this is fixed."
+                echo
+                echo '```'
+                echo "$out"
+                echo '```'
+                echo
+                echo "Run locally: \`python scripts/derive_defaults.py --dry-run\`. See run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+              } > /tmp/issue-body.md
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+                --body-file /tmp/issue-body.md
+            fi
+            exit $rc
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Commit if upstream moved
         run: |

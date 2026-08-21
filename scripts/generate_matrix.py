@@ -18,7 +18,7 @@ except ImportError:
 # (CW-ADR-0007). Generated from PCWM by scripts/derive_defaults.py; the file
 # is committed, so builds stay a function of the git SHA. Missing file is a
 # hard error: silently building phantom cells fails at torch-install time.
-_PHANTOMS_FILE = Path(__file__).parent / "phantom_combos.json"
+_PHANTOMS_FILE = Path(__file__).parent.parent / "defaults" / "phantom_combos.json"
 PHANTOM_COMBOS = {tuple(c) for c in json.loads(_PHANTOMS_FILE.read_text())["combos"]}
 
 

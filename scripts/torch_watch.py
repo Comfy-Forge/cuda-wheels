@@ -3,7 +3,7 @@
 
     python scripts/torch_watch.py                 # report what is new
     python scripts/torch_watch.py --json out.json # machine-readable, for CI
-    python scripts/torch_watch.py --apply         # append new rows to _defaults.yml
+    python scripts/torch_watch.py --apply         # refuses: grid rows come from derive_defaults.py
 
 WHAT COUNTS AS TRUTH
 The wheel index at download.pytorch.org is the only source consulted, because

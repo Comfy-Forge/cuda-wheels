@@ -49,18 +49,15 @@ def load_package(pkg_dir: Path) -> dict:
     if overrides:
         readme = pkg_dir / "README.md"
         if not readme.exists() or "verride" not in readme.read_text():
-            import sys
-            print(f"WARNING: {pkg_dir.name}: has {', '.join(overrides)} but no "
-                  f"README.md explaining the override -- every deviation from "
-                  f"defaults/ must say why (add an '## Overrides' section).",
-                  file=sys.stderr)
+            raise SystemExit(
+                f"ERROR: {pkg_dir.name}: has {', '.join(overrides)} but no "
+                f"README.md explaining the override -- every deviation from "
+                f"defaults/ must say why (add an '## Overrides' section).")
     if "links_torch" not in cfg:
-        import sys
-        print(f"WARNING: {pkg_dir.name}: no links_torch declared -- state it "
-              f"explicitly (true: wheel per (cuda x torch); false: torch-free, "
-              f"one wheel per cuda, CW-ADR-0011). Defaulting to true.",
-              file=sys.stderr)
-        cfg["links_torch"] = True
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}: no links_torch declared -- state it "
+            f"explicitly (true: wheel per (cuda x torch); false: torch-free, "
+            f"one wheel per cuda, CW-ADR-0011).")
     return cfg
 
 
