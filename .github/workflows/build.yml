@@ -428,6 +428,98 @@ jobs:
           name: ${{ matrix.package }}-linux-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
           path: dist/*.whl
 
+  link-linux-aarch64:
+    name: ARM Link ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
+    # Runs after compile-shard jobs finish. Only fans out for sharded packages
+    # (link-matrix is empty for unsharded — the job is then skipped entirely
+    # because the strategy matrix has no entries to iterate over).
+    # generate-matrix is in needs because we reference its `matrix` output;
+    # GH Actions only exposes outputs from direct needs.
+    needs: [generate-matrix, build-linux-aarch64]
+    if: ${{ needs.build-linux.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64_link.include[0] != null }}
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: quay.io/pypa/manylinux_2_28_aarch64
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64_link }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Container prerequisites (gh CLI, procps)
+        run: |
+          dnf install -y -q 'dnf-command(config-manager)' >/dev/null
+          dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo >/dev/null
+          dnf install -y -q gh procps-ng >/dev/null
+
+      - name: Free disk space
+        if: matrix.free_disk_space == true
+        run: |
+          sudo rm -rf /usr/share/dotnet &
+          sudo rm -rf /usr/local/lib/android &
+          sudo rm -rf /opt/ghc &
+          sudo rm -rf /opt/hostedtoolcache/CodeQL &
+          sudo rm -rf /usr/share/swift &
+          sudo rm -rf /usr/local/graalvm &
+          sudo rm -rf /usr/local/.ghcup &
+          sudo rm -rf /opt/hostedtoolcache/go &
+          sudo apt-get clean &
+          wait
+          df -h
+
+      - uses: actions/checkout@v4
+
+      - name: Setup CUDA
+        uses: ./.github/actions/setup-cuda
+        with:
+          cuda-version: ${{ matrix.cuda }}
+          platform: linux
+          installer-type: ${{ matrix.cuda_installer }}
+          extra-components: ${{ matrix.extra_cuda_components }}
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+        with:
+          python-version: ${{ matrix.python }}
+          pytorch-version: ${{ matrix.pytorch }}
+          cuda-short: ${{ matrix.cuda_short }}
+          platform: linux
+          extra-deps: ${{ matrix.extra_deps }}
+
+      - name: Link sharded wheel
+        # link-only: true tells the action to download all N shard artifacts
+        # for this (pkg, py, cuda, torch) tuple, extract them into build/temp,
+        # and run pip wheel which will link-only (skip recompile since .o's are
+        # already present and fresh).
+        uses: ./.github/actions/build-wheel
+        with:
+          source-repo: ${{ matrix.source_repo }}
+          source-tag: ${{ matrix.source_tag }}
+          pre-build-script: ${{ matrix.pre_build_script }}
+          arch-list: ${{ matrix.arch_list }}
+          cuda-version: ${{ matrix.cuda }}
+          cuda-short: ${{ matrix.cuda_short }}
+          pytorch-version: ${{ matrix.pytorch }}
+          platform: linux
+          max-jobs: ${{ inputs.max_jobs != '0' && inputs.max_jobs || matrix.max_jobs }}
+          clone-recursive: ${{ matrix.clone_recursive }}
+          patch-script: ${{ matrix.patch_script }}
+          build-subdir: ${{ matrix.build_subdir }}
+          nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
+          shard-index: '0'
+          shard-count: ${{ matrix.shard_count }}
+          link-only: 'true'
+          package: ${{ matrix.package }}
+          python-version: ${{ matrix.python }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}-linux-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
+          path: dist/*.whl
+
   build-windows:
     name: Windows ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
     needs: generate-matrix
@@ -639,11 +731,12 @@ jobs:
       - build-linux
       - build-linux-aarch64
       - link-linux
+      - link-linux-aarch64
       - build-windows
       - link-windows
     # Release runs whenever ANY build/link path produced a result
     # (not cancelled).
-    if: always() && (needs.build-linux.result != 'cancelled' || needs.build-linux-aarch64.result != 'cancelled' || needs.link-linux.result != 'cancelled' || needs.build-windows.result != 'cancelled' || needs.link-windows.result != 'cancelled')
+    if: always() && (needs.build-linux.result != 'cancelled' || needs.build-linux-aarch64.result != 'cancelled' || needs.link-linux.result != 'cancelled' || needs.link-linux-aarch64.result != 'cancelled' || needs.build-windows.result != 'cancelled' || needs.link-windows.result != 'cancelled')
     runs-on: ubuntu-latest
     permissions:
       contents: write

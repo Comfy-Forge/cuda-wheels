@@ -578,6 +578,7 @@ def main():
 
     linux_link_jobs = link_matrix_from(linux_jobs)
     windows_link_jobs = link_matrix_from(windows_jobs)
+    aarch64_link_jobs = link_matrix_from(aarch64_jobs)
 
     output = {
         "linux": {"include": linux_jobs},
@@ -585,6 +586,7 @@ def main():
         "windows": {"include": windows_jobs},
         "linux_link": {"include": linux_link_jobs},
         "windows_link": {"include": windows_link_jobs},
+        "linux_aarch64_link": {"include": aarch64_link_jobs},
     }
 
     with open(args.output, "w") as f:
@@ -594,7 +596,7 @@ def main():
     print(f"Generated {len(matrix)} build jobs "
           f"({len(linux_jobs)} Linux, {len(aarch64_jobs)} aarch64, "
           f"{len(windows_jobs)} Windows, " f")")
-    if linux_link_jobs or windows_link_jobs:
+    if linux_link_jobs or windows_link_jobs or aarch64_link_jobs:
         print(f"  + {len(linux_link_jobs)} Linux link jobs, "
               f"{len(windows_link_jobs)} Windows link jobs (sharded packages)")
 
