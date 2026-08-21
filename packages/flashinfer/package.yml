@@ -24,4 +24,4 @@ max_jobs: 3   # AOT cache: hundreds of medium TUs; 3 fits the 16GB budget
 verify:
   expect_device_error: true
   needs_driver: true
-extra_deps: apache-tvm-ffi   # jit-cache setup imports tvm_ffi at metadata generation
+extra_deps: apache-tvm-ffi pynvml   # jit-cache setup imports tvm_ffi + pynvml at metadata generation
