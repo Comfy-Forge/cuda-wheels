@@ -881,7 +881,8 @@ runs:
             --exclude libtorch_python.so \
             --exclude libcaffe2_nvrtc.so \
             --exclude libc10.so \
-            --exclude libc10_cuda.so; then
+            --exclude libc10_cuda.so \
+            --exclude libgomp.so.1; then
             rm "$whl"
           else
             echo "::error::auditwheel repair failed for $whl"
