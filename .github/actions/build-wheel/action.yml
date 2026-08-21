@@ -809,8 +809,17 @@ runs:
       run: |
         HW="$RUNNER_TEMP/cuw_swap_highwater"
         used=$(cat "$HW" 2>/dev/null || echo 0)
+        CELL="${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-short }} torch${{ inputs.pytorch-version }}"
         if awk -v u="$used" 'BEGIN{exit !(u > 0.1)}'; then
-          echo "::warning title=Compile dipped into swap::${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-short }} torch${{ inputs.pytorch-version }}: peak swap usage ${used}GB. Swap is a parachute, not capacity -- lower max_jobs for this package."
+          MJ="${{ inputs.max-jobs }}"; NT="${{ inputs.nvcc-threads }}"
+          if [ "$MJ" = "1" ] && [ "$NT" = "1" ]; then
+            # Already at the floor -- swap here is the parachute doing its
+            # one legitimate job. Warn, don't fail.
+            echo "::warning title=Compile dipped into swap at minimum settings::$CELL: peak swap ${used}GB with max_jobs=1, nvcc_threads=1. Nothing left to trim -- this package is simply at the runner's memory ceiling."
+          else
+            echo "::error title=Compile swapped -- build rejected::$CELL: peak swap usage ${used}GB with max_jobs='${MJ:-default}' nvcc_threads='${NT}'. A swapping compile is over-committed and its timings are garbage; lower max_jobs (or nvcc_threads) for this package. The build FAILS until the knobs fit the machine (only max_jobs=1 + nvcc_threads=1 may swap and pass)."
+            exit 1
+          fi
         else
           echo "swap untouched (peak ${used}GB)"
         fi
