@@ -4,10 +4,10 @@ name: llama_cpp_python
 links_torch: false
 # Python bindings to llama.cpp (GGUF inference).
 # IMPORTANT: this is a GGML/cuBLAS build, NOT a PyTorch extension -- it does
-# not link libtorch, so it has no torch axis. The build_matrix below pins ONE
-# torch per CUDA solely to satisfy the farm's job generator; the produced
-# binary is identical across torch versions. Do not fan this out over the
-# shared 21-combo grid or you will build the same wheel ~4x per CUDA.
+# not link libtorch, so it has no torch axis; the produced binary is
+# identical across torch versions. links_torch: false makes generate_matrix
+# collapse the torch axis itself (newest torch per CUDA line as the build
+# env) -- see pcto_override.yml, which only restricts platforms.
 # Gap this fills: PyPI has ZERO wheels across all 208 releases, and abetlen's
 # own CUDA index 404s on cu126/cu128/cu129.
 source_repo: abetlen/llama-cpp-python
