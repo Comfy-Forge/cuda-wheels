@@ -66,3 +66,21 @@ else:
     print("WARNING: Could not find MAX_JOBS memory estimate - source may have changed")
 
 setup_file.write_text(content)
+
+
+# ── os.rename -> shutil.move (container cross-device fix) ─────────────────
+# FA's bdist override renames its wheel with os.rename (setup.py:499 at
+# v2.8.3); in the manylinux container the temp build dir (overlayfs) and
+# dist (bind mount) are different filesystems -> EXDEV "Invalid
+# cross-device link". shutil.move copies across devices.
+_c = content if "content" in dir() else None
+from pathlib import Path as _P2
+_sp2 = _P2("setup.py")
+_s2 = _sp2.read_text()
+if "os.rename(wheel_filename, wheel_path)" not in _s2:
+    raise SystemExit("flash_attn patch: os.rename call not found -- upstream "
+                     "changed; update this patch")
+_s2 = _s2.replace("os.rename(wheel_filename, wheel_path)",
+                  "shutil.move(wheel_filename, wheel_path)")
+_sp2.write_text(_s2)
+print("flash_attn patch: os.rename -> shutil.move (shutil already imported upstream)")
