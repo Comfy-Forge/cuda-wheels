@@ -8,3 +8,9 @@ source_tag: v0.8.2
 clone_recursive: true
 patch_script: packages/cumm/patches/cumm.py
 extra_deps: pccm>=0.4.16 ccimport>=0.4.4
+verify:
+  skip_arch: >-
+    runtime-JIT package: kernels are compiled at import/run time via the
+    vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
+    CUMM_DISABLE_JIT=1 -- true of every wheel the farm has ever shipped
+    (verified against legacy releases). See README.

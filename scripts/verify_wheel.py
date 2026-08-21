@@ -445,6 +445,9 @@ def _cuobjdump_archs(binary_path, cuobjdump, timeout):
 
 
 def check_arch_sass(rep, wheel_path, exts, args, vknobs):
+    if vknobs.get("skip_arch"):
+        rep.add("arch_sass", "skip", f"verify.skip_arch: {vknobs['skip_arch']}")
+        return
     if not exts:
         rep.add("arch_sass", "skip", "no compiled members")
         return
