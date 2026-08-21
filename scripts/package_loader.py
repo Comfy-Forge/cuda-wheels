@@ -53,6 +53,15 @@ def load_package(pkg_dir: Path) -> dict:
                 f"ERROR: {pkg_dir.name}: has {', '.join(overrides)} but no "
                 f"README.md explaining the override -- every deviation from "
                 f"defaults/ must say why (add an '## Overrides' section).")
+    for req in ("name", "source_repo", "source_tag"):
+        if not str(cfg.get(req) or "").strip():
+            raise SystemExit(
+                f"ERROR: {pkg_dir.name}: '{req}' is required in package.yml.")
+    if str(cfg["source_tag"]).strip().lower() in ("main", "master", "head"):
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}: source_tag is a floating ref "
+            f"({cfg['source_tag']!r}) -- pin a tag or commit SHA, or the "
+            f"wheels in one release need not come from the same source.")
     if "links_torch" not in cfg:
         raise SystemExit(
             f"ERROR: {pkg_dir.name}: no links_torch declared -- state it "
