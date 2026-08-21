@@ -1272,7 +1272,7 @@ runs:
         # The wheel filename includes the local version (e.g., +cu130torch29)
         # but the internal METADATA still has the base version from pyproject.toml.
         # Fix the METADATA to match the filename so pip/uv see consistent versions.
-        python "${{ github.action_path }}/patch_wheel_version.py" $GITHUB_WORKSPACE/dist
+        python "$GITHUB_WORKSPACE/.github/actions/build-wheel/patch_wheel_version.py" "$GITHUB_WORKSPACE/dist"
 
     - name: Set wheel-path output
       # Empty in compile-shard mode and in sequential-checkpoint mid-chain
