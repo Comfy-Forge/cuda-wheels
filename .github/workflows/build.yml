@@ -428,6 +428,212 @@ jobs:
           name: ${{ matrix.package }}-linux-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
           path: dist/*.whl
 
+  build-windows:
+    name: Windows ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
+    needs: generate-matrix
+    # Skip when the windows matrix is empty (e.g. a linux-only sharded
+    # package). Without this guard GH Actions errors with
+    # "matrix must define at least one vector" and flags the whole
+    # workflow as failure even though release succeeds.
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows.include[0] != null }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows }}
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Ensure Git\bin on PATH (so shell:bash works)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Runner identity (debug)
+        shell: powershell
+        run: |
+          echo "runner.name=${{ runner.name }} runner.os=${{ runner.os }} hostname=$env:COMPUTERNAME user=$(whoami)"
+          echo "--- whoami /groups ---"
+          whoami /groups | Select-String -Pattern "docker|admin|users|service|network" -CaseSensitive:$false
+          echo "--- end debug ---"
+      - name: Enable long paths
+        shell: powershell
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - name: Compute wheel filename
+        id: meta
+        shell: bash
+        run: |
+          # Version detection is done in generate_matrix.py - just use matrix values
+          PKG_NAME="${{ matrix.package }}"
+          PKG_VERSION="${{ matrix.version }}"
+          CUDA_SHORT="${{ matrix.cuda_short }}"
+          TORCH_SHORT=$(echo "${{ matrix.pytorch }}" | cut -d. -f1,2)
+          PY_SHORT=$(echo "${{ matrix.python }}" | tr -d '.')
+          WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
+
+          echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
+          echo "pkg_name=$PKG_NAME" >> $GITHUB_OUTPUT
+          echo "pkg_version=$PKG_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if wheel exists in release
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WHEEL_PREFIX="${{ steps.meta.outputs.wheel_prefix }}"
+          RELEASE="${{ matrix.package }}-latest"
+          echo "Checking release $RELEASE for: ${WHEEL_PREFIX}*.whl"
+          mkdir -p dist
+
+          if [ "${{ inputs.overwrite }}" = "true" ]; then
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "::notice::Overwrite enabled, will rebuild"
+          else
+            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep "^${WHEEL_PREFIX}" | grep "win_amd64" | head -1 || true)
+            if [ -n "$MATCHING" ]; then
+              echo "exists=true" >> $GITHUB_OUTPUT
+              echo "::notice::Wheel exists in release: $MATCHING"
+              gh release download "$RELEASE" -p "$MATCHING" -D dist
+            else
+              echo "exists=false" >> $GITHUB_OUTPUT
+              echo "::notice::No win_amd64 wheel found matching: ${WHEEL_PREFIX}*"
+            fi
+          fi
+
+      - name: Setup CUDA
+        if: steps.check.outputs.exists != 'true'
+        uses: ./.github/actions/setup-cuda
+        with:
+          cuda-version: ${{ matrix.cuda }}
+          platform: windows
+          installer-type: ${{ matrix.cuda_installer }}
+          extra-components: ${{ matrix.extra_cuda_components }}
+
+      - name: Setup build environment
+        if: steps.check.outputs.exists != 'true'
+        uses: ./.github/actions/setup-build-env
+        with:
+          python-version: ${{ matrix.python }}
+          pytorch-version: ${{ matrix.pytorch }}
+          cuda-short: ${{ matrix.cuda_short }}
+          platform: windows
+          extra-deps: ${{ matrix.extra_deps }}
+
+      - name: Build wheel
+        if: steps.check.outputs.exists != 'true'
+        uses: ./.github/actions/build-wheel
+        with:
+          source-repo: ${{ matrix.source_repo }}
+          source-tag: ${{ matrix.source_tag }}
+          pre-build-script: ${{ matrix.pre_build_script }}
+          arch-list: ${{ matrix.arch_list }}
+          cuda-version: ${{ matrix.cuda }}
+          cuda-short: ${{ matrix.cuda_short }}
+          pytorch-version: ${{ matrix.pytorch }}
+          platform: windows
+          max-jobs: ${{ inputs.max_jobs != '0' && inputs.max_jobs || matrix.max_jobs }}
+          clone-recursive: ${{ matrix.clone_recursive }}
+          patch-script: ${{ matrix.patch_script }}
+          build-subdir: ${{ matrix.build_subdir }}
+          nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
+          shard-index: ${{ matrix.shard_index }}
+          shard-count: ${{ matrix.shard_count }}
+          package: ${{ matrix.package }}
+          python-version: ${{ matrix.python }}
+
+      - name: Upload artifact
+        # Compile-shard jobs upload their .o tarball via the build-wheel action's
+        # own upload step; this wheel-upload only runs in full-build mode.
+        # Also require that this job actually produced a wheel. Without the
+        # `exists` check a job that found its wheel already published downloads
+        # it into dist/ and re-uploads it here, and the release job then puts it
+        # back with `--clobber` -- a delete-then-upload of a live asset, for no
+        # gain. Combined with a transient `gh` failure in the skip check that is
+        # a whole package's assets deleted and recreated.
+        if: matrix.shard_count == 0 && steps.check.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}-windows-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
+          path: dist/*.whl
+
+  link-windows:
+    name: Link ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }} (Windows)
+    # Mirror of link-linux for sharded Windows packages.
+    needs: [generate-matrix, build-windows]
+    if: ${{ needs.build-windows.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).windows_link.include[0] != null }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows_link }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Ensure Git\bin on PATH (so shell:bash works)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Enable long paths
+        shell: powershell
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - name: Setup CUDA
+        uses: ./.github/actions/setup-cuda
+        with:
+          cuda-version: ${{ matrix.cuda }}
+          platform: windows
+          installer-type: ${{ matrix.cuda_installer }}
+          extra-components: ${{ matrix.extra_cuda_components }}
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+        with:
+          python-version: ${{ matrix.python }}
+          pytorch-version: ${{ matrix.pytorch }}
+          cuda-short: ${{ matrix.cuda_short }}
+          platform: windows
+          extra-deps: ${{ matrix.extra_deps }}
+
+      - name: Link sharded wheel
+        uses: ./.github/actions/build-wheel
+        with:
+          source-repo: ${{ matrix.source_repo }}
+          source-tag: ${{ matrix.source_tag }}
+          pre-build-script: ${{ matrix.pre_build_script }}
+          arch-list: ${{ matrix.arch_list }}
+          cuda-version: ${{ matrix.cuda }}
+          cuda-short: ${{ matrix.cuda_short }}
+          pytorch-version: ${{ matrix.pytorch }}
+          platform: windows
+          max-jobs: ${{ inputs.max_jobs != '0' && inputs.max_jobs || matrix.max_jobs }}
+          clone-recursive: ${{ matrix.clone_recursive }}
+          patch-script: ${{ matrix.patch_script }}
+          build-subdir: ${{ matrix.build_subdir }}
+          nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
+          shard-index: '0'
+          shard-count: ${{ matrix.shard_count }}
+          link-only: 'true'
+          package: ${{ matrix.package }}
+          python-version: ${{ matrix.python }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}-windows-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
+          path: dist/*.whl
+
   release:
     needs:
       - build-linux
