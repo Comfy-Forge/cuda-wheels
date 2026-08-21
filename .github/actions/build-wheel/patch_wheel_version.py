@@ -52,7 +52,10 @@ def rebuild_record(tmpdir: Path, dist_info_name: str) -> None:
     for file in sorted(tmpdir.rglob("*")):
         if not file.is_file():
             continue
-        rel = str(file.relative_to(tmpdir))
+        # RECORD paths MUST be forward-slash (PEP 376/427); str() of a
+        # relative Path yields backslashes on Windows, which also broke the
+        # RECORD-self-exclusion compare below (duplicate RECORD rows).
+        rel = file.relative_to(tmpdir).as_posix()
         if rel == record_rel:
             # RECORD itself gets an empty hash
             continue

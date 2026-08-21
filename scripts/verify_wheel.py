@@ -133,8 +133,8 @@ def wheel_members(zf):
 def module_name_for(member):
     """pkg/_C.cpython-312-x86_64-linux-gnu.so -> pkg._C  (None if not a module)."""
     base = member.rsplit("/", 1)[-1]
-    if base.startswith("lib") and ".cpython-" not in base and not base.endswith(".pyd"):
-        return None  # plain shared library (libllama.so...), not a module
+    if base.startswith("lib") and ".cpython-" not in base:
+        return None  # plain shared library (libllama.so, libpyg.pyd), not a module
     if base.endswith(".pyd"):
         stem = base[:-4]
     elif base.endswith(".so"):
@@ -228,6 +228,7 @@ def check_metadata(rep, wheel_path, parsed):
             if len(parts) != 3 or not parts[1]:
                 continue
             fname, digest, _size = parts
+            fname = fname.replace("\\", "/")  # legacy Windows RECORDs
             if fname not in names:
                 mismatches.append(f"{fname}: listed but absent")
                 continue
