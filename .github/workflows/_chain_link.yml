@@ -46,6 +46,7 @@ jobs:
     # auditwheel rejecting the result against the 2.28 policy.
     container:
       image: quay.io/pypa/manylinux_2_28_x86_64
+      options: --privileged   # swapon needs CAP_SYS_ADMIN
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(inputs.matrix_json).linux_chain }}
@@ -124,6 +125,20 @@ jobs:
           cuda-short: ${{ matrix.cuda_short }}
           platform: linux
           extra-deps: ${{ matrix.extra_deps }}
+
+      - name: Add swap space (safety net)
+        if: steps.check.outputs.exists != 'true'
+        # Swap is a PARACHUTE, not a strategy: if the resource monitor shows
+        # swap in active use, the fix is fewer jobs (max_jobs), never "more
+        # swap" -- thrashing a compile through a swapfile is slower than
+        # running it narrower. 8GB exists so a brief peak becomes a slow
+        # minute instead of a SIGKILL at hour 3.
+        run: |
+          # container runs as root (--privileged for swapon)
+          fallocate -l 8G /mnt/swapfile
+          chmod 600 /mnt/swapfile
+          mkswap /mnt/swapfile
+          swapon /mnt/swapfile
 
       - name: Build wheel
         id: bw
