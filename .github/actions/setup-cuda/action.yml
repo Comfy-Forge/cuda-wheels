@@ -186,7 +186,7 @@ runs:
       uses: actions/cache/restore@v4
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${{ inputs.cuda-version }}
-        key: cuda-${{ inputs.cuda-version }}-windows-v3
+        key: cuda-${{ inputs.cuda-version }}-windows-v4
 
     - name: Install CUDA toolkit (Windows)
       if: inputs.platform == 'windows' && steps.cuda-cache-windows.outputs.cache-hit != 'true'
@@ -227,6 +227,7 @@ runs:
         # Base components needed for most builds (matches original wheel repos)
         $components = @(
           "nvcc_$cudaVersion",
+          "cuobjdump_$cudaVersion",
           "cudart_$cudaVersion",
           "cublas_dev_$cudaVersion",
           "cusparse_dev_$cudaVersion",
@@ -286,7 +287,7 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${{ inputs.cuda-version }}
-        key: cuda-${{ inputs.cuda-version }}-windows-v3
+        key: cuda-${{ inputs.cuda-version }}-windows-v4
 
     - name: Set CUDA environment (Windows)
       if: inputs.platform == 'windows'
