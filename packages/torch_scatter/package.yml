@@ -6,4 +6,4 @@ verify:
   # _X_cuda / _X_cpu are ALTERNATE builds of the same ops: the facade loads
   # exactly one, and importing the other re-registers the same torch
   # operators -- the dispatcher SIGABRTs the process. Never import the twin.
-  no_direct_import: ["*_cpu.*"]
+  no_direct_import: ["*_cpu.*", "*_cuda.*"]
