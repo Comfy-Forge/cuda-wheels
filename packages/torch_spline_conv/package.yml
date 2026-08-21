@@ -3,3 +3,8 @@ links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pa
 source_repo: rusty1s/pytorch_spline_conv
 source_tag: 986b41c8d8149635e748bd369e998effff10099e
 version: 1.2.2
+verify:
+  # _X_cuda / _X_cpu are ALTERNATE builds of the same ops: the facade loads
+  # exactly one, and importing the other re-registers the same torch
+  # operators -- the dispatcher SIGABRTs the process. Never import the twin.
+  no_direct_import: ["*_cpu.*"]
