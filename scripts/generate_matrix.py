@@ -485,6 +485,10 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         "pre_build_script": pkg.get("pre_build_script", ""),
                         "free_disk_space": pkg.get("free_disk_space", defaults.get("free_disk_space", False)),
                         "max_jobs": pkg.get("max_jobs", defaults.get("max_jobs", 0)),
+                        # nvcc --threads (per-arch device compiles within one
+                        # TU). Farm default 1: same-TU per-arch peaks land
+                        # simultaneously; RAM is better spent on max_jobs.
+                        "nvcc_threads": int(pkg.get("nvcc_threads", defaults.get("nvcc_threads", 1))),
                         "clone_recursive": pkg.get("clone_recursive", defaults.get("clone_recursive", False)),
                         "patch_script": pkg.get("patch_script", ""),
                         "build_subdir": pkg.get("build_subdir", ""),

@@ -44,6 +44,10 @@ inputs:
     description: 'Subdirectory to build from (for monorepos)'
     required: false
     default: ''
+  nvcc-threads:
+    description: 'nvcc --threads value (per-arch parallel device compiles within one TU). Farm default 1: same-TU per-arch peaks land simultaneously; spend RAM on MAX_JOBS instead. Appended as a TRAILING --threads on NVCC_APPEND_FLAGS so it wins over setup.py hardcodes in every build system.'
+    required: false
+    default: '1'
   nvcc-flags:
     description: 'Extra flags to pass to nvcc via NVCC_APPEND_FLAGS (e.g. -diag-suppress 221)'
     required: false
@@ -650,9 +654,19 @@ runs:
         # for the lifetime of this step. GH Actions kills background subshells
         # at step end, so no explicit teardown needed. Useful for diagnosing
         # OOM kills (exit code 143 + runner shutdown) on heavy CUTLASS builds.
+        # Swap high-water tracking: resmon records the peak swap usage (GB)
+        # to a file; the "Swap usage signal" step turns it into a workflow
+        # warning annotation. Swap is a parachute -- deploying it is a
+        # signal to lower max_jobs, and it should be VISIBLE, not buried in
+        # 3h of logs.
+        SWAP_HIGHWATER_FILE="$RUNNER_TEMP/cuw_swap_highwater"
+        echo "0" > "$SWAP_HIGHWATER_FILE"
         ( while true; do
             mem=$(awk '/MemAvailable/{a=$2/1024/1024} /MemTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB free", a, t}' /proc/meminfo 2>/dev/null || echo "?")
             swap=$(awk '/SwapFree/{f=$2/1024/1024} /SwapTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB swap free", f, t}' /proc/meminfo 2>/dev/null || echo "?")
+            used=$(awk '/SwapTotal/{t=$2} /SwapFree/{f=$2} END{printf "%.2f", (t-f)/1024/1024}' /proc/meminfo 2>/dev/null || echo 0)
+            prev=$(cat "$SWAP_HIGHWATER_FILE" 2>/dev/null || echo 0)
+            awk -v a="$used" -v b="$prev" 'BEGIN{exit !(a>b)}' && echo "$used" > "$SWAP_HIGHWATER_FILE"
             load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo "?")
             top3=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | head -3 | awk '{printf "%s(%.1fGB) ", $2, $1/1024/1024}' || echo "?")
             echo "[resmon $(date -u +%H:%M:%SZ)] mem: $mem | swap: $swap | load: $load | top3: $top3"
@@ -686,6 +700,9 @@ runs:
         # dispatch input; this makes the action agree.
         if [ -n "${{ inputs.max-jobs }}" ] && [ "${{ inputs.max-jobs }}" != "0" ]; then
           export MAX_JOBS=${{ inputs.max-jobs }}
+          # CMake-family builds (pyg_lib, llama_cpp_python, skbuild trees)
+          # never see ninja -j from MAX_JOBS; this is their jobs knob.
+          export CMAKE_BUILD_PARALLEL_LEVEL=${{ inputs.max-jobs }}
         fi
         # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
         export FORCE_CUDA=1
@@ -704,12 +721,17 @@ runs:
         # de-correlate -- strictly better use of the same RAM. Overridable
         # via env for experiments.
         if [ -z "$NVCC_THREADS" ]; then
-          export NVCC_THREADS=1
+          export NVCC_THREADS=${{ inputs.nvcc-threads }}
         fi
         # Per-package nvcc flags (e.g. warning suppression)
         if [ -n "${{ inputs.nvcc-flags }}" ]; then
           export NVCC_APPEND_FLAGS="${{ inputs.nvcc-flags }}"
         fi
+        # TRAILING --threads: nvcc applies NVCC_APPEND_FLAGS last, and the
+        # last --threads wins -- so this one knob reaches every build system
+        # and neutralizes setup.py hardcodes (nunchaku's len(sm_targets),
+        # torchao's -t=0, sageattn3's --threads 4).
+        export NVCC_APPEND_FLAGS="${NVCC_APPEND_FLAGS:-} --threads=${{ inputs.nvcc-threads }}"
         # Shard env vars for cmake-style packages (e.g. NATTEN). The
         # cpp_extension shard filter monkey-patches CUDAExtension at
         # setup.py import time; cmake-style packages can't intercept that
@@ -777,6 +799,21 @@ runs:
           echo "done=true" >> $GITHUB_OUTPUT
         fi
 
+
+    - name: Swap usage signal (Linux)
+      # The parachute deployed = the compile was over-committed. Surface it
+      # as a workflow warning annotation so it is visible on the run page,
+      # not buried in 3h of resmon lines. The fix is a lower max_jobs.
+      if: always() && inputs.platform == 'linux'
+      shell: bash
+      run: |
+        HW="$RUNNER_TEMP/cuw_swap_highwater"
+        used=$(cat "$HW" 2>/dev/null || echo 0)
+        if awk -v u="$used" 'BEGIN{exit !(u > 0.1)}'; then
+          echo "::warning title=Compile dipped into swap::${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-short }} torch${{ inputs.pytorch-version }}: peak swap usage ${used}GB. Swap is a parachute, not capacity -- lower max_jobs for this package."
+        else
+          echo "swap untouched (peak ${used}GB)"
+        fi
 
     - name: Repair wheel (Linux)
       # Skip when we're in compile-shard mode (we threw away the partial wheel
@@ -920,6 +957,7 @@ runs:
         $env:TORCH_CUDA_ARCH_LIST = "${{ inputs.arch-list }}"
         if ("${{ inputs.max-jobs }}" -ne "") {
           $env:MAX_JOBS = "${{ inputs.max-jobs }}"
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = "${{ inputs.max-jobs }}"
         }
         $env:DISTUTILS_USE_SDK = "1"
         # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
@@ -932,11 +970,13 @@ runs:
         $env:SPCONV_DISABLE_JIT = "1"
         # NVCC_THREADS pinned to 1 -- see the Linux block: per-arch peaks of
         # one TU land together; ninja-level parallelism spreads them out.
-        if (-not $env:NVCC_THREADS) { $env:NVCC_THREADS = "1" }
+        if (-not $env:NVCC_THREADS) { $env:NVCC_THREADS = "${{ inputs.nvcc-threads }}" }
         # Per-package nvcc flags (e.g. warning suppression)
         if ("${{ inputs.nvcc-flags }}" -ne "") {
           $env:NVCC_APPEND_FLAGS = "${{ inputs.nvcc-flags }}"
         }
+        # Trailing --threads wins over setup.py hardcodes (see Linux block).
+        $env:NVCC_APPEND_FLAGS = "$($env:NVCC_APPEND_FLAGS) --threads=${{ inputs.nvcc-threads }}".Trim()
         # Shard env vars for cmake-style packages (e.g. NATTEN). See the
         # equivalent block in the Linux build step for rationale -- the
         # cpp_extension shard filter monkey-patches CUDAExtension at

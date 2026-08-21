@@ -25,7 +25,15 @@ platforms: ["linux", "windows", "linux_aarch64"]
 
 # Default per-package settings inherited unless overridden.
 defaults:
-  max_jobs: 0           # 0 = unset; torch sizes the job count from cpu_count()
+  # 3, not unset: "unset" means ninja -j6, gsplat's self-set 10, mmcv's 32,
+  # or serial -- depending on which setup.py you ask. 3 fits the measured
+  # heavy-tail cicc peaks (7-10.6GB) on a 16GB runner with headroom.
+  max_jobs: 3
+  # nvcc --threads: 1. Same-TU per-arch compiles peak simultaneously (N
+  # threads = N x peak at the same instant); separate ninja jobs de-correlate.
+  # Enforced via a TRAILING --threads on NVCC_APPEND_FLAGS, which out-ranks
+  # setup.py hardcodes in every build system.
+  nvcc_threads: 1
   clone_recursive: false
   free_disk_space: true
 

@@ -201,6 +201,7 @@ jobs:
           patch-script: ${{ matrix.patch_script }}
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: ${{ matrix.shard_index }}
           shard-count: ${{ matrix.shard_count }}
           package: ${{ matrix.package }}
@@ -320,6 +321,7 @@ jobs:
           patch-script: ${{ matrix.patch_script }}
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: 0
           shard-count: 0
           package: ${{ matrix.package }}
@@ -412,6 +414,7 @@ jobs:
           patch-script: ${{ matrix.patch_script }}
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: '0'
           shard-count: ${{ matrix.shard_count }}
           link-only: 'true'
@@ -686,6 +689,7 @@ jobs:
           patch-script: ${{ matrix.patch_script }}
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: ${{ matrix.shard_index }}
           shard-count: ${{ matrix.shard_count }}
           package: ${{ matrix.package }}
@@ -764,6 +768,7 @@ jobs:
           patch-script: ${{ matrix.patch_script }}
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: '0'
           shard-count: ${{ matrix.shard_count }}
           link-only: 'true'

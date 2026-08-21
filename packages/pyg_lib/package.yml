@@ -5,3 +5,6 @@ source_tag: 0.5.0
 version: 0.5.0
 patch_script: packages/pyg_lib/patches/pyg_lib.py
 clone_recursive: true
+# cmake --build with no -j upstream; reached via the CMAKE_BUILD_PARALLEL_LEVEL
+# mirror. Vendored CUTLASS TUs -> heavy tail, keep at 3.
+max_jobs: 3

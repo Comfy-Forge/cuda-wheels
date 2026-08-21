@@ -20,3 +20,4 @@ version: 0.6.17
 clone_recursive: true
 build_subdir: flashinfer-jit-cache     # the AOT-compiled kernel cache wheel
 sequential_checkpoint: 10800           # 3h links; full AOT build is hours total
+max_jobs: 3   # AOT cache: hundreds of medium TUs; 3 fits the 16GB budget

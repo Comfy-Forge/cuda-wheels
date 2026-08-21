@@ -11,3 +11,10 @@ source_tag: v1.2.1
 version: 1.2.1
 clone_recursive: true          # cutlass + Block-Sparse-Attention submodules
 sequential_checkpoint: 18000   # cutlass W4A4 GEMMs are a multi-hour compile
+# FAST install mode enumerates local GPUs -- zero on CI -> setup.py
+# asserts before compiling anything. ALL builds every supported arch.
+# (setup.py ignores TORCH_CUDA_ARCH_LIST entirely; see README.)
+pre_build_script: echo "NUNCHAKU_INSTALL_MODE=ALL" >> $GITHUB_ENV
+# Upstream hardcodes --threads=len(sm_targets) (~6); the farm's trailing
+# --threads=1 wins. Cap jobs for the CUTLASS-heavy kernels.
+max_jobs: 2

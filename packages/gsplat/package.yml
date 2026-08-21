@@ -4,3 +4,6 @@ source_repo: nerfstudio-project/gsplat
 source_tag: v1.5.3
 patch_script: packages/gsplat/patches/gsplat.py
 clone_recursive: true
+# Upstream setup.py self-sets MAX_JOBS=10 when the env is unset -- on a
+# 4-vCPU runner that is -j10. An explicit value preempts the hijack.
+max_jobs: 4

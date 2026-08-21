@@ -129,6 +129,7 @@ jobs:
           patch-script: ${{ matrix.patch_script }}
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
+          nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: '0'
           shard-count: '0'
           package: ${{ matrix.package }}
