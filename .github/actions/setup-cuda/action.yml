@@ -126,6 +126,47 @@ runs:
       run: |
         $([ -f /etc/redhat-release ] && echo "" || echo sudo) cp -r .cuda-cache/cuda-${{ inputs.cuda-version }} /usr/local/
 
+    - name: Install extra CUDA components on cache-hit (Linux)
+      # The base-toolkit cache key does NOT include extra-components, so a
+      # cache populated by an extras-free job restores a tree without them
+      # and the main install step (which handles extras) is skipped. Extras
+      # are cheap (seconds of dnf/apt) -- install them unconditionally on
+      # the cache-hit path. Found via nunchaku: cache-hit ate its nvtx.
+      if: inputs.platform == 'linux' && steps.cuda-cache-linux.outputs.cache-hit == 'true' && inputs.extra-components != ''
+      shell: bash
+      run: |
+        CUDA_APT=$(echo "${{ inputs.cuda-version }}" | tr '.' '-')
+        ARCH=$(uname -m); [ "$ARCH" = "aarch64" ] && NVARCH="sbsa" || NVARCH="x86_64"
+        EXTRA="${{ inputs.extra-components }}"
+        if [ -f /etc/redhat-release ]; then
+          # cache-hit means the main install never ran in this container:
+          # the NVIDIA repo must be (re-)added before extras can install.
+          dnf install -y -q 'dnf-command(config-manager)' >/dev/null
+          dnf config-manager --add-repo \
+            https://developer.download.nvidia.com/compute/cuda/repos/rhel8/${NVARCH}/cuda-rhel8.repo >/dev/null
+          EXTRA_PKGS=""
+          for comp in $EXTRA; do
+            case "$comp" in
+              *_dev) EXTRA_PKGS="$EXTRA_PKGS lib${comp%_dev}-devel-${CUDA_APT}" ;;
+              nvtx)  EXTRA_PKGS="$EXTRA_PKGS cuda-nvtx-${CUDA_APT}" ;;
+              *)     EXTRA_PKGS="$EXTRA_PKGS cuda-${comp}-${CUDA_APT}" ;;
+            esac
+          done
+          echo "Installing extra CUDA components on cache-hit:$EXTRA_PKGS"
+          dnf install -y -q $EXTRA_PKGS >/dev/null
+        else
+          EXTRA_PKGS=""
+          for comp in $EXTRA; do
+            case "$comp" in
+              *_dev) EXTRA_PKGS="$EXTRA_PKGS lib${comp%_dev}-dev-${CUDA_APT}" ;;
+              nvtx)  EXTRA_PKGS="$EXTRA_PKGS cuda-nvtx-${CUDA_APT}" ;;
+              *)     EXTRA_PKGS="$EXTRA_PKGS cuda-${comp}-${CUDA_APT}" ;;
+            esac
+          done
+          echo "Installing extra CUDA components on cache-hit:$EXTRA_PKGS"
+          sudo apt-get install -y $EXTRA_PKGS
+        fi
+
     - name: Set CUDA environment (Linux)
       if: inputs.platform == 'linux'
       shell: bash
