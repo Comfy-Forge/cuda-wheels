@@ -11,3 +11,4 @@ version: 2.0.0
 # TORCH_CUDA_ARCH_LIST, so the shared grid arch lists apply unchanged.
 sequential_checkpoint: 10800   # 5 implicit-GEMM .cu files are 100-120 KB each
 max_jobs: 3   # five 100-120KB implicit-GEMM TUs; heavy tail
+extra_deps: tqdm   # setup.py imports it at metadata generation

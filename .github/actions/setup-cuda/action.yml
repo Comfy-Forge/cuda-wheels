@@ -32,7 +32,7 @@ runs:
       uses: actions/cache/restore@v4
       with:
         path: .cuda-cache/cuda-${{ inputs.cuda-version }}
-        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v3
+        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v4
 
     - name: Install CUDA toolkit (Linux)
       if: inputs.platform == 'linux' && steps.cuda-cache-linux.outputs.cache-hit != 'true'
@@ -49,6 +49,7 @@ runs:
             https://developer.download.nvidia.com/compute/cuda/repos/rhel8/${NVARCH}/cuda-rhel8.repo >/dev/null
           dnf install -y -q \
             cuda-nvcc-${CUDA_APT} \
+            cuda-cuobjdump-${CUDA_APT} \
             cuda-cudart-devel-${CUDA_APT} \
             cuda-nvrtc-devel-${CUDA_APT} \
             libcublas-devel-${CUDA_APT} \
@@ -89,6 +90,7 @@ runs:
           sudo apt-get update
           sudo apt-get install -y \
             cuda-nvcc-${CUDA_APT} \
+            cuda-cuobjdump-${CUDA_APT} \
             cuda-cudart-dev-${CUDA_APT} \
             cuda-nvrtc-dev-${CUDA_APT} \
             libcublas-dev-${CUDA_APT} \
@@ -118,7 +120,7 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: .cuda-cache/cuda-${{ inputs.cuda-version }}
-        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v3
+        key: cuda-${{ inputs.cuda-version }}-linux-${{ runner.arch }}-v4
 
     - name: Restore CUDA from cache (Linux)
       if: inputs.platform == 'linux' && steps.cuda-cache-linux.outputs.cache-hit == 'true'
