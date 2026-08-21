@@ -46,7 +46,6 @@ jobs:
     # auditwheel rejecting the result against the 2.28 policy.
     container:
       image: quay.io/pypa/manylinux_2_28_x86_64
-      options: --privileged
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(inputs.matrix_json).linux_chain }}
@@ -125,18 +124,6 @@ jobs:
           cuda-short: ${{ matrix.cuda_short }}
           platform: linux
           extra-deps: ${{ matrix.extra_deps }}
-
-      - name: Add swap space
-        # Sequential-checkpoint packages are inherently memory-heavy (that's
-        # why they checkpoint). Allocate 8GB swap unconditionally for any
-        # chain-mode package; cheap insurance against OOM kills mid-compile.
-        if: steps.check.outputs.exists != 'true'
-        run: |
-          # container runs as root (--privileged for swapon)
-          fallocate -l 8G /mnt/swapfile
-          chmod 600 /mnt/swapfile
-          mkswap /mnt/swapfile
-          swapon /mnt/swapfile
 
       - name: Build wheel
         id: bw

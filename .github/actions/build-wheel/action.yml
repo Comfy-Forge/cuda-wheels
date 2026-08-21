@@ -697,12 +697,14 @@ runs:
         # For cumm/spconv: disable JIT to force ahead-of-time CUDA compilation
         export CUMM_DISABLE_JIT=1
         export SPCONV_DISABLE_JIT=1
-        # Auto-tune NVCC_THREADS based on available RAM (each cicc ~4GB)
+        # NVCC_THREADS is pinned to 1: --threads parallelizes the SAME
+        # translation unit's per-arch cicc passes, whose memory peaks land
+        # together (2 threads = 2x the peak at the same instant). Ninja-level
+        # parallelism (MAX_JOBS) compiles DIFFERENT files whose peaks
+        # de-correlate -- strictly better use of the same RAM. Overridable
+        # via env for experiments.
         if [ -z "$NVCC_THREADS" ]; then
-          FREE_GB=$(free -g | awk '/Mem:/{print $7}')
-          if [ "$FREE_GB" -lt 20 ]; then export NVCC_THREADS=2
-          else export NVCC_THREADS=4; fi
-          echo "Auto-set NVCC_THREADS=$NVCC_THREADS (${FREE_GB}GB free RAM)"
+          export NVCC_THREADS=1
         fi
         # Per-package nvcc flags (e.g. warning suppression)
         if [ -n "${{ inputs.nvcc-flags }}" ]; then
@@ -928,13 +930,9 @@ runs:
         # For cumm/spconv: disable JIT to force ahead-of-time CUDA compilation
         $env:CUMM_DISABLE_JIT = "1"
         $env:SPCONV_DISABLE_JIT = "1"
-        # Auto-tune NVCC_THREADS based on available RAM (each cicc ~4GB)
-        if (-not $env:NVCC_THREADS) {
-          $freeGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB)
-          if ($freeGB -lt 20) { $env:NVCC_THREADS = "2" }
-          else { $env:NVCC_THREADS = "4" }
-          Write-Host "Auto-set NVCC_THREADS=$($env:NVCC_THREADS) (${freeGB}GB free RAM)"
-        }
+        # NVCC_THREADS pinned to 1 -- see the Linux block: per-arch peaks of
+        # one TU land together; ninja-level parallelism spreads them out.
+        if (-not $env:NVCC_THREADS) { $env:NVCC_THREADS = "1" }
         # Per-package nvcc flags (e.g. warning suppression)
         if ("${{ inputs.nvcc-flags }}" -ne "") {
           $env:NVCC_APPEND_FLAGS = "${{ inputs.nvcc-flags }}"
