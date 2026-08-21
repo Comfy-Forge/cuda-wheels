@@ -945,7 +945,8 @@ runs:
         # The wheel filename includes the local version (e.g., +cu130torch29)
         # but the internal METADATA still has the base version from pyproject.toml.
         # Fix the METADATA to match the filename so pip/uv see consistent versions.
-        python "$GITHUB_WORKSPACE/.github/actions/build-wheel/patch_wheel_version.py" "$GITHUB_WORKSPACE/dist"
+        # --package also applies the config's curated requires_dist, if any.
+        python "$GITHUB_WORKSPACE/.github/actions/build-wheel/patch_wheel_version.py" --package "${{ inputs.package }}" "$GITHUB_WORKSPACE/dist"
 
     - name: Verify wheel (gate before upload)
       # The pre-publication quality gate: filename/cell coherence, metadata

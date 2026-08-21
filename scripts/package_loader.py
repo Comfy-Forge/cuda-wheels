@@ -17,6 +17,7 @@ Every consumer assembles the SAME flat package dict the old single-file
 layout produced, so downstream logic is unchanged -- only discovery and
 paths live here.
 """
+import re
 from pathlib import Path
 
 import yaml
@@ -67,7 +68,48 @@ def load_package(pkg_dir: Path) -> dict:
             f"ERROR: {pkg_dir.name}: no links_torch declared -- state it "
             f"explicitly (true: wheel per (cuda x torch); false: torch-free, "
             f"one wheel per cuda, CW-ADR-0011).")
+    rd = cfg.get("requires_dist")
+    if rd is not None and (
+            not isinstance(rd, list) or not rd
+            or not all(isinstance(e, str) and e.strip() for e in rd)):
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}: requires_dist must be a non-empty "
+            f"list of PEP 508 strings (it REPLACES the wheel's upstream "
+            f"Requires-Dist wholesale).")
     return cfg
+
+
+def expand_requires_dist(entries, local_tag):
+    """Expand a curated requires_dist list for one concrete wheel.
+
+    Placeholders:
+      {LOCAL}        -> the wheel's own local version tag (cu128torch2.8),
+                        so sibling pins land on the same build cell
+      {VER:<folder>} -> the pinned `version` of packages/<folder> -- hard
+                        error if that package declares none, because a
+                        sibling pin must be exact+local to be un-spoofable
+                        (PyPI forbids local versions, so the pin resolves
+                        from our index or fails loudly, never to a
+                        stranger's package)
+    """
+    out = []
+    for entry in entries:
+        for folder in re.findall(r"\{VER:([A-Za-z0-9_-]+)\}", entry):
+            sib_yml = PACKAGES_DIR / folder / "package.yml"
+            if not sib_yml.exists():
+                raise SystemExit(
+                    f"ERROR: requires_dist entry {entry!r} references "
+                    f"unknown package folder {folder!r}.")
+            ver = str((yaml.safe_load(sib_yml.read_text()) or {})
+                      .get("version") or "").strip()
+            if not ver:
+                raise SystemExit(
+                    f"ERROR: requires_dist entry {entry!r} pins sibling "
+                    f"{folder!r}, but packages/{folder}/package.yml has no "
+                    f"'version' -- exact sibling pins require one.")
+            entry = entry.replace("{VER:%s}" % folder, ver)
+        out.append(entry.replace("{LOCAL}", local_tag))
+    return out
 
 
 def iter_packages():

@@ -68,6 +68,23 @@ else:
 setup_file.write_text(content)
 
 
+# ── force a real compile: never adopt upstream's prebuilt wheel ──────────
+# FA's setup.py looks for a matching wheel on Dao-AILab's GitHub releases
+# and DOWNLOADS it instead of compiling (that is what the os.rename below
+# moves into place). On linux x86 + cu12 + released torch versions a match
+# exists, so the farm would silently ship upstream's binary -- wrong arch
+# list, wrong toolchain, no ccache for the shard link job. Flip the
+# FORCE_BUILD default to TRUE so the farm always compiles from source.
+_force_old = 'FORCE_BUILD = os.getenv("FLASH_ATTENTION_FORCE_BUILD", "FALSE") == "TRUE"'
+_force_new = 'FORCE_BUILD = os.getenv("FLASH_ATTENTION_FORCE_BUILD", "TRUE") == "TRUE"'
+_s = Path("setup.py").read_text()
+if _force_old not in _s:
+    raise SystemExit("flash_attn patch: FORCE_BUILD line not found -- "
+                     "upstream changed; update this patch")
+Path("setup.py").write_text(_s.replace(_force_old, _force_new))
+print("flash_attn patch: FORCE_BUILD default -> TRUE (no prebuilt-wheel adoption)")
+
+
 # ── os.rename -> shutil.move (container cross-device fix) ─────────────────
 # FA's bdist override renames its wheel with os.rename (setup.py:499 at
 # v2.8.3); in the manylinux container the temp build dir (overlayfs) and

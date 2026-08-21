@@ -20,4 +20,4 @@ Field reference and how-to:
 [the build-process docs](https://pozzettiandrea.github.io/comfy-forge-docs/cuda-wheels/build-process/#how-do-i-add-a-package)
 (kept there, not here, so there is one copy). Live examples: `flash_attn/`
 (plain + arch override), `natten/` (all files), `llama_cpp_python/`
-(torch-free, checkpointed).
+(torch-free), `ovoxel/` (curated `requires_dist` with sibling pins).

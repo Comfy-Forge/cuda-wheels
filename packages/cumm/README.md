@@ -10,3 +10,8 @@ verified against the legacy farm's wheels too -- it has always been so,
 and users work because of the JIT path. OPEN QUESTION: the build exports
 `CUMM_DISABLE_JIT=1` intending AOT baking, which has silently never
 happened; if AOT is ever fixed upstream-side, drop `verify.skip_arch`.
+
+## Curated Requires-Dist
+
+Upstream leaks pccm/pybind11 (codegen-time) and fire (CLI helper) as
+runtime deps. `requires_dist` in package.yml trims to numpy + sympy.

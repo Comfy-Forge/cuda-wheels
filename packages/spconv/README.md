@@ -10,3 +10,10 @@ verified against the legacy farm's wheels too -- it has always been so,
 and users work because of the JIT path. OPEN QUESTION: the build exports
 `CUMM_DISABLE_JIT=1` intending AOT baking, which has silently never
 happened; if AOT is ever fixed upstream-side, drop `verify.skip_arch`.
+
+## Curated Requires-Dist
+
+Upstream leaks its build stack (pccm, ccimport, pybind11, fire) as
+runtime deps and pins `cumm<0.8.0` -- which our own farm cumm (0.8.2)
+does not satisfy. `requires_dist` in package.yml replaces the list with
+numpy plus an exact local-version pin on the farm's cumm.

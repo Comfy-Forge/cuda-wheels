@@ -45,7 +45,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from audit import parse_wheel, extract_archs, arch_list_to_sm, _SKIP_LIBS  # noqa: E402
 import generate_matrix as _GM  # noqa: E402
-from package_loader import iter_packages  # noqa: E402
+from package_loader import iter_packages, expand_requires_dist  # noqa: E402
 
 def _arch_major(sm):
     """sm_90 -> 9; sm_90a -> 9; robust to arch-variant suffixes."""
@@ -190,7 +190,7 @@ def check_filename(rep, parsed, args, pkg, vknobs=None):
 
 # ── C2 ─────────────────────────────────────────────────────────────────────
 
-def check_metadata(rep, wheel_path, parsed):
+def check_metadata(rep, wheel_path, parsed, pkg):
     import base64
     import hashlib
     try:
@@ -217,6 +217,24 @@ def check_metadata(rep, wheel_path, parsed):
                     f"METADATA Version {got_version!r} != filename {want_version!r} "
                     f"(patch_wheel_version regression)")
             return
+        # Curated Requires-Dist: when the config declares one, the wheel
+        # must carry EXACTLY the expanded list -- a mismatch means the
+        # patch step was skipped or upstream's format defeated it.
+        curated_template = pkg.get("requires_dist")
+        if curated_template:
+            local_tag = (f"cu{parsed['cuda_short']}"
+                         f"torch{parsed['torch_short']}") if parsed else ""
+            want_reqs = sorted(expand_requires_dist(curated_template, local_tag))
+            got_reqs = sorted(meta.get_all("Requires-Dist") or [])
+            extras = meta.get_all("Provides-Extra") or []
+            if got_reqs != want_reqs or extras:
+                missing = [r for r in want_reqs if r not in got_reqs]
+                surplus = [r for r in got_reqs if r not in want_reqs]
+                rep.add("metadata", "fail",
+                        f"Requires-Dist not curated: missing={missing} "
+                        f"surplus={surplus} leftover_extras={extras} "
+                        f"(requires_dist curation regression)")
+                return
         # RECORD re-verify
         rec_name = meta_name.rsplit("/", 1)[0] + "/RECORD"
         if rec_name not in names:
@@ -762,7 +780,7 @@ def main():
         if "filename" not in skip:
             check_filename(rep, parsed, args, pkg, vknobs)
         if "metadata" not in skip and parsed:
-            check_metadata(rep, wheel_path, parsed)
+            check_metadata(rep, wheel_path, parsed, pkg)
         with zipfile.ZipFile(wheel_path) as _zf:
             exts, vendored = wheel_members(_zf)
         if "binary_census" not in skip:

@@ -7,12 +7,21 @@ source_repo: traveller59/spconv
 source_tag: v2.3.8
 patch_script: packages/spconv/patches/spconv.py
 extra_deps: pccm>=0.4.16 ccimport>=0.4.4 cumm
+# Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
+# (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
+# which our own farm cumm (0.8.2) does not even satisfy. The sibling pin
+# is exact+local so it resolves from our index or fails loudly.
+requires_dist:
+  - numpy
+  - "cumm=={VER:cumm}+{LOCAL}"
 verify:
   extra_imports: [spconv.pytorch]
-verify:
   skip_arch: >-
     runtime-JIT package: kernels are compiled at import/run time via the
     vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
     CUMM_DISABLE_JIT=1 -- true of every wheel the farm has ever shipped
     (verified against legacy releases). See README.
-sharding: 6   # TEMPORARY: sharding test per owner -- revert after validation
+# sharding test (2026-08-21) reverted: the shard filter hooks
+# torch cpp_extension's CUDAExtension, which a pccm build never calls --
+# 6 shards each compiled the full source. spconv needs no sharding
+# (unsharded build fits the 6h limit comfortably).

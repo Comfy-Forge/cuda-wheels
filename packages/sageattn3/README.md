@@ -12,3 +12,8 @@ override file carries the detailed rationale in its comments; summary:
 
 - **`pcto_override.yml`** — overrides the cell axes (which cuda/torch/python/platform combos build): `build_matrix.combinations`, `build_matrix.platforms`.
 - **`arch_override.yml`** — overrides the GPU arch lists: `arch_list`. 
+
+## Curated Requires-Dist
+
+AOT-compiled wheel: upstream's ninja is build-time leakage.
+`requires_dist` in package.yml trims to torch, einops, packaging.

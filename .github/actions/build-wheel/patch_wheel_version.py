@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Patch wheel METADATA to include the full version from the wheel filename.
+Patch wheel METADATA in-place after the local-version rename.
 
-After building, wheels are renamed to include a local version identifier
-(e.g., +cu130torch29), but the internal METADATA still has the base version.
-This script fixes that mismatch so tools like uv/pip see consistent versions.
+Two fixes, one repack:
+1. Version: the filename carries the local tag (+cu130torch29) but the
+   internal METADATA still has the base version -- sync them so pip/uv
+   see consistent versions.
+2. Requires-Dist curation: when the package's config declares a
+   `requires_dist` list, it REPLACES the upstream Requires-Dist (and
+   Provides-Extra) wholesale -- upstream lists leak build tools and
+   mis-pin siblings (CW-ADR-0004). Placeholders {LOCAL}/{VER:<folder>}
+   expand via package_loader.expand_requires_dist.
 
 Usage:
-    python patch_wheel_version.py <wheel_or_directory> [...]
-
-Examples:
-    python patch_wheel_version.py dist/
-    python patch_wheel_version.py my_package-0.2+cu130torch29-cp312-cp312-linux_x86_64.whl
+    python patch_wheel_version.py [--package <name>] <wheel_or_directory> [...]
 """
 
 import base64
@@ -71,13 +73,32 @@ def rebuild_record(tmpdir: Path, dist_info_name: str) -> None:
     record_path.write_text(buf.getvalue(), encoding="utf-8")
 
 
-def fix_wheel(wheel_path: Path) -> bool:
-    """Fix METADATA version in a wheel file in-place. Returns True if modified."""
+def curate_requires_dist(content: str, curated: list[str]) -> str:
+    """Replace every Requires-Dist/Provides-Extra header with the curated
+    list. Folded continuation lines of dropped headers are dropped too."""
+    head, sep, body = content.partition("\n\n")
+    kept, dropping = [], False
+    for line in head.splitlines():
+        if line.startswith(("Requires-Dist:", "Provides-Extra:")):
+            dropping = True
+            continue
+        if dropping and line[:1] in (" ", "\t"):
+            continue
+        dropping = False
+        kept.append(line)
+    kept += [f"Requires-Dist: {req}" for req in curated]
+    return "\n".join(kept) + (sep + body if sep else "\n")
+
+
+def fix_wheel(wheel_path: Path, curated_template: list[str] | None = None) -> bool:
+    """Fix METADATA (version + curated Requires-Dist) in-place.
+    Returns True if modified."""
     filename = wheel_path.name
     pkg_name, version = extract_version_from_filename(filename)
 
     if "+" not in version:
         return False
+    local_tag = version.split("+", 1)[1]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -97,22 +118,34 @@ def fix_wheel(wheel_path: Path) -> bool:
             return False
 
         content = metadata_path.read_text(encoding="utf-8")
+        modified = False
 
         m = re.search(r"^Version: (.+)$", content, re.MULTILINE)
         if m and m.group(1) == version:
-            print(f"  {filename}: already correct ({version})")
+            print(f"  {filename}: version already correct ({version})")
+        else:
+            current_version = m.group(1) if m else "unknown"
+            print(f"  {filename}: {current_version} -> {version}")
+            content = re.sub(
+                r"^Version: .+$",
+                f"Version: {version}",
+                content,
+                flags=re.MULTILINE,
+            )
+            modified = True
+
+        if curated_template is not None:
+            from package_loader import expand_requires_dist
+            curated = expand_requires_dist(curated_template, local_tag)
+            new_content = curate_requires_dist(content, curated)
+            if new_content != content:
+                content = new_content
+                modified = True
+            print(f"  {filename}: Requires-Dist curated "
+                  f"({len(curated)} entries)")
+
+        if not modified:
             return False
-
-        current_version = m.group(1) if m else "unknown"
-        print(f"  {filename}: {current_version} -> {version}")
-
-        # Update Version in METADATA
-        content = re.sub(
-            r"^Version: .+$",
-            f"Version: {version}",
-            content,
-            flags=re.MULTILINE,
-        )
         metadata_path.write_text(content, encoding="utf-8")
 
         # Rename dist-info directory to match new version
@@ -135,12 +168,34 @@ def fix_wheel(wheel_path: Path) -> bool:
     return True
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python patch_wheel_version.py <wheel_or_directory> [...]")
-        sys.exit(1)
+def load_curated_template(package: str) -> list[str] | None:
+    """The package's curated requires_dist from packages/<folder>/, or None.
+    The action runs from the farm repo checkout, so the config is three
+    levels up from this co-located script."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    from package_loader import iter_packages
+    want = package.replace("-", "_").lower()
+    for _folder, cfg in iter_packages():
+        if cfg["name"].replace("-", "_").lower() == want:
+            return cfg.get("requires_dist")
+    raise SystemExit(f"patch_wheel_version: no package named {package!r} "
+                     f"in packages/")
 
-    paths = [Path(p) for p in sys.argv[1:]]
+
+def main():
+    argv = sys.argv[1:]
+    package = None
+    if "--package" in argv:
+        i = argv.index("--package")
+        package = argv[i + 1]
+        del argv[i:i + 2]
+    if not argv:
+        print("Usage: python patch_wheel_version.py [--package <name>] "
+              "<wheel_or_directory> [...]")
+        sys.exit(1)
+    curated = load_curated_template(package) if package else None
+
+    paths = [Path(p) for p in argv]
     fixed = 0
 
     for path in paths:
@@ -153,7 +208,7 @@ def main():
             continue
 
         for whl in wheels:
-            if fix_wheel(whl):
+            if fix_wheel(whl, curated):
                 fixed += 1
 
     print(f"Fixed {fixed} wheel(s)")

@@ -4,3 +4,10 @@ source_repo: ashawkey/cubvh
 source_tag: 7855c000f95e43742081060d869702b2b2b33d1f
 clone_recursive: true
 patch_script: packages/cubvh/patches/cubvh.py
+# Curated Requires-Dist (CW-ADR-0004): this is an AOT-compiled wheel --
+# upstream's ninja/pybind11 are build-time leakage.
+requires_dist:
+  - torch
+  - numpy
+  - trimesh
+  - kiui
