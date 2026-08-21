@@ -8,9 +8,6 @@ from pathlib import Path
 
 import yaml
 
-# Matches v2 torch naming: +cu128torch2.9-cp (dot between major.minor)
-_V2_TORCH_RE = re.compile(r'(\+cu\d+torch)(\d)\.(\d+)(-cp)')
-
 # Pulls the combo out of a wheel filename: +cu128torch2.8 -> ("cu128", "torch2.8")
 _COMBO_RE = re.compile(r'\+(cu\d+)(torch[\d.]+)')
 
@@ -113,10 +110,6 @@ def expand_torch_free_aliases(packages: dict, torch_free: set, grid: dict) -> in
                 seen.add(alias)
                 wheels.append({
                     "filename": alias,
-                    "v1_filename": _V2_TORCH_RE.sub(
-                        lambda x: f"{x.group(1)}{x.group(2)}{x.group(3)}{x.group(4)}",
-                        alias,
-                    ),
                     "url": wheel["url"],          # same asset, no second upload
                     "alias_of": wheel["filename"],
                 })
@@ -185,14 +178,8 @@ def main():
 
             url = asset["browser_download_url"]
 
-            # Generate v1 display name by stripping dot: torch2.9 → torch29
-            v1_name = _V2_TORCH_RE.sub(
-                lambda x: f"{x.group(1)}{x.group(2)}{x.group(3)}{x.group(4)}", name
-            )
-
             packages.setdefault(pkg_name, []).append({
-                "filename": name,      # v2 (actual asset name)
-                "v1_filename": v1_name, # v1 (display name for root index)
+                "filename": name,      # the actual asset name
                 "url": url,
             })
 
@@ -208,12 +195,19 @@ def main():
     # fetch, an auth failure, or an API hiccup must fail the run rather than
     # quietly dropping packages -- losing them produces no error anywhere
     # downstream, and the per-package pages keep serving stale wheel lists.
-    v2_dir = Path(args.previous) / "v2"
+    prev_root = Path(args.previous)
+    v2_dir = prev_root / "v2"   # transition: pre-single-index deploys kept /v2/
     if v2_dir.is_dir():
         previous = {d.name for d in v2_dir.iterdir() if d.is_dir()}
+    elif prev_root.is_dir():
+        # Root-level package dirs; skip the non-package families (combo
+        # channels cuXXX/, matrix/, dashboard/).
+        previous = {d.name for d in prev_root.iterdir() if d.is_dir()
+                    and d.name not in ("matrix", "dashboard")
+                    and not d.name.startswith("cu")}
     else:
         previous = set()
-        print(f"WARNING: no previous index at {v2_dir} -- the shorter-index "
+        print(f"WARNING: no previous index at {prev_root} -- the shorter-index "
               f"guard is SKIPPED. Expected only on the very first deploy.")
     lost = previous - set(packages)
     if lost:
@@ -242,8 +236,10 @@ def main():
             f.write(f'<a href="{pkg}/">{pkg}</a><br>\n')
         f.write("</body>\n</html>\n")
 
-    # Generate per-package index.
-    # Root index: v1 display names (torch29), hrefs point to v2 assets (torch2.9)
+    # Per-package pages: THE index. One flat PEP 503 tree at the root,
+    # actual asset filenames -- the v1 naming shim and the /v2/ mirror are
+    # gone (this repo has no legacy consumers; the old farm keeps serving
+    # the old names).
     for pkg, wheels in packages.items():
         pkg_dir = docs / pkg
         pkg_dir.mkdir(exist_ok=True)
@@ -253,8 +249,8 @@ def main():
             f.write(f"<html>\n<head><title>{pkg}</title></head>\n")
             f.write("<body>\n")
             f.write(f"<h1>{pkg}</h1>\n")
-            for wheel in sorted(wheels, key=lambda w: w["v1_filename"]):
-                f.write(f'<a href="{wheel["url"]}">{wheel["v1_filename"]}</a><br>\n')
+            for wheel in sorted(wheels, key=lambda w: w["filename"]):
+                f.write(f'<a href="{wheel["url"]}">{wheel["filename"]}</a><br>\n')
             f.write("</body>\n</html>\n")
 
     print(f"Generated index for {len(packages)} built packages:")
@@ -262,44 +258,16 @@ def main():
         print(f"  - {pkg}: {len(wheels)} wheels")
     print(f"Total: {len(all_packages)} packages in index")
 
-    # Generate v2 index (built packages only, all wheels are v2-named now)
-    v2_packages = packages
-
-    v2_docs = docs / "v2"
-    v2_docs.mkdir(parents=True, exist_ok=True)
-    with open(v2_docs / "index.html", "w") as f:
-        f.write("<!DOCTYPE html>\n")
-        f.write("<html>\n<head><title>CUDA Wheels v2</title></head>\n")
-        f.write("<body>\n")
-        f.write("<h1>CUDA Wheels v2</h1>\n")
-        for pkg in sorted(v2_packages.keys()):
-            f.write(f'<a href="{pkg}/">{pkg}</a><br>\n')
-        f.write("</body>\n</html>\n")
-
-    for pkg, wheels in v2_packages.items():
-        pkg_dir = v2_docs / pkg
-        pkg_dir.mkdir(exist_ok=True)
-        with open(pkg_dir / "index.html", "w") as f:
-            f.write("<!DOCTYPE html>\n")
-            f.write(f"<html>\n<head><title>{pkg}</title></head>\n")
-            f.write("<body>\n")
-            f.write(f"<h1>{pkg}</h1>\n")
-            for wheel in sorted(wheels, key=lambda w: w["filename"]):
-                f.write(f'<a href="{wheel["url"]}">{wheel["filename"]}</a><br>\n')
-            f.write("</body>\n</html>\n")
-
-    print(f"Generated v2 index for {len(v2_packages)} packages")
-
     # Per-combo indexes: docs/<cuda>/<torch>/<pkg>/
     #
     # The flat index cannot be resolved. A wheel's CUDA and torch versions live
     # only in its local version tag, and pip matches neither -- so an unpinned
-    # install against /v2/ picks the highest combo present, not the one the
+    # install against the flat index picks the highest combo present, not the one the
     # machine can load. GPU architecture is not expressible at all. Putting the
     # combo in the URL is the only way to make selection unambiguous, and it is
     # what download.pytorch.org does (/whl/cu128/).
     #
-    # Additive: /v2/ is untouched, so existing consumers are unaffected.
+    # Additive next to the flat root index.
     combos = {}
     for pkg, wheels in packages.items():
         for wheel in wheels:

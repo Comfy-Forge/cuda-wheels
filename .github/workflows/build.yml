@@ -10,56 +10,10 @@ on:
         type: boolean
         default: false
       package:
-        description: 'Package to build (or "all")'
+        description: 'Package to build ("all", or a package name from packages/ -- generate_matrix.py rejects unknown names with the known list)'
         required: true
-        type: choice
-        options:
-          - all
-          - sageattention
-          - sageattn3
-          - gsplat
-          - nvdiffrast
-          - torch_generic_nms
-          - cc_torch
-          - flex_gemm
-          - flex_gemm_ap
-          - cumesh
-          - cubvh
-          - o_voxel
-          - nvdiffrec_render
-          - dpvo_cuda
-          - pytorch3d
-          - cumm
-          - spconv
-          - flash_attn
-          - torch_cluster
-          - torch_scatter
-          - torch_sparse
-          - o_voxel_vb
-          - o_voxel_vb_ap
-          - cumesh_vb
-          - flex_gemm_vb
-          - detectron2
-          - pyg_lib
-          - torch_spline_conv
-          - drtk
-          - diff_gaussian_rasterization
-          - simple_knn
-          - natten
-          - fused_ssim
-          - gsplat_maskgaussian
-          - mmcv
-          - faithc_aot
-          - diso
-          - pointnet2_ops
-          - vox2seq
-          - custom_rasterizer_hy3d2
-          - nunchaku
-          - torchao
-          - torchsparse
-          - vllm
-          - flashinfer
-          - llama_cpp_python
+        type: string
+        default: all
       overwrite:
         description: 'Rebuild and overwrite existing wheels'
         required: false
@@ -72,6 +26,7 @@ on:
         options:
           - all
           - linux
+          - linux_aarch64
           - windows
         default: all
       cuda:

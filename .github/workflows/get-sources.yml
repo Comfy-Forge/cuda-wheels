@@ -5,30 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: 'Package to fetch sources for (or "all")'
+        description: 'Package to fetch sources for ("all" or a package name)'
         required: true
-        type: choice
-        options:
-          - all
-          - cc_torch
-          - cubvh
-          - cumesh
-          - cumm
-          - dpvo_cuda
-          - flash_attn
-          - flexgemm
-          - gsplat
-          - nvdiffrast
-          - nvdiffrec_render
-          - ovoxel
-          - pytorch3d
-          - sageattention
-          - sageattn3
-          - spconv
-          - torch_cluster
-          - torch_generic_nms
-          - torch_scatter
-          - torch_sparse
+        type: string
+        default: all
 
 jobs:
   fetch-and-commit:

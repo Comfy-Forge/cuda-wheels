@@ -628,7 +628,7 @@ def generate_dashboard(built_packages: dict, output_dir: Path,
     for f in static_dir.iterdir():
         shutil.copy2(f, output_dir / f.name)
 
-    print(f"Dashboard: {len(built_summaries) + len(ext_summaries)} packages, {total_wheels} total wheels")
+    print(f"Dashboard: {len(built_summaries)} packages, {total_wheels} total wheels")
 
 
 def main():
