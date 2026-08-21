@@ -34,3 +34,4 @@ nvcc_flags: --threads=1
 # cmake is required by NATTEN's setup.py (checks for the executable at build
 # time). Ninja generator is used.
 extra_deps: cmake ninja
+sharding: 6   # sharded for wall-clock; patch reads CUDA_WHEELS_SHARD_INDEX/COUNT

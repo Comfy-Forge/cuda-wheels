@@ -15,3 +15,4 @@ verify:
     vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
     CUMM_DISABLE_JIT=1 -- true of every wheel the farm has ever shipped
     (verified against legacy releases). See README.
+sharding: 6   # TEMPORARY: sharding test per owner -- revert after validation
