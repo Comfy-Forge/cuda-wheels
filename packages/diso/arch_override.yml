@@ -1,0 +1,11 @@
+# Overrides of the shared arch policy (defaults/arch_policy.yml)
+# for this package only.
+# SM 6.0 FLOOR (see README.md): diso's backward pass calls atomicAdd on
+# double accumulators, and atomicAdd(double*, double) only exists from
+# sm_60 (Pascal). The shared cu124/cu126 rows include 5.0 (Maxwell,
+# matching torch's own wheels); compiling diso for sm_50 fails with
+# "no instance of overloaded function atomicAdd". cu128+ rows already
+# start at 7.0 and are left to inherit.
+arch_list_by_cuda:
+  "12.4": "6.0;7.0;7.5;8.0;8.6;9.0+PTX"
+  "12.6": "6.0;7.0;7.5;8.0;8.6;9.0+PTX"

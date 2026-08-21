@@ -17,7 +17,7 @@ ComfyUI-3D-Pack users. Upstream has no tags, so the pin is a commit.
 - The `cxx: ["-O3"]` flag is gcc syntax; MSVC emits warning D9002 and
   ignores it rather than failing, so Windows is left unpatched on purpose.
 
-## Hard arch floor: sm_60 (no override needed today)
+## Hard arch floor: sm_60 (enforced by arch_override.yml)
 
 diso explicitly instantiates `CUDualMC<double, int>` (src/cudualmc.cu:1144)
 and its backward pass calls `atomicAdd` on double accumulators
@@ -25,8 +25,8 @@ and its backward pass calls `atomicAdd` on double accumulators
 `atomicAdd(double*, double)` only from sm_60 (Pascal) onward, so compiling
 for sm_50 fails with "no instance of overloaded function atomicAdd".
 
-This package used to carry an `arch_override.yml` dropping sm_50 from the
-cu124/cu126 rows; the shared policy (defaults/arch_policy.yml) later dropped
-Maxwell farm-wide, making the override byte-identical to the defaults, so it
-was deleted. The constraint still stands: if pre-Pascal arches are ever
-re-added to the shared cu12.x rows, diso needs its sm_60-floor override back.
+The shared policy's cu124/cu126 rows include 5.0 (Maxwell, matching
+torch's own wheels), so `arch_override.yml` drops it for this package:
+cu124/cu126 build 6.0 and up, cu128+ inherit the policy rows (which
+already start at 7.0). The override was briefly deleted while the farm
+policy itself excluded Maxwell; it returned when 5.0 did.
