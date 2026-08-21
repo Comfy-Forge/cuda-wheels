@@ -18,7 +18,9 @@ from pathlib import Path as _P
 
 _eigen_dst = _P("o-voxel/third_party/eigen")
 if not (_eigen_dst / "Eigen").exists():
-    _sp.run(["curl", "-sL", "--retry", "5", "--retry-all-errors",
+    # NOTE: no --retry-all-errors -- AlmaLinux 8 ships curl 7.61, which
+    # predates that flag (7.71). -f makes HTTP errors fail loudly.
+    _sp.run(["curl", "-sfL", "--retry", "5",
              "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz",
              "-o", "_eigen.tar.gz"], check=True)
     _sp.run(["tar", "-xzf", "_eigen.tar.gz"], check=True)
