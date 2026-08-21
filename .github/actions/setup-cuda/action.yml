@@ -69,23 +69,6 @@ runs:
             echo "Installing extra CUDA components:$EXTRA_PKGS"
             dnf install -y -q $EXTRA_PKGS >/dev/null
           fi
-          # Host-compiler pairing: the manylinux_2_28 image ships GCC 14,
-          # but nvcc enforces a max host g++ per CUDA line (12.6 rejects
-          # >= 14: "greater than the maximum required version by CUDA").
-          # AlmaLinux 8 packages older toolchains as gcc-toolset-N; front
-          # the right one for pre-12.8 lines.
-          CUDA_MM="${{ inputs.cuda-version }}"
-          # <= 12.8, not < 12.8: torch 2.11's cpp_extension enforces g++ < 14
-          # for CUDA 12.8 (the image ships g++ 14). Toolset-13 is fine for
-          # every 12.x line; 12.9+ accepts g++ 14.
-          if [ "$(printf '%s\n' "$CUDA_MM" "12.9" | sort -V | head -1)" != "12.9" ]; then
-            dnf install -y -q gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ >/dev/null
-            TS=/opt/rh/gcc-toolset-13/root/usr/bin
-            echo "$TS" >> $GITHUB_PATH
-            echo "CC=$TS/gcc" >> $GITHUB_ENV
-            echo "CXX=$TS/g++" >> $GITHUB_ENV
-            "$TS/g++" --version | head -1
-          fi
         else
           # Bare Ubuntu runner (legacy fallback; all farm jobs run in manylinux containers).
           [ "$ARCH" = "aarch64" ] && REPO="ubuntu2404/sbsa" || REPO="ubuntu2204/x86_64"
@@ -171,6 +154,28 @@ runs:
           done
           echo "Installing extra CUDA components on cache-hit:$EXTRA_PKGS"
           sudo apt-get install -y $EXTRA_PKGS
+        fi
+
+    - name: Host compiler pairing (Linux, always)
+      # MUST run regardless of the CUDA cache: the toolset install + PATH/CC/
+      # CXX exports were originally inside the cache-gated install step, so
+      # every cache-hit job built with the image's g++ 14 -- the whole ARM
+      # wave failed on it (torch 2.11 enforces g++ < 14 for CUDA <= 12.8).
+      # Same disease as the extras-on-cache-hit fix.
+      if: inputs.platform == 'linux'
+      shell: bash
+      run: |
+        if [ ! -f /etc/redhat-release ]; then exit 0; fi
+        CUDA_MM="${{ inputs.cuda-version }}"
+        # <= 12.8: torch 2.11's cpp_extension enforces g++ < 14 there;
+        # toolset-13 is fine for every 12.x line; 12.9+ accepts g++ 14.
+        if [ "$(printf '%s\n' "$CUDA_MM" "12.9" | sort -V | head -1)" != "12.9" ]; then
+          dnf install -y -q gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ >/dev/null
+          TS=/opt/rh/gcc-toolset-13/root/usr/bin
+          echo "$TS" >> $GITHUB_PATH
+          echo "CC=$TS/gcc" >> $GITHUB_ENV
+          echo "CXX=$TS/g++" >> $GITHUB_ENV
+          "$TS/g++" --version | head -1
         fi
 
     - name: Set CUDA environment (Linux)
