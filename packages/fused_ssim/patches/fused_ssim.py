@@ -114,3 +114,25 @@ print(
     f"fused_ssim patch: patched={patched}, "
     f"already-patched={skipped}, total-files={len(SOURCE_FILES)}"
 )
+
+
+# ── Honor TORCH_CUDA_ARCH_LIST instead of the hardcoded 75/80/89 fallback ──
+# Upstream probes the local GPU and, on GPU-less CI, falls back to THREE
+# hardcoded gencodes (sm_75/80/89) -- ignoring TORCH_CUDA_ARCH_LIST. Every
+# farm wheel shipped without Hopper/Blackwell SASS because of this. With no
+# explicit -gencode flags, torch's cpp_extension derives them from
+# TORCH_CUDA_ARCH_LIST, which the farm always exports.
+import re as _re
+from pathlib import Path as _P
+
+_sp = _P("setup.py")
+_content = _sp.read_text()
+_before = _content
+# empty the fallback list and drop the detected-arch append
+_content = _re.sub(r"fallback_archs = \[[^]]*\]", "fallback_archs = []", _content)
+_content = _re.sub(r"nvcc_args\.append\(f?\"-gencode[^)]*\)", "pass", _content)
+_content = _content.replace("nvcc_args.extend(fallback_archs)", "pass  # cpp_extension derives gencodes from TORCH_CUDA_ARCH_LIST")
+if _content == _before:
+    raise SystemExit("fused_ssim patch: arch-fallback block not found -- upstream changed; update the patch")
+_sp.write_text(_content)
+print("fused_ssim patch: hardcoded gencode fallback stripped (TORCH_CUDA_ARCH_LIST now authoritative)")

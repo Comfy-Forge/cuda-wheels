@@ -5,3 +5,5 @@ source_tag: 3432bc7ce157b0f668ecf0d856d69353816f5c47
 extra_deps: numpy
 extra_cuda_components: cufft_dev nvtx
 clone_recursive: true
+verify:
+  expect_device_error: true  # __init__ probes the GPU at import; device errors expected on CI

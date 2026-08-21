@@ -6,3 +6,5 @@ patch_script: packages/flexgemm/patches/flexgemm.py
 extra_deps: numpy
 extra_cuda_components: cufft_dev nvtx
 clone_recursive: true
+verify:
+  expect_device_error: true  # __init__ probes the GPU at import; device errors expected on CI
