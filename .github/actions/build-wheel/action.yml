@@ -1274,6 +1274,17 @@ runs:
         # Fix the METADATA to match the filename so pip/uv see consistent versions.
         python "$GITHUB_WORKSPACE/.github/actions/build-wheel/patch_wheel_version.py" "$GITHUB_WORKSPACE/dist"
 
+    - name: Verify wheel (gate before upload)
+      # The pre-publication quality gate: filename/cell coherence, metadata
+      # integrity, compiled-code census, NEEDED/RPATH + glibc-2.28 audits,
+      # links_torch-vs-binary proof, fatbin arch assert, and a subprocess
+      # import test against the exact build torch. ALL logic lives in
+      # scripts/verify_wheel.py -- non-zero exit fails this step, the upload
+      # never runs, and the wheel is not published.
+      if: (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      shell: bash
+      run: python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" "$GITHUB_WORKSPACE/dist" --package "${{ inputs.package }}" --arch-list "${{ inputs.arch-list }}" --cuda "${{ inputs.cuda-version }}" --torch "${{ inputs.pytorch-version }}" --platform "${{ inputs.platform }}"
+
     - name: Set wheel-path output
       # Empty in compile-shard mode and in sequential-checkpoint mid-chain
       # mode; populated otherwise.
