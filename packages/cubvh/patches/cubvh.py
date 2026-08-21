@@ -14,4 +14,7 @@ if new != content:
     setup_file.write_text(new)
     print("cubvh patch: cpp_standard 17 -> 20")
 else:
-    print("cubvh patch: cpp_standard already != 17 (no-op)")
+    raise SystemExit(
+        "cubvh patch: 'cpp_standard = 17' not found in setup.py -- upstream "
+        "changed (HEAD already reads 'cpp_standard = 20 if IS_HIP_EXTENSION "
+        "else 17'); update this patch before bumping the pin")
