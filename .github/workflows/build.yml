@@ -496,9 +496,11 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────────────
-  # Sequential-checkpoint chain (10 links). Each `uses:` call invokes the
+  # Sequential-checkpoint chain (6 links x 3h checkpoint = 18h capacity; Each `uses:` call invokes the
   # reusable workflow `_chain_link.yml`, which contains the full per-link
-  # logic. Links are wired with `needs:` so they run sequentially in the
+  # completed chains skip the remaining links). Each `uses:` call invokes
+  # the reusable workflow, which contains the full per-link logic. Links
+  # are wired with `needs:` so they run sequentially in the
   # SAME workflow run. The `if:` clause gates each link on the previous
   # one's `done` output: as soon as a link completes the build (done=true),
   # every subsequent link is skipped. Setting `result == 'success' &&
@@ -528,6 +530,55 @@ jobs:
       overwrite: ${{ inputs.overwrite }}
     secrets: inherit
 
+
+  build-linux-chain-link-2:
+    needs: [generate-matrix, build-linux-chain-link-1]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_chain.include[0] != null && needs.build-linux-chain-link-1.result == 'success' && needs.build-linux-chain-link-1.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link.yml
+    with:
+      iter: 2
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-linux-chain-link-3:
+    needs: [generate-matrix, build-linux-chain-link-2]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_chain.include[0] != null && needs.build-linux-chain-link-2.result == 'success' && needs.build-linux-chain-link-2.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link.yml
+    with:
+      iter: 3
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-linux-chain-link-4:
+    needs: [generate-matrix, build-linux-chain-link-3]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_chain.include[0] != null && needs.build-linux-chain-link-3.result == 'success' && needs.build-linux-chain-link-3.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link.yml
+    with:
+      iter: 4
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-linux-chain-link-5:
+    needs: [generate-matrix, build-linux-chain-link-4]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_chain.include[0] != null && needs.build-linux-chain-link-4.result == 'success' && needs.build-linux-chain-link-4.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link.yml
+    with:
+      iter: 5
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
   # ──────────────────────────────────────────────────────────────────────
   # Windows mirror of the Linux chain (build-linux-chain-link-0..9). Same
   # 10-job ladder, each `uses: _chain_link_windows.yml`. Wires gated the
@@ -550,6 +601,54 @@ jobs:
     uses: ./.github/workflows/_chain_link_windows.yml
     with:
       iter: 1
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-windows-chain-link-2:
+    needs: [generate-matrix, build-windows-chain-link-1]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows_chain.include[0] != null && needs.build-windows-chain-link-1.result == 'success' && needs.build-windows-chain-link-1.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link_windows.yml
+    with:
+      iter: 2
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-windows-chain-link-3:
+    needs: [generate-matrix, build-windows-chain-link-2]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows_chain.include[0] != null && needs.build-windows-chain-link-2.result == 'success' && needs.build-windows-chain-link-2.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link_windows.yml
+    with:
+      iter: 3
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-windows-chain-link-4:
+    needs: [generate-matrix, build-windows-chain-link-3]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows_chain.include[0] != null && needs.build-windows-chain-link-3.result == 'success' && needs.build-windows-chain-link-3.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link_windows.yml
+    with:
+      iter: 4
+      matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
+      runner: ${{ inputs.runner }}
+      max_jobs_override: ${{ inputs.max_jobs }}
+      overwrite: ${{ inputs.overwrite }}
+    secrets: inherit
+
+  build-windows-chain-link-5:
+    needs: [generate-matrix, build-windows-chain-link-4]
+    if: ${{ fromJson(needs.generate-matrix.outputs.matrix).windows_chain.include[0] != null && needs.build-windows-chain-link-4.result == 'success' && needs.build-windows-chain-link-4.outputs.done == 'false' }}
+    uses: ./.github/workflows/_chain_link_windows.yml
+    with:
+      iter: 5
       matrix_json: ${{ needs.generate-matrix.outputs.matrix }}
       runner: ${{ inputs.runner }}
       max_jobs_override: ${{ inputs.max_jobs }}

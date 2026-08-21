@@ -19,4 +19,4 @@ source_tag: v0.6.17
 version: 0.6.17
 clone_recursive: true
 build_subdir: flashinfer-jit-cache     # the AOT-compiled kernel cache wheel
-sequential_checkpoint: 18000           # 245 .cu, full AOT build is hours
+sequential_checkpoint: 10800           # 3h links; full AOT build is hours total
