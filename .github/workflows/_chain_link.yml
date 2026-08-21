@@ -38,7 +38,7 @@ on:
 jobs:
   build:
     name: chain ${{ inputs.iter }} ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     # Same container as build.yml's build-linux: the glibc-2.28 floor is
     # policy (tracks PyTorch's manylinux baseline), and setup-build-env
     # expects the image's /opt/python interpreters. Without this block the

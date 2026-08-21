@@ -83,7 +83,7 @@ jobs:
     needs: generate-matrix
     # Skip when the linux matrix is empty (mirrors build-windows guard).
     if: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux.include[0] != null }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     # Builds run inside the manylinux_2_28 container (AlmaLinux 8, glibc
     # 2.28): the wheel's glibc floor is a POLICY that tracks PyTorch's
     # manylinux baseline, not an accident of the runner image.
@@ -347,7 +347,7 @@ jobs:
     # GH Actions only exposes outputs from direct needs.
     needs: [generate-matrix, build-linux]
     if: ${{ needs.build-linux.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_link.include[0] != null }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     container:
       image: quay.io/pypa/manylinux_2_28_x86_64
     strategy:

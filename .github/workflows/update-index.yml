@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   update-index:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     environment: deploy-index
     permissions:
       contents: write
