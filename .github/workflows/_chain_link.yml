@@ -5,8 +5,8 @@ name: Sequential-checkpoint chain link
 # sequentially within the SAME run, with the `done` output gating whether
 # subsequent links run or are skipped.
 #
-# This file owns the per-link logic so we don't have to copy-paste 10
-# nearly-identical job blocks into build.yml. The matrix from
+# This file owns the per-link logic so build.yml's ladder (6 links per
+# platform) stays a thin list of `uses:` calls. The matrix from
 # generate-matrix is threaded in as a JSON-string input.
 
 on:
@@ -44,6 +44,14 @@ jobs:
   build:
     name: chain ${{ inputs.iter }} ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
     runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","linux","cuda"]') || 'ubuntu-22.04' }}
+    # Same container as build.yml's build-linux: the glibc-2.28 floor is
+    # policy (tracks PyTorch's manylinux baseline), and setup-build-env
+    # expects the image's /opt/python interpreters. Without this block the
+    # chain built on bare ubuntu-22.04 -- system python, glibc 2.35, and
+    # auditwheel rejecting the result against the 2.28 policy.
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+      options: --privileged
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(inputs.matrix_json).linux_chain }}
@@ -55,20 +63,15 @@ jobs:
       # further compile happens.
       done: ${{ steps.bw.outputs.done || (steps.check.outputs.exists == 'true' && 'true' || 'false') }}
     steps:
-      - name: Free disk space
-        if: matrix.free_disk_space == true
+      # (The host free-disk step is gone: host paths are unreachable from
+      # the container. Stock runner disk must suffice -- same trade as
+      # build.yml's containerized jobs.)
+      - name: Container prerequisites (gh CLI, procps)
         run: |
-          sudo rm -rf /usr/share/dotnet &
-          sudo rm -rf /usr/local/lib/android &
-          sudo rm -rf /opt/ghc &
-          sudo rm -rf /opt/hostedtoolcache/CodeQL &
-          sudo rm -rf /usr/share/swift &
-          sudo rm -rf /usr/local/graalvm &
-          sudo rm -rf /usr/local/.ghcup &
-          sudo rm -rf /opt/hostedtoolcache/go &
-          sudo apt-get clean &
-          wait
-          df -h
+          dnf install -y -q 'dnf-command(config-manager)' >/dev/null
+          dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo >/dev/null
+          dnf install -y -q gh procps-ng >/dev/null
+          gh --version | head -1
 
       - uses: actions/checkout@v4
 
@@ -134,10 +137,11 @@ jobs:
         # chain-mode package; cheap insurance against OOM kills mid-compile.
         if: steps.check.outputs.exists != 'true'
         run: |
-          sudo fallocate -l 8G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          # container runs as root (--privileged for swapon)
+          fallocate -l 8G /mnt/swapfile
+          chmod 600 /mnt/swapfile
+          mkswap /mnt/swapfile
+          swapon /mnt/swapfile
 
       - name: Build wheel
         id: bw

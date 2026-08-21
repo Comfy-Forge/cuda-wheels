@@ -17,21 +17,29 @@ from pathlib import Path
 import yaml
 
 
+def _load_all(packages_dir: Path) -> dict:
+    """{name: merged config} via package_loader -- the folder layout's single
+    loader. Keyed by BOTH the declared package name and the folder name, so
+    dispatch inputs in either form resolve. (The old glob("*.yml") matched
+    nothing after the folder restructure: get-sources ran as a green no-op.)"""
+    sys.path.insert(0, str(Path(__file__).parent))
+    from package_loader import iter_packages
+    configs = {}
+    for folder, cfg in iter_packages():
+        configs[cfg["name"]] = cfg
+        configs[folder] = cfg
+    return configs
+
+
 def get_all_package_names(packages_dir: Path) -> list[str]:
-    return sorted(
-        p.stem for p in packages_dir.glob("*.yml")
-        if p.stem != "README"
-    )
+    return sorted({cfg["name"] for cfg in _load_all(packages_dir).values()})
 
 
 def process_package(pkg_name: str, packages_dir: Path, output_dir: Path):
-    config_path = packages_dir / f"{pkg_name}.yml"
-    if not config_path.exists():
-        print(f"WARNING: Config not found: {config_path}, skipping")
+    config = _load_all(packages_dir).get(pkg_name)
+    if config is None:
+        print(f"WARNING: No package named {pkg_name} in {packages_dir}, skipping")
         return
-
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
 
     source_repo = config["source_repo"]
     source_tag = config.get("source_tag", "")

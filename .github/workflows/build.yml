@@ -30,17 +30,9 @@ on:
           - windows
         default: all
       cuda:
-        description: 'CUDA version filter (or "all")'
+        description: 'CUDA version filter — e.g. "12.8", or "all" (validated against the grid by generate_matrix.py)'
         required: false
-        type: choice
-        options:
-          - all
-          - "12.4"
-          - "12.6"
-          - "12.8"
-          - "12.9"
-          - "13.0"
-          - "13.2"
+        type: string
         default: all
       pytorch:
         description: 'PyTorch version filter — full (e.g. "2.11.0") or major.minor (e.g. "2.11"), or "all"'
@@ -536,7 +528,7 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────
   # Windows mirror of the Linux chain (build-linux-chain-link-0..9). Same
-  # 10-job ladder, each `uses: _chain_link_windows.yml`. Wires gated the
+  # Same 6-link ladder, each `uses: _chain_link_windows.yml`. Wires gated the
   # same way: each link runs only if the previous succeeded with done=false.
   build-windows-chain-link-0:
     needs: generate-matrix
@@ -900,7 +892,7 @@ jobs:
             # selects exactly one wheel, which is the only unambiguous install.
             example_pin=$(ls "$pkg_dir"/*.whl | head -1 | sed "s/.*${pkg}-//" | sed 's/-cp[0-9].*//')
 
-            NOTES="Pre-built ${pkg} wheels with CUDA support."$'\n\n'"**Install** -- pick the build matching your installed torch and CUDA:"$'\n'"\`\`\`bash"$'\n'"pip install \"${pkg}==${example_pin}\" --extra-index-url https://pozzettiandrea.github.io/cuda-wheels/v2/"$'\n'"\`\`\`"$'\n\n'"This index is *selected from*, not resolved. A wheel's CUDA and torch versions live in its local version tag (\`+cu128torch2.8\`), and pip cannot match those against your environment -- an unpinned \`pip install ${pkg}\` resolves to the highest combo in this release, not the one your machine can load. Pin the exact build as above, or let the helper choose it:"$'\n'"https://pozzettiandrea.github.io/cuda-wheels/dashboard/install.html"
+            NOTES="Pre-built ${pkg} wheels with CUDA support."$'\n\n'"**Install** -- pick the build matching your installed torch and CUDA:"$'\n'"\`\`\`bash"$'\n'"pip install \"${pkg}==${example_pin}\" --extra-index-url https://comfy-forge.github.io/cuda-wheels/"$'\n'"\`\`\`"$'\n\n'"This index is *selected from*, not resolved. A wheel's CUDA and torch versions live in its local version tag (\`+cu128torch2.8\`), and pip cannot match those against your environment -- an unpinned \`pip install ${pkg}\` resolves to the highest combo in this release, not the one your machine can load. Pin the exact build as above, or let the helper choose it:"$'\n'"https://comfy-forge.github.io/cuda-wheels/dashboard/install.html"
             gh release create "${pkg}-latest" \
               --title "${pkg} CUDA Wheels" \
               --notes "$NOTES" \

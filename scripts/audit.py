@@ -51,11 +51,6 @@ WHEEL_RE = re.compile(
 )
 _VALID_PLAT = ("manylinux", "linux_x86_64", "linux_aarch64", "win_amd64")
 
-# Torch patch releases excluded from the --gaps expected grid (the farm keys
-# wheels on the minor; a patch bump does not re-open cells).
-PATCH_VERSIONS = {"2.4.1", "2.5.1", "2.7.1", "2.9.1"}
-
-
 def parse_wheel(name: str) -> Optional[dict]:
     m = WHEEL_RE.match(name)
     if not m:
@@ -85,13 +80,21 @@ def parse_wheel(name: str) -> Optional[dict]:
 
 
 def release_wheels(repo: str, tag: str) -> list:
-    """Wheel filenames attached to one release (empty if release absent)."""
+    """Wheel filenames attached to one release (empty if release absent).
+
+    A missing release is normal (package not built yet) and returns [].
+    Any OTHER gh failure (auth, network, rate limit) raises -- an audit
+    that silently reads a fetch error as "no wheels" reports every
+    package as 100% missing and trains you to ignore it.
+    """
     r = subprocess.run(
         ["gh", "release", "view", tag, "--repo", repo, "--json", "assets",
          "-q", ".assets[].name"],
         capture_output=True, text=True)
     if r.returncode != 0:
-        return []
+        if "release not found" in r.stderr.lower() or "not found" in r.stderr.lower():
+            return []
+        raise RuntimeError(f"gh release view {tag} failed: {r.stderr.strip()}")
     return [w for w in r.stdout.strip().split("\n") if w.endswith(".whl")]
 
 
@@ -119,9 +122,10 @@ def expected_cells(pkg: dict, defaults: dict, exclude_torch: set) -> set:
     cells = set()
     seen_torch_free = set()
     for c in combos:
+        # Cells are keyed by torch MINOR: the grid pins one patch release per
+        # (cuda, minor) row and wheels are tagged with the minor, so no
+        # patch-release filtering is needed (or correct) here.
         pt = c["pytorch"]
-        if pt in PATCH_VERSIONS and not torch_free:
-            continue
         if min_pt and vtuple(torch_minor(pt)) < vtuple(torch_minor(str(min_pt))):
             continue
         if torch_minor(pt) in exclude_torch:

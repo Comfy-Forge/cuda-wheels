@@ -206,7 +206,7 @@ def apply_rows(result: dict, upstream: dict, cfg: dict) -> int:
         "torch_watch --apply is retired on this line: the grid is generated "
         "by scripts/derive_defaults.py from defaults/scraped_torch_matrix.json. Run "
         "fetch_torch_matrix.py then derive_defaults.py instead.")
-    """Append new (cuda, torch minor) rows to _defaults.yml. Additive only."""
+    """Retired. The grid is generated; see the SystemExit above."""
     sys.path.insert(0, str(Path(__file__).parent))
     from fetch_pytorch_arch_lists import fetch as fetch_archs
 
@@ -271,7 +271,7 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--json", metavar="PATH", help="write machine-readable result")
     ap.add_argument("--apply", action="store_true",
-                    help="append new rows to _defaults.yml (review before committing)")
+                    help="retired: refuses and points at fetch_torch_matrix.py + derive_defaults.py")
     args = ap.parse_args()
 
     upstream, unpublished, errors = survey()

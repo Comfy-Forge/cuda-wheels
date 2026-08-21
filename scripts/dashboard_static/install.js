@@ -1,17 +1,19 @@
 // --- Wheel filename parsing ---
 
 function parseWheelName(name) {
-  // e.g. cc_torch-0.2+cu124torch25-cp310-cp310-manylinux_2_35_x86_64.whl
-  var m = name.match(/^([^-]+)-([^-]+)\+cu(\d+)torch(\d+)-cp(\d+)-[^-]+-(.+)\.whl$/);
+  // v2: cc_torch-0.2+cu124torch2.5-cp310-cp310-manylinux_2_28_x86_64.whl
+  // v1: cc_torch-0.2+cu124torch25-cp310-cp310-manylinux_2_35_x86_64.whl
+  var m = name.match(/^([^-]+)-([^-]+)\+cu(\d+)torch(\d+(?:\.\d+)?)-cp(\d+)-[^-]+-(.+)\.whl$/);
   if (!m) return null;
   var cu = m[3], torch = m[4], py = m[5], plat = m[6];
-  // CUDA: "124" → "12.4", "130" → "13.0" (always last digit is minor)
-  // Torch: "25" → "2.5", "210" → "2.10" (first digit is major, rest is minor)
-  // Python: "310" → "3.10", "313" → "3.13" (first digit is major, rest is minor)
+  var os;
+  if (plat.indexOf('aarch64') !== -1) { os = 'Linux ARM64'; }
+  else if (plat.indexOf('linux') !== -1 || plat.indexOf('manylinux') !== -1) { os = 'Linux'; }
+  else { os = 'Windows'; }
   return {
-    os: (plat.indexOf('linux') !== -1 || plat.indexOf('manylinux') !== -1) ? 'Linux' : 'Windows',
+    os: os,
     cuda: cu.slice(0, -1) + '.' + cu.slice(-1),
-    torch: torch[0] + '.' + torch.slice(1),
+    torch: torch.indexOf('.') !== -1 ? torch : torch[0] + '.' + torch.slice(1),
     python: py[0] + '.' + py.slice(1)
   };
 }

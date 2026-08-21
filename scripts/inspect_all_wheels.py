@@ -40,11 +40,15 @@ def parse_wheel_filename(filename: str) -> dict:
 
     ver = m.group("ver")
     cuda_m = re.search(r"cu(\d{2,3})", ver)
-    torch_m = re.search(r"torch(\d{2,3})", ver) or re.search(r"pt(\d{2,3})", ver)
+    torch_v2 = re.search(r"torch(\d+\.\d+)", ver)
+    torch_m = None if torch_v2 else (re.search(r"torch(\d{2,3})", ver)
+                                     or re.search(r"pt(\d{2,3})", ver))
     if cuda_m:
         c = cuda_m.group(1)
         info["cuda"] = f"{c[:-1]}.{c[-1]}" if len(c) <= 3 else c
-    if torch_m:
+    if torch_v2:
+        info["torch"] = torch_v2.group(1)
+    elif torch_m:
         t = torch_m.group(1)
         info["torch"] = f"{t[0]}.{t[1:]}" if len(t) <= 3 else t
 
@@ -149,10 +153,18 @@ def collect_built_wheels() -> list:
     if token:
         headers["Authorization"] = f"token {token}"
 
-    url = f"https://api.github.com/repos/{repo}/releases?per_page=100"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        releases = json.loads(resp.read().decode())
+    releases, page = [], 1
+    while True:
+        url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req) as resp:
+            batch = json.loads(resp.read().decode())
+        if not batch:
+            break
+        releases.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
 
     wheels = []
     for release in releases:

@@ -158,7 +158,7 @@ def main():
     args = ap.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN")
-    repo = os.environ.get("GITHUB_REPOSITORY", "PozzettiAndrea/cuda-wheels")
+    repo = os.environ.get("GITHUB_REPOSITORY", "Comfy-Forge/cuda-wheels")
 
     print(f"Generating index for {repo}")
 

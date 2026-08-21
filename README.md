@@ -1,39 +1,37 @@
 # cuda-wheels
 
-Pre-built CUDA Python wheels for ML/3D packages that are painful to compile from source.
+Pre-built CUDA Python wheels for ML/3D packages that are painful to compile
+from source. One rolling GitHub Release per package holds the wheels; a
+static PEP 503 index on gh-pages makes them pip-installable.
 
-**[Package Index](https://pozzettiandrea.github.io/cuda-wheels)** · **[Package Index v2](https://pozzettiandrea.github.io/cuda-wheels/v2/)** · **[Dashboard](https://pozzettiandrea.github.io/cuda-wheels/dashboard/)** · **[Install Helper](https://pozzettiandrea.github.io/cuda-wheels/dashboard/install.html)** · **[PyTorch CUDA Wheel Matrix (P.C.W.M)](https://pozzettiandrea.github.io/cuda-wheels/matrix/)** · **[PyTorch Arches Matrix (P.A.M)](https://pozzettiandrea.github.io/cuda-wheels/arches/)**
+**[Package Index](https://comfy-forge.github.io/cuda-wheels/)** ·
+**[Dashboard](https://comfy-forge.github.io/cuda-wheels/dashboard/)** ·
+**[Install Helper](https://comfy-forge.github.io/cuda-wheels/dashboard/install.html)** ·
+**[PyTorch CUDA Wheel Matrix](https://comfy-forge.github.io/cuda-wheels/matrix/)**
 
-## Built Packages
+## What is built
 
-| Package | Source |
-|---------|--------|
-| sageattention | [thu-ml/SageAttention](https://github.com/thu-ml/SageAttention) |
-| gsplat | [nerfstudio-project/gsplat](https://github.com/nerfstudio-project/gsplat) |
-| nvdiffrast | [NVlabs/nvdiffrast](https://github.com/NVlabs/nvdiffrast) |
-| pytorch3d | [facebookresearch/pytorch3d](https://github.com/facebookresearch/pytorch3d) |
-| cumesh | [JeffreyXiang/CuMesh](https://github.com/JeffreyXiang/CuMesh) |
-| cubvh | [ashawkey/cubvh](https://github.com/ashawkey/cubvh) |
-| ovoxel | [microsoft/TRELLIS.2](https://github.com/microsoft/TRELLIS.2) |
-| flexgemm | [JeffreyXiang/FlexGEMM](https://github.com/JeffreyXiang/FlexGEMM) |
-| nvdiffrec_render | [NVlabs/nvdiffrec](https://github.com/NVlabs/nvdiffrec) |
-| torch_generic_nms | [ronghanghu/torch_generic_nms](https://github.com/ronghanghu/torch_generic_nms) |
-| cc_torch | [ronghanghu/cc_torch](https://github.com/ronghanghu/cc_torch) |
-| spconv | [traveller59/spconv](https://github.com/traveller59/spconv) |
-| flash_attn | [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention) |
-| torch_cluster | [pyg-team/pytorch_cluster](https://github.com/pyg-team/pytorch_cluster) |
-| torch_scatter | [pyg-team/pytorch_scatter](https://github.com/pyg-team/pytorch_scatter) |
-| torch_sparse | [pyg-team/pytorch_sparse](https://github.com/pyg-team/pytorch_sparse) |
-| natten | [SHI-Labs/NATTEN](https://github.com/SHI-Labs/NATTEN) |
+One folder per package under [`packages/`](packages/) — the folder list IS
+the package list (no table here to rot). Each folder holds `package.yml`,
+optional `pcto_override.yml` / `arch_override.yml` (each explained by the
+package's `README.md`), and `patches/`.
 
-## Usage
+Farm-wide policy lives in [`defaults/`](defaults/) — see
+[`defaults/README.md`](defaults/README.md) for the three-file split.
 
-Used by [comfy-env](https://github.com/PozzettiAndrea/comfy-env) to automatically resolve and install CUDA packages for ComfyUI custom nodes.
+## Install
 
-## Adding a package
+Pick the channel index matching your CUDA and torch, then install normally:
 
-See [packages/README.md](packages/README.md) for build config format.
+```bash
+pip install flash-attn --extra-index-url https://comfy-forge.github.io/cuda-wheels/cu128/torch2.8/
+```
 
-## License
+The flat root index mixes every combo — select from it with a full pin
+(`pkg==1.2.3+cu128torch2.8`), or let the install helper choose.
 
-MIT
+## Docs
+
+Architecture, build process, ADRs:
+[comfy-forge docs](https://pozzettiandrea.github.io/comfy-forge-docs/) →
+cuda-wheels section.

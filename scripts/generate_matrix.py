@@ -326,8 +326,20 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
             pkg.get("source_tag", ""),
             pkg.get("build_subdir", "")
         )
-        # YAML name is authoritative; only fall back to detected name if not set
+        # The declared name is authoritative -- it keys the release tag, the
+        # wheel-exists prefix and the index entry. But the wheel FILENAME
+        # comes from upstream's setup.py, so if upstream's dist name differs
+        # and no patch renames it, every artifact misses every check forever
+        # (perpetual rebuilds, wrong-tag uploads). Renamed forks fix this in
+        # their patch (flexgemm_vb etc.), so only warn when there is no
+        # patch_script to do the renaming.
         pkg_name = pkg["name"].replace("-", "_")
+        if (detected_name and not pkg.get("patch_script")
+                and detected_name.replace("-", "_").lower() != pkg_name.lower()):
+            print(f"WARNING: {pkg['name']}: upstream dist name is "
+                  f"'{detected_name}' and there is no patch_script to rename "
+                  f"it -- built wheels will never match the release prefix "
+                  f"checks (perpetual rebuild).")
         pkg_version = detected_version or pkg.get("version", "")
 
         if pkg_version:
@@ -547,7 +559,7 @@ def main():
     parser.add_argument("--output", default="matrix.json", help="Output file path")
     parser.add_argument("--overwrite", action="store_true", help="Ignore existing wheels and rebuild all")
     parser.add_argument("--platform", default="all", help="Platform filter: all, linux, linux_aarch64, windows")
-    parser.add_argument("--cuda", default="all", help="CUDA version filter: all, 12.4, 12.6, 12.8, 13.0")
+    parser.add_argument("--cuda", default="all", help="CUDA version filter: all, or any CUDA line in the grid (validated)")
     parser.add_argument("--pytorch", default="all", help="PyTorch version filter (full like 2.11.0 or major.minor like 2.11), or 'all'")
     parser.add_argument("--python", default="all", help="Python version filter like 3.12, or 'all'")
     args = parser.parse_args()

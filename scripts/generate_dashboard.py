@@ -192,7 +192,21 @@ def _github_api(url: str, token: str = None) -> dict:
 
 
 def get_releases(repo: str, token: str = None) -> list:
-    return _github_api(f"https://api.github.com/repos/{repo}/releases", token)
+    """All releases, paginated. The old single call returned GitHub's default
+    30 items -- with one rolling release per package, every package past the
+    first 30 silently vanished from the dashboard."""
+    releases, page = [], 1
+    while True:
+        batch = _github_api(
+            f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}",
+            token)
+        if not batch:
+            break
+        releases.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return releases
 
 
 def get_workflow_runs(repo: str, token: str = None) -> dict:
@@ -349,12 +363,15 @@ def get_build_durations(repo: str, token: str = None) -> tuple[dict, dict]:
 def _build_duration_keys(wheel_name: str) -> tuple[str, str]:
     """Build config keys from a wheel filename. Returns (specific_key, fallback_key)."""
     m = re.match(
-        r"^[^-]+-[^+]+\+cu(\d+)torch(\d+)-cp(\d+)-[^-]+-(.+)\.whl$",
+        r"^[^-]+-[^+]+\+cu(\d+)torch([\d.]+)-cp(\d+)-[^-]+-(.+)\.whl$",
         wheel_name,
     )
     if not m:
         return "", ""
-    cu, torch_ver, py, plat = m.group(1), m.group(2), m.group(3), m.group(4)
+    # v2 names carry a dot (torch2.9); keys stay dotless so v1-era run
+    # durations still match.
+    cu, torch_ver, py, plat = (m.group(1), m.group(2).replace(".", ""),
+                               m.group(3), m.group(4))
     pkg = wheel_name.split("-")[0].lower().replace("_", "-")
     os_tag = "linux" if "linux" in plat or "manylinux" in plat else "win"
     specific = f"{pkg}-cu{cu}-torch{torch_ver}-cp{py}-{os_tag}"
@@ -380,12 +397,17 @@ def parse_wheel_filename(filename: str) -> dict:
 
     ver = m.group("ver")
     cuda_m = re.search(r"cu(\d{2,3})", ver)
-    torch_m = re.search(r"torch(\d{2,3})", ver) or re.search(r"pt(\d{2,3})", ver)
+    # v2 naming (torch2.9, dot) first; v1 (torch29) and pt-prefixed fallback
+    torch_v2 = re.search(r"torch(\d+\.\d+)", ver)
+    torch_m = None if torch_v2 else (re.search(r"torch(\d{2,3})", ver)
+                                     or re.search(r"pt(\d{2,3})", ver))
 
     if cuda_m:
         c = cuda_m.group(1)
         info["cuda"] = f"{c[:-1]}.{c[-1]}" if len(c) <= 3 else c
-    if torch_m:
+    if torch_v2:
+        info["torch"] = torch_v2.group(1)
+    elif torch_m:
         t = torch_m.group(1)
         info["torch"] = f"{t[0]}.{t[1:]}" if len(t) <= 3 else t
 
@@ -395,7 +417,9 @@ def parse_wheel_filename(filename: str) -> dict:
         info["python_version"] = f"{digits[0]}.{digits[1:]}"
 
     plat = m.group("plat")
-    if "linux" in plat:
+    if "aarch64" in plat:
+        info["os"] = "Linux ARM64"
+    elif "linux" in plat:
         info["os"] = "Linux"
     elif "win" in plat:
         info["os"] = "Windows"
@@ -474,62 +498,40 @@ def _wheel_exists(wheel_names, cuda_short, torch_short, python_short, platform):
                    for p in patterns for w in wheel_names)
 
 
-def compute_missing_wheels(built_packages, packages_dir):
-    """Compare YAML-defined build matrix against actually built wheels."""
+def compute_missing_wheels(built_packages, packages_dir=None):
+    """Expected-vs-built per package, via the SAME cell derivation the audit
+    uses (audit.expected_cells / audit.parse_wheel) -- this function used to
+    keep a private copy of the grid logic, which globbed the dead flat
+    packages/*.yml layout and silently returned {} forever.
+    packages_dir is accepted for caller compatibility and ignored."""
+    import sys as _s
+    _s.path.insert(0, str(SCRIPT_DIR))
+    import audit as _audit
+    from package_loader import iter_packages, load_pcto
+    defaults = load_pcto()
     result = {}
-    for pkg_file in sorted(packages_dir.glob("*.yml")):
-        pkg = yaml.safe_load(pkg_file.read_text())
+    for _pname, pkg in iter_packages():
         pkg_name = pkg["name"]
-
-        # Collect actual wheel filenames - try both name forms
-        lookup_names = [
-            pkg_name.lower().replace("_", "-"),
-            pkg_name.lower().replace("-", "_"),
-            pkg_name.lower(),
-        ]
-        wheel_names = set()
-        for ln in lookup_names:
+        torch_free = pkg.get("links_torch") is False
+        lookup = {pkg_name.lower().replace("_", "-"),
+                  pkg_name.lower().replace("-", "_"), pkg_name.lower()}
+        actual = set()
+        for ln in lookup:
             for w in built_packages.get(ln, []):
-                wheel_names.add(w.get("display_name", ""))
-
-        build = pkg["build_matrix"]
-        platforms = build.get("platforms", ["linux", "windows"])
-
-        expected = 0
-        missing = []
-
-        if "combinations" in build:
-            combos = build["combinations"]
-        else:
-            combos = [{"cuda": c, "pytorch": p, "python_versions": build.get("python_versions", [])}
-                      for c in build.get("cuda_versions", [])
-                      for p in build.get("pytorch_versions", [])]
-
-        for combo in combos:
-            cuda = combo["cuda"]
-            pytorch = combo["pytorch"]
-            python_versions = combo.get("python_versions", build.get("python_versions", []))
-            cuda_short = cuda.replace(".", "")
-            torch_short = ".".join(pytorch.split(".")[:2])
-
-            for py_ver in python_versions:
-                py_short = py_ver.replace(".", "")
-                for platform in platforms:
-                    expected += 1
-                    if not _wheel_exists(wheel_names, cuda_short, torch_short, py_short, platform):
-                        missing.append({
-                            "cuda": cuda,
-                            "torch": pytorch,
-                            "python": py_ver,
-                            "platform": platform,
-                        })
-
+                parsed = _audit.parse_wheel(w.get("display_name") or w.get("name") or "")
+                if parsed:
+                    actual.add((parsed["cuda_short"],
+                                "*" if torch_free else parsed["torch_short"],
+                                parsed["python"], parsed["platform"]))
+        expected = _audit.expected_cells(pkg, defaults, set())
+        missing = [{"cuda": f"{cu[:2]}.{cu[2:]}", "torch": tv,
+                    "python": f"{py[0]}.{py[1:]}", "platform": plat}
+                   for (cu, tv, py, plat) in sorted(expected - actual)]
         result[pkg_name] = {
-            "expected": expected,
-            "built": expected - len(missing),
+            "expected": len(expected),
+            "built": len(expected) - len(missing),
             "missing": missing,
         }
-
     return result
 
 
@@ -537,7 +539,7 @@ def compute_missing_wheels(built_packages, packages_dir):
 
 def generate_dashboard(built_packages: dict, output_dir: Path,
                        release_urls: dict = None, workflow_runs: dict = None,
-                       repo: str = "PozzettiAndrea/cuda-wheels", token: str = None):
+                       repo: str = "Comfy-Forge/cuda-wheels", token: str = None):
     """Generate dashboard HTML from template + static assets."""
     output_dir.mkdir(parents=True, exist_ok=True)
     release_urls = release_urls or {}
@@ -633,7 +635,7 @@ def generate_dashboard(built_packages: dict, output_dir: Path,
 
 def main():
     token = os.environ.get("GITHUB_TOKEN")
-    repo = os.environ.get("GITHUB_REPOSITORY", "PozzettiAndrea/cuda-wheels")
+    repo = os.environ.get("GITHUB_REPOSITORY", "Comfy-Forge/cuda-wheels")
 
     print(f"Generating dashboard for {repo}")
 
