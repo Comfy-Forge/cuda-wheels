@@ -515,6 +515,7 @@ spec = json.loads(sys.argv[1])
 out = {"phases": [], "torch_ops": {}}
 def phase(name, module, fn):
     entry = {"phase": name, "module": module, "ok": False, "error": None}
+    print(f"VERIFY_PROG:{name}:{module}", flush=True)
     try:
         fn(); entry["ok"] = True
     except BaseException as e:
@@ -627,9 +628,11 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
         marker = [l for l in r.stdout.splitlines() if l.startswith("VERIFY_JSON:")]
         result = json.loads(marker[-1][len("VERIFY_JSON:"):])
     except (ValueError, IndexError):
+        prog = [l for l in r.stdout.splitlines() if l.startswith("VERIFY_PROG:")]
+        last = prog[-1][len("VERIFY_PROG:"):] if prog else "before any import"
         rep.add("import", "fail",
-                f"import child crashed (rc={r.returncode}): "
-                f"{(r.stderr or r.stdout).strip()[-500:]}")
+                f"import child crashed (rc={r.returncode}) while importing "
+                f"[{last}]: {(r.stderr or r.stdout).strip()[-400:]}")
         return
 
     envd = result.get("env") or {}
