@@ -6,6 +6,30 @@
 Note: postprocess.py and rasterize.py (nvdiffrast deps) are already
 removed in the PozzettiAndrea/Trellis.2.drtk source.
 """
+# ── Eigen via release tarball, not the gitlab submodule ─────────────────
+# gitlab.com rate-limits GitHub runners (HTTP 403 on submodule clone), so
+# clone_recursive is OFF for this package and Eigen -- a header-only dep,
+# the repo's only submodule -- is fetched as a tarball (dpvo's proven
+# approach) into the include path setup.py expects.
+import shutil as _sh
+import subprocess as _sp
+from pathlib import Path as _P
+
+_eigen_dst = _P("o-voxel/third_party/eigen")
+if not (_eigen_dst / "Eigen").exists():
+    _sp.run(["curl", "-sL", "--retry", "5", "--retry-all-errors",
+             "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz",
+             "-o", "_eigen.tar.gz"], check=True)
+    _sp.run(["tar", "-xzf", "_eigen.tar.gz"], check=True)
+    if _eigen_dst.exists():
+        _sh.rmtree(_eigen_dst)
+    _eigen_dst.parent.mkdir(parents=True, exist_ok=True)
+    _sh.move("eigen-3.4.0", str(_eigen_dst))
+    _P("_eigen.tar.gz").unlink()
+    print("Eigen 3.4.0 headers installed at", _eigen_dst)
+# ─────────────────────────────────────────────────────────────────────────
+
+
 import re
 import os
 from pathlib import Path
