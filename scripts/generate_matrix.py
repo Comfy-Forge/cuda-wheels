@@ -142,6 +142,21 @@ def _ensure_ptx_on_highest_base(arch_list_str: str) -> str:
     return sep.join(tokens)
 
 
+def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
+                              pytorch_version: str) -> str:
+    """ARM arch list: package's dedicated aarch64 override, else the
+    aarch64 policy table. The x86 fields (arch_list/arch_list_by_cuda)
+    are deliberately NOT consulted -- their sm_86/sm_89 floors describe
+    consumer x86 GPUs and mean nothing on SBSA. A package uses these
+    fields when its kernel gap is platform-independent (e.g. upstream
+    ships no sm_100 kernel at all)."""
+    by_cuda = pkg.get("arch_list_by_cuda_aarch64") or {}
+    raw = by_cuda.get(cuda_version) or pkg.get("arch_list_aarch64")
+    if raw:
+        return _ensure_ptx_on_highest_base(raw)
+    return policy_arch_list(cuda_version, pytorch_version, "linux_aarch64")
+
+
 def resolve_arch_list(pkg: dict, cuda_version: str,
                       combo_arch_list: Optional[str] = None,
                       pytorch_version: Optional[str] = None,
@@ -479,12 +494,12 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         "pytorch": pytorch,
                         "python": python_ver,
                         "platform": platform,
-                        # aarch64 resolves straight from its own policy table:
-                        # per-package overrides in the wild are x86 arch sets
-                        # (sm_86/sm_89 floors mean nothing on SBSA). A package
-                        # needing ARM-specific arches gets a dedicated field
-                        # when one exists.
-                        "arch_list": (policy_arch_list(cuda, pytorch, platform)
+                        # aarch64 resolves from its own policy table, NOT the
+                        # x86 overrides (sm_86/sm_89 floors mean nothing on
+                        # SBSA). Packages whose kernel gaps are platform-
+                        # independent (sageattention ships no sm_100 anywhere)
+                        # declare the dedicated aarch64 fields instead.
+                        "arch_list": (resolve_aarch64_arch_list(pkg, cuda, pytorch)
                                       if platform == "linux_aarch64"
                                       else resolve_arch_list(pkg, cuda, combo_arch_list, pytorch, default_arch_list)),
                         "extra_deps": pkg.get("extra_deps", ""),

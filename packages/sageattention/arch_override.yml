@@ -16,3 +16,8 @@ arch_list_by_cuda:
 # NOTE: no 10.0 anywhere -- SageAttention 2.2 ships no sm_100 kernel
 # (Blackwell datacenter unsupported; consumer sm_120 via the FP8 path is).
 # The gate proved the built wheels contain 80/86/89/90/120 exactly.
+# The kernel gap is platform-independent, so the aarch64 lane needs the
+# same 10.0 removal (the gate caught the ARM build missing sm_100 against
+# the default aarch64 policy row):
+arch_list_by_cuda_aarch64:
+  '12.8': 8.0 9.0 12.0+PTX
