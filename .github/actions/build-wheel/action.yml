@@ -72,6 +72,8 @@ inputs:
     description: 'Python version (e.g. 3.10). Used in shard artifact naming because the cpp_extension build dir is python-version-specific.'
     required: false
     default: ''
+
+outputs:
   wheel-path:
     description: 'Path to the built wheel (set only in full-build or link-only modes; empty in compile-shard mode).'
     value: ${{ steps.rename.outputs.wheel-path }}
