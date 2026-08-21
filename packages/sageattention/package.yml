@@ -7,3 +7,5 @@ patch_script: packages/sageattention/patches/sageattention.py
 # OOM 16GB github-hosted windows runners under unlimited parallelism. Pair with
 # nvcc --threads=1 in patches/sageattention.py.
 max_jobs: 2
+verify:
+  expect_device_error: true  # __init__ probes the GPU; device errors expected on CI

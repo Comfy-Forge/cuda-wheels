@@ -12,7 +12,11 @@ from typing import Optional
 try:
     import tomllib
 except ImportError:
-    import tomli as tomllib  # Python < 3.11 fallback
+    try:
+        import tomli as tomllib  # Python < 3.11 fallback
+    except ImportError:
+        tomllib = None  # only fetch_package_info needs it (matrix time, py3.12);
+                        # importers like verify_wheel on cp310 cells do not
 
 # Combos where upstream PyTorch ships no wheel — skipped in matrix generation
 # (CW-ADR-0007). Generated from PCWM by scripts/derive_defaults.py; the file
@@ -40,6 +44,8 @@ def fetch_package_info(repo: str, tag: str, subdir: str = "") -> tuple[Optional[
 
     # 1. Try pyproject.toml
     try:
+        if tomllib is None:
+            raise ImportError("tomllib unavailable")
         with urllib.request.urlopen(f"{base}/pyproject.toml", timeout=10) as r:
             data = tomllib.loads(r.read().decode())
             project = data.get("project", {})

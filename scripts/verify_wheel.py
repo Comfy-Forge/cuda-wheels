@@ -43,9 +43,16 @@ from email.parser import Parser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from audit import parse_wheel, extract_archs, arch_list_to_sm, _arch_major, _SKIP_LIBS  # noqa: E402
+from audit import parse_wheel, extract_archs, arch_list_to_sm, _SKIP_LIBS  # noqa: E402
 import generate_matrix as _GM  # noqa: E402
 from package_loader import iter_packages  # noqa: E402
+
+def _arch_major(sm):
+    """sm_90 -> 9; sm_90a -> 9; robust to arch-variant suffixes."""
+    digits = re.sub(r"\D", "", sm.replace("sm_", ""))
+    n = int(digits) if digits else 0
+    return n // 10
+
 
 DEVICE_ERROR_PATTERNS = (
     r"No CUDA GPUs are available",
@@ -60,15 +67,13 @@ TORCH_SYM_PREFIXES = ("_ZN2at", "_ZN3c10", "_ZN5torch", "THP")
 GLIBC_FAMILY = ("libc.so", "libm.so", "libdl.so", "libpthread.so", "librt.so",
                 "ld-linux", "libutil.so", "libresolv.so")
 ALLOWED_NEEDED_PREFIXES = ("libstdc++", "libgcc_s", "libcudart.so", "libgomp",
-                           "libcuda.so.1", "libnvrtc", "libnvJitLink",
-                           "libcublas", "libcusparse", "libcufft", "libcurand",
-                           "libcusolver", "libcudnn", "libnccl")
-# NOTE on the CUDA-lib prefixes above: NEEDED entries for cublas-class libs
-# are allowed only when the wheel VENDORS them or torch provides them (the
-# repair step's exclude set); C4 checks vendored-or-torch-provided explicitly.
+                           "libcuda.so.1")
+# cublas-class libs are OK only if the wheel vendors them or torch provides
+# them at runtime (torch-linked packages ride torch's copies; a torch-FREE
+# package linking these unvendored ships a wheel that cannot load).
 TORCH_PROVIDED = ("libcublas", "libcusparse", "libcufft", "libcurand",
                   "libcusolver", "libcudnn", "libnccl", "libnvrtc",
-                  "libnvJitLink", "libcudart.so")
+                  "libnvJitLink")
 
 
 def log(msg):
@@ -128,6 +133,8 @@ def wheel_members(zf):
 def module_name_for(member):
     """pkg/_C.cpython-312-x86_64-linux-gnu.so -> pkg._C  (None if not a module)."""
     base = member.rsplit("/", 1)[-1]
+    if base.startswith("lib") and ".cpython-" not in base and not base.endswith(".pyd"):
+        return None  # plain shared library (libllama.so...), not a module
     if base.endswith(".pyd"):
         stem = base[:-4]
     elif base.endswith(".so"):
@@ -145,9 +152,13 @@ def module_name_for(member):
 
 # ── C1 ─────────────────────────────────────────────────────────────────────
 
-def check_filename(rep, parsed, args, pkg):
+def check_filename(rep, parsed, args, pkg, vknobs=None):
     if parsed is None:
-        rep.add("filename", "fail", "filename does not parse as a farm wheel")
+        if (vknobs or {}).get("allow_pure_python"):
+            rep.add("filename", "skip",
+                    "non-standard name accepted for allow_pure_python package")
+        else:
+            rep.add("filename", "fail", "filename does not parse as a farm wheel")
         return
     problems = []
     if parsed["package"].replace("-", "_").lower() != args.package.replace("-", "_").lower():
@@ -236,9 +247,7 @@ def check_metadata(rep, wheel_path, parsed):
 
 # ── C3 ─────────────────────────────────────────────────────────────────────
 
-def check_binary_census(rep, wheel_path, vknobs):
-    with zipfile.ZipFile(wheel_path) as zf:
-        exts, vendored = wheel_members(zf)
+def check_binary_census(rep, wheel_path, vknobs, exts, vendored):
     if not exts and not vknobs.get("allow_pure_python"):
         rep.add("binary_census", "fail",
                 "no compiled extension modules in wheel -- the CUDA compile "
@@ -252,7 +261,6 @@ def check_binary_census(rep, wheel_path, vknobs):
         rep.add("binary_census", "pass",
                 f"{len(exts)} extension module(s), {len(vendored)} vendored lib(s)",
                 {"extensions": exts, "vendored": vendored})
-    return exts, vendored
 
 
 # ── ELF helpers (C4/C5/C6) ────────────────────────────────────────────────
@@ -296,7 +304,7 @@ def elf_infos_for(wheel_path, members):
     return infos
 
 
-def check_elf_sanity(rep, infos, vendored, vknobs):
+def check_elf_sanity(rep, infos, vendored, vknobs, links_torch=True):
     vendored_sonames = {v.rsplit("/", 1)[-1] for v in vendored}
     problems, driver_linked = [], False
     for m, info in infos.items():
@@ -307,14 +315,20 @@ def check_elf_sanity(rep, infos, vendored, vknobs):
             if need == "libcuda.so.1":
                 driver_linked = True
                 continue
+            vendored_ok = (need in vendored_sonames
+                           or any(need in v for v in vendored_sonames))
+            torch_class = any(need.startswith(p) for p in TORCH_PROVIDED)
             ok = (any(f in need for f in GLIBC_FAMILY)
                   or TORCH_NEEDED_RE.match(need)
                   or any(need.startswith(p) for p in ALLOWED_NEEDED_PREFIXES)
-                  or need in vendored_sonames
-                  or any(need in v for v in vendored_sonames))
+                  or vendored_ok
+                  or (torch_class and links_torch))
             if not ok:
-                problems.append(f"{m}: unexpected DT_NEEDED {need!r} "
-                                f"(vendor it or justify per CW-ADR-0009)")
+                why = ("torch-free package links it unvendored -- torch will "
+                       "not be there to provide it"
+                       if torch_class else
+                       "vendor it or justify per CW-ADR-0009")
+                problems.append(f"{m}: unexpected DT_NEEDED {need!r} ({why})")
         for rp in info["rpath"]:
             if rp and not rp.startswith("$ORIGIN"):
                 problems.append(f"{m}: non-$ORIGIN RPATH entry {rp!r}")
@@ -333,6 +347,10 @@ def check_elf_sanity(rep, infos, vendored, vknobs):
 
 def check_torch_linkage(rep, infos, pkg, platform):
     links_torch = pkg.get("links_torch") is not False
+    bad = [m for m, i in infos.items() if "error" in i]
+    if bad:
+        rep.add("torch_linkage", "warn",
+                f"{len(bad)} binaries unparseable -- linkage evidence incomplete")
     found_needed, found_syms = [], []
     for m, info in infos.items():
         if "error" in info:
@@ -375,7 +393,10 @@ def check_glibc_ceiling(rep, infos, vendored):
         for lib, vers in info["verneed"].items():
             for v in vers:
                 if v.startswith("GLIBC_"):
-                    t = tuple(int(x) for x in v[6:].split("."))
+                    try:
+                        t = tuple(int(x) for x in v[6:].split("."))
+                    except ValueError:
+                        continue  # GLIBC_PRIVATE / GLIBC_ABI_DT_RELR etc.
                     if t > worst_glibc:
                         worst_glibc, worst_owner = t, m
                 elif v.startswith(("GLIBCXX_", "CXXABI_")):
@@ -449,7 +470,7 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
                     s, x = _cuobjdump_archs(p, cuobjdump, timeout)
                     sass |= s
                     ptx |= x
-            source = "cuobjdump"
+            source = "cuobjdump" if (sass or ptx) else "none"
         except (subprocess.TimeoutExpired, OSError):
             source = "none"
     if source == "none":
@@ -523,7 +544,7 @@ if ok:
     except Exception:
         pass
     out["cuda_available_after"] = torch.cuda.is_available()
-print(json.dumps(out))
+print("VERIFY_JSON:" + json.dumps(out))
 """
 
 
@@ -602,7 +623,8 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
             rep.add("import", "fail", "import child timed out (600s)")
             return
     try:
-        result = json.loads(r.stdout.strip().splitlines()[-1])
+        marker = [l for l in r.stdout.splitlines() if l.startswith("VERIFY_JSON:")]
+        result = json.loads(marker[-1][len("VERIFY_JSON:"):])
     except (ValueError, IndexError):
         rep.add("import", "fail",
                 f"import child crashed (rc={r.returncode}): "
@@ -622,6 +644,8 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
                 "-- something initialized CUDA against the stub")
         return
 
+    with zipfile.ZipFile(wheel_path) as zf:
+        own_toplevels = {n.split("/")[0].split(".")[0] for n in zf.namelist()}
     dev_patterns = list(DEVICE_ERROR_PATTERNS)
     ede = vknobs.get("expect_device_error")
     if isinstance(ede, str):
@@ -634,8 +658,14 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
         err = ph.get("error") or ""
         is_device = any(re.search(p, err) for p in dev_patterns)
         is_load = err.startswith(("ImportError", "OSError", "ModuleNotFoundError"))
-        if ph["phase"] == "compiled" and is_load:
+        mnfe = re.search(r"No module named '([^.']+)", err)
+        missing_foreign = bool(mnfe) and mnfe.group(1) not in own_toplevels
+        if ph["phase"] == "compiled" and is_load and not missing_foreign:
             failures.append(f"{ph['module']}: {err}")        # dlopen never forgiven
+        elif missing_foreign:
+            # runtime dep absent because we install --no-deps; the build env
+            # only has build deps. Not a wheel defect -- record loudly.
+            forgiven.append(f"{ph['module']}: missing runtime dep ({err})")
         elif is_device and forgivable:
             forgiven.append(f"{ph['module']}: {err}")
         else:
@@ -672,6 +702,13 @@ def main():
     ap.add_argument("--cuda-home", default=None)
     args = ap.parse_args()
     t0 = time.time()
+
+    # The aarch64 job passes platform=linux to the action (the action's own
+    # build-step gating needs that); the machine is the truth for the wheel
+    # tag we must expect.
+    import platform as _plat
+    if args.platform == "linux" and _plat.machine() == "aarch64":
+        args.platform = "linux_aarch64"
 
     paths = []
     for w in args.wheels:
@@ -716,17 +753,20 @@ def main():
         rep = WheelReport(wheel_path.name)
         parsed = parse_wheel(wheel_path.name)
         if "filename" not in skip:
-            check_filename(rep, parsed, args, pkg)
+            check_filename(rep, parsed, args, pkg, vknobs)
         if "metadata" not in skip and parsed:
             check_metadata(rep, wheel_path, parsed)
-        exts, vendored = ([], [])
+        with zipfile.ZipFile(wheel_path) as _zf:
+            exts, vendored = wheel_members(_zf)
         if "binary_census" not in skip:
-            exts, vendored = check_binary_census(rep, wheel_path, vknobs)
+            check_binary_census(rep, wheel_path, vknobs, exts, vendored)
         driver_linked = False
         if is_linux and exts:
             infos = elf_infos_for(wheel_path, exts)
             if "elf_sanity" not in skip:
-                driver_linked = check_elf_sanity(rep, infos, vendored, vknobs)
+                driver_linked = check_elf_sanity(
+                    rep, infos, vendored, vknobs,
+                    links_torch=pkg.get("links_torch") is not False)
             if "torch_linkage" not in skip:
                 check_torch_linkage(rep, infos, pkg, args.platform)
             if "glibc_ceiling" not in skip:
@@ -734,7 +774,7 @@ def main():
         elif not is_linux and exts and "torch_linkage" not in skip:
             # Windows: no ELF; warn-quality evidence only via byte scan
             with zipfile.ZipFile(wheel_path) as zf:
-                blob = b"".join(zf.read(m) for m in exts[:4])
+                blob = b"".join(zf.read(m) for m in exts)
             if pkg.get("links_torch") is False and (b"torch_cpu.dll" in blob
                                                     or b"c10.dll" in blob):
                 rep.add("torch_linkage", "warn",

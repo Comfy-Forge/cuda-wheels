@@ -7,3 +7,5 @@ source_repo: traveller59/spconv
 source_tag: v2.3.8
 patch_script: packages/spconv/patches/spconv.py
 extra_deps: pccm>=0.4.16 ccimport>=0.4.4 cumm
+verify:
+  extra_imports: [spconv.pytorch]

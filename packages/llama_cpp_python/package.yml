@@ -23,3 +23,8 @@ sequential_checkpoint: 10800   # 3h links; 187 .cu + 86 .cuh (~55k LOC), hours t
 # GGML's CMake build never sees ninja -j from MAX_JOBS; the build action
 # mirrors max_jobs into CMAKE_BUILD_PARALLEL_LEVEL, which it does obey.
 max_jobs: 4
+verify:
+  import_name: llama_cpp
+  # bare shared libs (libllama.so, libggml*.so) are dlopen targets of the
+  # python binding, never importable modules
+  no_direct_import: ["*/lib/*.so*", "*libllama*", "*libggml*"]

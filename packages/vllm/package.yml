@@ -15,3 +15,5 @@ sequential_checkpoint: 18000   # 98 .cu + CUTLASS, hours
 # vllm is the one package with the jobs/threads tradeoff wired upstream
 # (MAX_JOBS -> job pool AND cmake --build -j; NVCC_THREADS -> --threads).
 max_jobs: 3
+verify:
+  expect_device_error: true
