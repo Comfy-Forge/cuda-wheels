@@ -7,4 +7,4 @@
 This package deviates from the farm defaults (`defaults/`). Each
 override file carries the detailed rationale in its comments; summary:
 
-- **`arch_override.yml`** — overrides the GPU arch lists: `arch_list`. 
+- **`arch_override.yml`** — overrides the GPU arch lists: `arch_list_by_cuda`. Keeps Pascal/Volta (6.0/7.0) SASS for older cards on the CUDA 12.x lines and trims mid-range arches that run older cubins via same-major binary compat; the 13.x rows floor at 7.5 because CUDA 13 nvcc removed compute_60/70 entirely. 

@@ -48,7 +48,10 @@ new_gpu_detect = """    cc_flag = []
         "12.1": ("compute_121a", "sm_121a"),
     }
     for item in arch_list_env.replace(",", " ").replace(";", " ").split():
-        item = item.strip()
+        # Strip +PTX before the exact-key lookup: the farm's arch resolver
+        # always suffixes the highest arch ("12.0+PTX"), which would
+        # otherwise silently miss arch_map and drop sm_120a entirely.
+        item = item.strip().split("+")[0]
         if item in arch_map:
             compute, sm = arch_map[item]
             cc_flag.extend(["-gencode", f"arch={compute},code={sm}"])

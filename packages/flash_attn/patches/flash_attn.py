@@ -37,8 +37,11 @@ new_func = '''def cuda_archs() -> str:
         return archs.split(";")
     torch_archs = os.getenv("TORCH_CUDA_ARCH_LIST", "")
     if torch_archs:
-        # Convert "8.0 9.0 10.0 12.0" -> ["80", "90", "100", "120"]
-        return [a.replace(".", "") for a in torch_archs.split()]
+        # Convert "8.0 9.0 10.0 12.0+PTX" -> ["80", "90", "100", "120"].
+        # The +PTX suffix must be stripped: upstream gates gencode on exact
+        # token membership ('"90" in cuda_archs()'), so "90+PTX" would
+        # silently drop that arch from the build.
+        return [a.split("+")[0].replace(".", "") for a in torch_archs.split()]
     return ["80", "90", "100", "120"]'''
 
 if old_func in content:

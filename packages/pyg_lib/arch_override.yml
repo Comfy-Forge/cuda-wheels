@@ -1,3 +1,15 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-arch_list: 6.0;7.0;8.0;9.0+PTX
+# pyg_lib keeps Pascal/Volta (6.0/7.0) alive for older cards and trims the
+# mid-range SASS (7.5/8.6 run the 7.0/8.0 cubins via same-major binary
+# compat); Blackwell runs on the 9.0 PTX via JIT. CUDA 13.x removed
+# compute_60/70 from nvcc entirely (Maxwell/Pascal/Volta dropped), so those
+# rows floor at 7.5 like the shared policy -- a static list would kill
+# every cu130/cu132 build with "nvcc fatal: Unsupported gpu architecture".
+arch_list_by_cuda:
+  "12.4": "6.0;7.0;8.0;9.0+PTX"
+  "12.6": "6.0;7.0;8.0;9.0+PTX"
+  "12.8": "6.0;7.0;8.0;9.0+PTX"
+  "12.9": "6.0;7.0;8.0;9.0+PTX"
+  "13.0": "7.5;8.0;9.0+PTX"
+  "13.2": "7.5;8.0;9.0+PTX"

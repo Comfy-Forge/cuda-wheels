@@ -48,24 +48,24 @@ def main() -> None:
     supported = [str(c) for c in policy["supported_cudas"]]
     platforms = policy["platforms"]
 
-    # Collect PCWM cells. Rows (torch patches, python sets) derive from the
-    # x86 cells; aarch64 cells are tracked separately so packages that opt
-    # into the linux_aarch64 platform get phantoms for upstream's ragged ARM
-    # coverage (e.g. cu126 skipped torch 2.7/2.8 on aarch64 entirely).
+    # Collect PCWM cells keyed by the EXACT torch patch release. Each row
+    # pins one patch, so python sets and phantoms must come from that
+    # patch's own cells -- unioning across patches hides holes (cu129
+    # shipped Windows for 2.9.0 but NOT 2.9.1; a union sees "windows" and
+    # emits no phantom, and every 2.9.1+cu129 Windows job dies at torch
+    # install).
     pairs: dict[tuple, dict] = {}
     for c in pcwm:
         cuda_dotted = f"{c['cuda'][2:-1]}.{c['cuda'][-1]}"
         minor = ".".join(c["torch"].split(".")[:2])
         if "aarch64" in c["platform"]:
-            pairs.setdefault((cuda_dotted, minor),
-                             {"patches": set(), "cells": set()})["cells"].add(
-                (c["python"], "linux_aarch64"))
-            continue
-        p = pairs.setdefault((cuda_dotted, minor),
-                             {"patches": set(), "cells": set()})
-        p["patches"].add(c["torch"])
-        plat = "windows" if "win" in c["platform"] else "linux"
-        p["cells"].add((c["python"], plat))
+            plat = "linux_aarch64"
+        elif "win" in c["platform"]:
+            plat = "windows"
+        else:
+            plat = "linux"
+        pairs.setdefault((cuda_dotted, minor), {}).setdefault(
+            c["torch"], set()).add((c["python"], plat))
 
     skipped_cudas = sorted({cu for cu, _ in pairs} - set(supported), key=vkey)
     for cu in skipped_cudas:
@@ -79,22 +79,28 @@ def main() -> None:
     for (cuda, minor) in sorted(pairs, key=lambda k: (vkey(k[0]), vkey(k[1]))):
         if cuda not in supported:
             continue
-        info = pairs[(cuda, minor)]
-        if not info["patches"]:
-            continue  # aarch64-only pairing; no x86 torch to pin a row on
-        pys = sorted({py for py, plat in info["cells"] if plat != "linux_aarch64"
+        by_patch = pairs[(cuda, minor)]
+        # Pin the newest patch that shipped x86 wheels; an aarch64-only
+        # patch can't anchor a row (nothing to install on linux/windows).
+        x86_patches = [t for t, cells in by_patch.items()
+                       if any(pl != "linux_aarch64" for _, pl in cells)]
+        if not x86_patches:
+            continue
+        chosen = max(x86_patches, key=vkey)
+        cells = by_patch[chosen]
+        pys = sorted({py for py, plat in cells if plat != "linux_aarch64"
                       and pmin <= vkey(py)}, key=vkey)
         if not pys:
             continue
         rows.append({
             "cuda": cuda,
-            "pytorch": max(info["patches"], key=vkey),
+            "pytorch": chosen,
             "python_versions": pys,
         })
         for py in pys:
             for plat in dict.fromkeys(platforms + ["linux_aarch64"]):
                 key = plat if plat in ("windows", "linux_aarch64") else "linux"
-                if (py, key) not in info["cells"]:
+                if (py, key) not in cells:
                     phantoms.append([cuda.replace(".", ""), minor,
                                      py.replace(".", ""), plat])
 
