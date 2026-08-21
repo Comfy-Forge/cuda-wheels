@@ -9,9 +9,11 @@ clone_recursive: true
 # patches/natten.py's set_source_files_properties block); this cuts the
 # heaviest part of the compile to ~1/5 of its prior cost. Combined with
 # the existing arch list, total Linux wall time should fit comfortably in
-# one 6h job, so sequential_checkpoint is dropped. The chain mechanism
-# stays available (action.yml + _chain_link.yml) — just unused unless
-# `sequential_checkpoint: N` is set here.
+# one 6h job. The sequential-checkpoint chain was REMOVED farm-wide
+# (2026-08-21: measurements showed no package needs it -- nunchaku's
+# "multi-hour" CUTLASS build is 99 min at sane knobs). If natten ever
+# outgrows 6h again, `sharding: N` is the escape hatch: patches/natten.py
+# still reads CUDA_WHEELS_SHARD_INDEX/COUNT to filter its autogen kernels.
 #
 # Was previously `sharding: 16`, then `sequential_checkpoint: 18000`.
 # Windows is back in scope: patches/natten.py strips sm_100/103 (Blackwell DC)

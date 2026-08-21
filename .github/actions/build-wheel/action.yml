@@ -72,33 +72,16 @@ inputs:
     description: 'Python version (e.g. 3.10). Used in shard artifact naming because the cpp_extension build dir is python-version-specific.'
     required: false
     default: ''
-  sequential-checkpoint:
-    description: 'Seconds before forced checkpoint handoff. 0 (default) = no checkpointing. When > 0 the compile is wrapped in `timeout`; on timer-fire the build state is tarred to an in-run artifact (checkpoint-iter-N) and the next chain-link job picks it up.'
-    required: false
-    default: '0'
-  checkpoint-iter:
-    description: 'Chain-link iteration counter. 0 = first link (does a fresh clone). > 0 = resume: skips clone/patch/pre-build, downloads checkpoint-iter-(N-1) artifact, and extracts source/ from it. The chain orchestration lives in .github/workflows/build.yml as N sequential jobs gated on the previous link''s done output.'
-    required: false
-    default: '0'
-
-outputs:
   wheel-path:
     description: 'Path to the built wheel (set only in full-build or link-only modes; empty in compile-shard mode).'
     value: ${{ steps.rename.outputs.wheel-path }}
-  done:
-    description: 'Sequential-checkpoint mode: "true" if the build completed (a wheel was produced or already existed), "false" if the chain link hit the timeout and saved a checkpoint for the next link. Empty string outside sequential-checkpoint mode.'
-    value: ${{ steps.build_outcome.outputs.done }}
 
 runs:
   using: 'composite'
   steps:
     - name: Clone source
-      # Sequential-checkpoint chain links with iter>0 SKIP cloning -- the
-      # source/ tree is restored from the prior link's checkpoint tarball
       # (preserving all source mtimes so ninja's restat against the .o files
       # in the same tarball still passes). Only iter=0 (first link) or
-      # non-checkpointed builds do a fresh clone.
-      if: inputs.checkpoint-iter == '0'
       shell: bash
       run: |
         RECURSIVE_FLAG=""
@@ -119,8 +102,8 @@ runs:
 
     - name: Apply patch script
       # Patches already applied in the prior chain link; their changes are
-      # preserved in the source/ tarball. Skip on chain-link resume.
-      if: inputs.patch-script != '' && inputs.checkpoint-iter == '0'
+      # preserved in the source/ tarball.
+      if: inputs.patch-script != ''
       shell: bash
       run: |
         cd source
@@ -136,7 +119,7 @@ runs:
 
     - name: Pre-build script
       # Already ran on iter=0; effects preserved in the source/ tarball.
-      if: inputs.pre-build-script != '' && inputs.checkpoint-iter == '0'
+      if: inputs.pre-build-script != ''
       shell: bash
       run: |
         cd source
@@ -396,160 +379,6 @@ runs:
         find build \( -name '*.o' -o -name '*.obj' \) -exec touch -m {} +
         rm -rf "$TEMP_DIR"
 
-    - name: Compute prev iter (sequential mode, resume)
-      # GH Actions expressions don't support arithmetic, so we can't compute
-      # iter-1 inline as a step input. Write it to $GITHUB_ENV here and the
-      # Download step below references it via env.
-      if: inputs.checkpoint-iter != '0' && inputs.checkpoint-iter != ''
-      shell: bash
-      run: |
-        echo "CUW_PREV_ITER=$((${{ inputs.checkpoint-iter }} - 1))" >> $GITHUB_ENV
-
-    - name: Download checkpoint (sequential mode, resume)
-      # Same-run artifact from the previous chain link (build-linux-chain-link
-      # or build-windows-chain-link iter N-1 in build.yml). No run-id needed
-      # -- v4 picks up artifacts from the current run by default.
-      # Use runner.temp so this works on both Linux (/home/runner/work/_temp)
-      # and Windows (D:\a\_temp).
-      if: inputs.checkpoint-iter != '0' && inputs.checkpoint-iter != ''
-      uses: actions/download-artifact@v4
-      with:
-        name: checkpoint-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-iter-${{ env.CUW_PREV_ITER }}
-        path: ${{ runner.temp }}/checkpoint
-
-    - name: Restore checkpoint (sequential mode, resume)
-      # Earlier sequential-checkpoint design tarred only source/build/ and
-      # re-cloned source/ fresh on each chain link. That broke incremental
-      # resume because: (a) the freshly-cloned source files had mtimes
-      # newer than the restored .o files, so ninja's source-newer-than-.o
-      # check triggered a full rebuild; and (b) the touch -m workaround
-      # bumped .o mtimes to "now," which then mismatched the .ninja_log's
-      # recorded mtime field and tripped ninja's restat check.
-      #
-      # New design: skip clone/patch/pre-build on resume (gated above on
-      # checkpoint-iter == '0') and tar the ENTIRE source/ tree on save.
-      # Restore here extracts source/ wholesale at its prior position --
-      # all source-file and .o mtimes are preserved through tar (which is
-      # mtime-preserving by default), so ninja's restat against .ninja_log
-      # entries works on the first try.
-      if: inputs.checkpoint-iter != '0' && inputs.checkpoint-iter != ''
-      shell: bash
-      run: |
-        # Use $RUNNER_TEMP for cross-platform; on Windows the bash translation
-        # resolves it correctly via MSYS path mapping.
-        CHECKPOINT_DIR="$RUNNER_TEMP/checkpoint"
-        if [ ! -f "$CHECKPOINT_DIR/source.tar.gz" ]; then
-          echo "::error::no source.tar.gz in $CHECKPOINT_DIR -- prior chain link's upload may have failed"
-          ls -laR "$CHECKPOINT_DIR" || true
-          exit 1
-        fi
-        echo "Extracting checkpoint tarball into $(pwd)"
-        # Extract into the workspace root so source/ is recreated.
-        # --force-local on Windows Git Bash so $CHECKPOINT_DIR's "D:\..." path
-        # isn't interpreted as a remote host.
-        tar --force-local -xzf "$CHECKPOINT_DIR/source.tar.gz"
-        if [ ! -d source ]; then
-          echo "::error::tarball did not extract a source/ directory"
-          tar --force-local -tzf "$CHECKPOINT_DIR/source.tar.gz" | head -20
-          exit 1
-        fi
-        BUILD_DIR="source/build"
-        if [ -n "${{ inputs.build-subdir }}" ]; then
-          BUILD_DIR="source/${{ inputs.build-subdir }}/build"
-        fi
-        OBJ_COUNT=$(find "$BUILD_DIR" -name '*.o' 2>/dev/null | wc -l)
-        echo "Restored source/ tree: $OBJ_COUNT object files in $BUILD_DIR"
-        echo "First 30 build/ entries:"
-        find "$BUILD_DIR" -type f -printf '  %P (%s bytes, mtime=%T@)\n' 2>/dev/null | head -30 || true
-        # Two failure modes in tension here:
-        #  (1) Touching .o files to "now" makes them newer than the freshly-
-        #      installed torch/python/CUDA include headers (so ninja's
-        #      "input newer than output" check passes), BUT it also makes
-        #      the .o newer than the .ninja_deps's stored-deps-info
-        #      timestamp ("ninja explain: stored deps info out of date"),
-        #      tripping a different rebuild rule.
-        #  (2) Leaving .o mtimes preserved fixes (1)'s rebuild-via-deps-info
-        #      but reintroduces (1)'s input-newer-than-output trip.
-        # Resolution: don't touch .o; instead touch the EXTERNAL header
-        # roots (torch, Python, CUDA) to epoch 1 so they're guaranteed
-        # older than any restored .o file. This satisfies BOTH ninja
-        # checks: the .o is older than its stored deps-info (no "modified
-        # externally"), AND newer than all external headers.
-        echo "Resolving freshly-installed include headers to touch to epoch 1..."
-        TORCH_INC_DIRS=$(python -c "
-        try:
-            from torch.utils import cpp_extension as e
-            for p in e.include_paths():
-                print(p)
-        except Exception:
-            pass
-        " 2>/dev/null)
-        PYTHON_INC_DIR=$(python -c "import sysconfig; print(sysconfig.get_path('include'))" 2>/dev/null || echo "")
-        # CUDA headers live in two paths on Linux:
-        #   /usr/local/cuda-X.Y/include  (often empty or symlink-stub)
-        #   /usr/local/cuda-X.Y/targets/<arch>/include  (canonical, where
-        #       sm_20_intrinsics.h, cuda_runtime.h, etc. actually live)
-        # Touch BOTH. ninja sees the canonical path in compile commands and
-        # checks its mtime, not the stub path. Missing the targets path is
-        # what made our v1 touch ineffective on NATTEN (run 26046924674).
-        # Platform-conditional CUDA include paths.
-        # Linux: /usr/local/cuda-X.Y/{include,targets/x86_64-linux/include}
-        # Windows: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/vX.Y/include
-        #          (Git Bash maps to /c/Program Files/NVIDIA GPU Computing Toolkit/...).
-        if [ "${{ inputs.platform }}" = "windows" ]; then
-          CUDA_INC_DIR_TOP="/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${{ inputs.cuda-version }}/include"
-          CUDA_INC_DIR_TARGETS=""  # Windows install is flat under /include (no targets/ split)
-        else
-          CUDA_INC_DIR_TOP="/usr/local/cuda-${{ inputs.cuda-version }}/include"
-          CUDA_INC_DIR_TARGETS="/usr/local/cuda-${{ inputs.cuda-version }}/targets"
-        fi
-        # CUDA is apt-installed as root, so its headers are root-owned and a
-        # runner-user touch fails silently (Permission denied, swallowed by
-        # 2>/dev/null). Use sudo for the CUDA paths. Torch+Python live under
-        # hostedtoolcache which IS runner-owned, no sudo needed.
-        for d in $TORCH_INC_DIRS $PYTHON_INC_DIR; do
-          if [ -d "$d" ]; then
-            COUNT=$(find "$d" -type f 2>/dev/null | wc -l)
-            echo "  touching $d ($COUNT files, no sudo) -> epoch 1"
-            find "$d" -type f -exec touch -m -d "@1" {} + 2>/dev/null || true
-          fi
-        done
-        # Windows CUDA dir is admin-installed but Git Bash on a GHA Windows
-        # runner has effective admin (the runner user is local admin), so
-        # `sudo` is a no-op. On Linux, `sudo` is needed for the apt-installed
-        # root-owned headers. The single sudo path works on both: it's a
-        # passthrough on Windows.
-        if [ "${{ inputs.platform }}" = "windows" ] || [ "$(id -u)" = "0" ]; then
-          SUDO=""   # windows passthrough, or already root (manylinux container)
-        else
-          SUDO="sudo"
-        fi
-        for d in "$CUDA_INC_DIR_TOP" "$CUDA_INC_DIR_TARGETS"; do
-          if [ -n "$d" ] && [ -d "$d" ]; then
-            COUNT=$($SUDO find "$d" -type f 2>/dev/null | wc -l)
-            echo "  touching $d ($COUNT files) -> epoch 1"
-            $SUDO find "$d" -type f -exec touch -m -d "@1" {} + 2>/dev/null || true
-          fi
-        done
-        echo "Sample source vs .o mtime (source SHOULD be older than .o):"
-        find source -name '*.cu' -printf '  CU  %p (mtime=%T@)\n' 2>/dev/null | head -1 || true
-        find "$BUILD_DIR" -name '*.o' -printf '  O   %p (mtime=%T@)\n' 2>/dev/null | head -1 || true
-        echo ".ninja_log (first 10 lines, if present):"
-        find "$BUILD_DIR" -name '.ninja_log' -exec head -10 {} + 2>/dev/null || true
-        # Diagnostic: ask ninja itself WHY each output would be rebuilt.
-        # `-n -d explain` is dry-run with explanations; doesn't compile.
-        # Also back up build.ninja so we can diff vs the regenerated one
-        # after cpp_extension rewrites it.
-        NINJA_BUILD_DIR=$(find "$BUILD_DIR" -name 'build.ninja' -printf '%h\n' 2>/dev/null | head -1)
-        if [ -n "$NINJA_BUILD_DIR" ]; then
-          echo "ninja build dir: $NINJA_BUILD_DIR"
-          cp "$NINJA_BUILD_DIR/build.ninja" /tmp/build.ninja.before 2>/dev/null || true
-          echo "build.ninja head (40 lines):"
-          head -40 "$NINJA_BUILD_DIR/build.ninja" | sed 's/^/    /' || true
-          echo "ninja -n -d explain (why would it rebuild?):"
-          ( cd "$NINJA_BUILD_DIR" && ninja -n -d explain 2>&1 | head -40 ) | sed 's/^/    /' || true
-        fi
-
     - name: Setup shard wrapper + compiler cache (Linux shard/link mode)
       # Zero-shim sharding (CW hacker-panel design C): a wrapper first in the
       # nvcc seat hash-partitions translation units across shard jobs -- no
@@ -682,7 +511,7 @@ runs:
         export TORCH_CUDA_ARCH_LIST="${{ inputs.arch-list }}"
         export CUDA_HOME=/usr/local/cuda-${{ inputs.cuda-version }}
         # Force cmake's Ninja generator on Linux. Default is "Unix Makefiles"
-        # which lacks build.ninja + .ninja_log -- breaks sequential-checkpoint
+        # which lacks build.ninja + .ninja_log -- breaks incremental rebuilds
         # resume because there's no command_hash check (only mtime), and
         # cmake reconfigure on resume bumps CMakeFiles/*.make rule files
         # past the restored .o mtimes, triggering full rebuild. With Ninja
@@ -766,38 +595,7 @@ runs:
           echo "[diag] sample .o mtime (should be newer than source mtime):"
           find build -name '*.o' | head -1 | xargs -I{} stat -c '%y %n' {} || true
         fi
-        # Sequential-checkpoint mode: when sequential-checkpoint > 0, wrap the
-        # compile in `timeout`. Exit codes from coreutils' `timeout`:
-        #   0   -- command completed within the time limit (success)
-        #   124 -- command was killed because the time limit was reached
-        #   N>0 -- command's own exit code (real failure, propagated)
-        # We treat 124 as "timeout fired, save checkpoint for next link" and
-        # any other non-zero as a real build failure (chain breaks).
-        # Output `done`: 'true' = build complete (wheel produced, chain may
-        # terminate); 'false' = need next chain link to resume.
-        SECS="${{ inputs.sequential-checkpoint }}"
-        if [ -n "$SECS" ] && [ "$SECS" != "0" ]; then
-          echo "[sequential-checkpoint] wrapping compile in 'timeout $SECS python -m pip wheel ...'"
-          set +e
-          timeout "$SECS" python -m pip wheel . --no-build-isolation --no-deps -v -w dist
-          rc=$?
-          set -e
-          echo "[sequential-checkpoint] wrapped command exit code: $rc"
-          if [ "$rc" = "0" ]; then
-            echo "[sequential-checkpoint] build COMPLETED in time -- done=true"
-            echo "done=true" >> $GITHUB_OUTPUT
-          elif [ "$rc" = "124" ]; then
-            echo "[sequential-checkpoint] TIMEOUT fired (rc=124) -- saving checkpoint for next link; done=false"
-            echo "done=false" >> $GITHUB_OUTPUT
-          else
-            echo "::error::build failed with rc=$rc (not a timeout). Chain breaks."
-            echo "done=true" >> $GITHUB_OUTPUT
-            exit $rc
-          fi
-        else
-          python -m pip wheel . --no-build-isolation --no-deps -v -w dist
-          echo "done=true" >> $GITHUB_OUTPUT
-        fi
+        python -m pip wheel . --no-build-isolation --no-deps -v -w dist
 
 
     - name: Swap usage signal (Linux)
@@ -826,11 +624,9 @@ runs:
 
     - name: Repair wheel (Linux)
       # Skip when we're in compile-shard mode (we threw away the partial wheel
-      # and uploaded objects instead). Also skip in sequential-checkpoint
       # mid-chain mode (the timeout fired, done='false', no wheel produced
       # this iteration). Runs in full or link-only mode and in the FINAL
-      # sequential-checkpoint chain link where a wheel was actually built.
-      if: inputs.platform == 'linux' && (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      if: inputs.platform == 'linux' && (inputs.shard-count == '0' || inputs.link-only == 'true')
       shell: bash
       run: |
         python -m pip install auditwheel patchelf
@@ -1005,49 +801,7 @@ runs:
           $env:USE_NINJA = "0"
           Write-Host "[link-only] USE_NINJA=0"
         }
-        # Sequential-checkpoint mode (Windows): wrap pip wheel in `timeout`
-        # via Git Bash (PowerShell doesn't ship `timeout` as a process-killer
-        # -- its `timeout` is just a pause). Same exit-code semantics as
-        # Linux: rc=0 success, rc=124 timeout fired (save checkpoint), other
-        # = real failure.
-        $secs = "${{ inputs.sequential-checkpoint }}"
-        if ($secs -ne "" -and $secs -ne "0") {
-          Write-Host "[sequential-checkpoint] wrapping compile in 'timeout $secs python -m pip wheel ...' (via Git Bash)"
-          $bash = "C:\Program Files\Git\bin\bash.exe"
-          if (-not (Test-Path $bash)) { $bash = "bash" }
-          # bash inherits Windows env vars (TORCH_CUDA_ARCH_LIST, MAX_JOBS,
-          # NVCC_THREADS, NVCC_APPEND_FLAGS, CUMM_*, FORCE_CUDA, etc.) set
-          # above, so the compile sees the same environment as the
-          # PowerShell-direct path. cd via bash to handle path translation.
-          # GH Actions sets $PSNativeCommandUseErrorActionPreference=$true,
-          # which would halt this script when the wrapped bash returns
-          # 124 (timeout). Disable for this block so we can inspect rc
-          # and branch on done=true|false.
-          $PSNativeCommandUseErrorActionPreference = $false
-          & $bash -lc "timeout $secs python -m pip wheel . --no-build-isolation --no-deps -v -w dist"
-          $rc = $LASTEXITCODE
-          $PSNativeCommandUseErrorActionPreference = $true
-          Write-Host "[sequential-checkpoint] wrapped command exit code: $rc"
-          if ($rc -eq 0) {
-            Write-Host "[sequential-checkpoint] build COMPLETED in time -- done=true"
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "done=true"
-            # Explicit exit 0 -- otherwise GH Actions reads $LASTEXITCODE
-            # (still set from the bash call, possibly non-zero) and marks
-            # the step failed even though our handler succeeded.
-            exit 0
-          } elseif ($rc -eq 124) {
-            Write-Host "[sequential-checkpoint] TIMEOUT fired (rc=124) -- saving checkpoint for next link; done=false"
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "done=false"
-            exit 0
-          } else {
-            Write-Host "::error::build failed with rc=$rc (not a timeout). Chain breaks."
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "done=true"
-            exit $rc
-          }
-        } else {
-          python -m pip wheel . --no-build-isolation --no-deps -v -w dist
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "done=true"
-        }
+        python -m pip wheel . --no-build-isolation --no-deps -v -w dist
     - name: Assert cache hit rate (Linux link-only mode)
       # The failure mode of compiler caches is cliff-edged: one bad flag and
       # the hit rate silently drops to 0, the link job recompiles everything
@@ -1066,87 +820,6 @@ runs:
           echo "::error::link-job cache hit rate $((HITS * 100 / TOTAL))% (< 90%) -- shard caches did not transfer (flag mismatch, path mismatch, or nondeterministic codegen). The build 'worked' only by recompiling, which defeats sharding."
           exit 1
         fi
-
-    - name: Compute build outcome (sequential mode)
-      # Either build_linux or build_windows runs (mutually exclusive on
-      # platform). Read whichever's `done` output exists and re-emit as a
-      # single output so downstream gates don't have to branch on platform.
-      id: build_outcome
-      shell: bash
-      run: |
-        LINUX="${{ steps.build_linux.outputs.done }}"
-        WINDOWS="${{ steps.build_windows.outputs.done }}"
-        if [ -n "$LINUX" ]; then
-          DONE="$LINUX"
-        elif [ -n "$WINDOWS" ]; then
-          DONE="$WINDOWS"
-        else
-          DONE=""
-        fi
-        echo "done=$DONE" >> $GITHUB_OUTPUT
-        echo "build_outcome: done='$DONE' (linux='$LINUX', windows='$WINDOWS')"
-
-    - name: Save checkpoint tarball (sequential mode, save)
-      # Runs when the compile hit the timeout. Tars the ENTIRE source/ tree
-      # (sources + patches + build/ with .ninja_log + .o files) for the next
-      # chain link's job to extract. The whole-source approach preserves all
-      # mtimes (vs an earlier build/-only design that re-cloned source and
-      # broke ninja's restat check). tar preserves mtimes by default. Cross-
-      # platform: tar/find via Git Bash on Windows.
-      if: steps.build_outcome.outputs.done == 'false'
-      shell: bash
-      run: |
-        if [ ! -d source ]; then
-          echo "::error::no source/ directory to checkpoint -- earlier steps may have failed"
-          ls -la
-          exit 1
-        fi
-        BUILD_DIR="source/build"
-        if [ -n "${{ inputs.build-subdir }}" ]; then
-          BUILD_DIR="source/${{ inputs.build-subdir }}/build"
-        fi
-        OBJ_COUNT=$(find "$BUILD_DIR" -name '*.o' 2>/dev/null | wc -l)
-        TOTAL_FILES=$(find source -type f 2>/dev/null | wc -l)
-        echo "Checkpoint state: $OBJ_COUNT .o files in $BUILD_DIR, $TOTAL_FILES total files in source/"
-        echo "Newest .o files (top 10 by mtime):"
-        find "$BUILD_DIR" -name '*.o' -printf '  %T@ %P (%s bytes)\n' 2>/dev/null | sort -rn | head -10 || true
-        # Diagnostic: how did build.ninja change vs the version we restored?
-        # cpp_extension regenerates build.ninja in-place; if its content
-        # differs (even subtly), command_hash mismatches and ninja rebuilds
-        # everything despite restored .o files.
-        NINJA_BUILD_DIR=$(find "$BUILD_DIR" -name 'build.ninja' -printf '%h\n' 2>/dev/null | head -1)
-        if [ -n "$NINJA_BUILD_DIR" ] && [ -f /tmp/build.ninja.before ]; then
-          echo "build.ninja diff (restored vs regenerated by cpp_extension):"
-          diff /tmp/build.ninja.before "$NINJA_BUILD_DIR/build.ninja" | head -60 | sed 's/^/    /' || true
-        fi
-        mkdir -p $GITHUB_WORKSPACE/checkpoint-out
-        # CRITICAL: use --format=posix (PAX). The default ustar format stores
-        # mtimes at second precision, but ninja's .ninja_log records mtimes
-        # at nanosecond precision (Linux ext4 native). After a default tar
-        # extract, .o file mtimes are truncated to whole seconds, ninja's
-        # restat compares disk_mtime (e.g. 1779103894.000000000) against
-        # log_mtime (1779103894.789712106), sees them differ, and rebuilds
-        # every restored target. PAX preserves nanoseconds via extended
-        # headers -- GNU tar reads them transparently on extract.
-        # --force-local: on Windows Git Bash, $GITHUB_WORKSPACE is a path like
-        # "D:\a\cuda-wheels\cuda-wheels". Without this flag, tar interprets
-        # "D:" as a remote SSH host ("rsh: D: resolve failed"). --force-local
-        # tells tar to treat the colon literally. No-op on Linux.
-        tar --force-local --format=posix -czf "$GITHUB_WORKSPACE/checkpoint-out/source.tar.gz" source/
-        ls -lh $GITHUB_WORKSPACE/checkpoint-out/
-
-    - name: Upload checkpoint artifact (sequential mode, save)
-      if: steps.build_outcome.outputs.done == 'false'
-      uses: actions/upload-artifact@v4
-      with:
-        # Per-iter artifact name. The next chain-link job (iter N+1) reads
-        # `checkpoint-<...>-iter-N` produced by THIS job (iter N). Same-run
-        # download in v4 needs no run-id/github-token.
-        name: checkpoint-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-iter-${{ inputs.checkpoint-iter }}
-        path: checkpoint-out/source.tar.gz
-        # Short retention -- checkpoint is consumed within minutes by the
-        # next job in the same run, then never read again.
-        retention-days: 1
 
     - name: Package shard cache (Linux compile-shard mode)
       # The compiler cache IS the shard's product: content-addressed, so the
@@ -1209,8 +882,7 @@ runs:
 
     - name: Rename wheel with CUDA+PyTorch suffix (Linux)
       # Skip in compile-shard mode -- no wheel was kept. Also skip in
-      # sequential-checkpoint mid-chain mode -- compile timed out, no wheel.
-      if: inputs.platform == 'linux' && (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      if: inputs.platform == 'linux' && (inputs.shard-count == '0' || inputs.link-only == 'true')
       id: rename-linux
       shell: bash
       run: |
@@ -1237,8 +909,7 @@ runs:
 
     - name: Rename wheel with CUDA+PyTorch suffix (Windows)
       # Skip in compile-shard mode -- no wheel was kept. Also skip in
-      # sequential-checkpoint mid-chain mode -- compile timed out, no wheel.
-      if: inputs.platform == 'windows' && (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      if: inputs.platform == 'windows' && (inputs.shard-count == '0' || inputs.link-only == 'true')
       id: rename-windows
       shell: powershell
       run: |
@@ -1266,8 +937,7 @@ runs:
 
     - name: Fix wheel METADATA version
       # Skip in compile-shard mode -- no wheel exists yet. Also skip in
-      # sequential-checkpoint mid-chain mode -- compile timed out, no wheel.
-      if: (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      if: (inputs.shard-count == '0' || inputs.link-only == 'true')
       shell: bash
       run: |
         # The wheel filename includes the local version (e.g., +cu130torch29)
@@ -1282,14 +952,13 @@ runs:
       # import test against the exact build torch. ALL logic lives in
       # scripts/verify_wheel.py -- non-zero exit fails this step, the upload
       # never runs, and the wheel is not published.
-      if: (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      if: (inputs.shard-count == '0' || inputs.link-only == 'true')
       shell: bash
       run: python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" "$GITHUB_WORKSPACE/dist" --package "${{ inputs.package }}" --arch-list "${{ inputs.arch-list }}" --cuda "${{ inputs.cuda-version }}" --torch "${{ inputs.pytorch-version }}" --platform "${{ inputs.platform }}"
 
     - name: Set wheel-path output
-      # Empty in compile-shard mode and in sequential-checkpoint mid-chain
-      # mode; populated otherwise.
-      if: (inputs.shard-count == '0' || inputs.link-only == 'true') && steps.build_outcome.outputs.done != 'false'
+      # Empty in compile-shard mode.
+      if: (inputs.shard-count == '0' || inputs.link-only == 'true')
       id: rename
       shell: bash
       run: |

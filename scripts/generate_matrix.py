@@ -501,13 +501,6 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         "cuda_installer": pkg.get("cuda_installer", "network"),
                         "extra_cuda_components": pkg.get("extra_cuda_components", ""),
                         "nvcc_flags": pkg.get("nvcc_flags", ""),
-                        # Seconds to allow each compile job before forcing a
-                        # checkpoint/handoff. 0 = no checkpointing (default).
-                        # The build-wheel action wraps the compile in `timeout`
-                        # and, when the timer fires, tars the build/ tree to
-                        # an artifact and triggers a successor workflow_dispatch
-                        # to resume. See .github/workflows/_chain_link.yml.
-                        "sequential_checkpoint": int(pkg.get("sequential_checkpoint", 0)),
                     }
 
                     # Sharding: when pkg.sharding > 0, emit N compile-shard entries
@@ -526,10 +519,6 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         base_entry["shard_index"] = 0
                         base_entry["shard_count"] = 0
                         matrix.append(base_entry)
-                    # Note: packages with sequential_checkpoint > 0 stay in the
-                    # main matrix here; main() splits them out into a separate
-                    # linux_chain matrix below so the regular build-linux job
-                    # doesn't try to build them in one shot.
 
     if skipped > 0:
         print(f"Skipped {skipped} existing wheels")
@@ -584,14 +573,8 @@ def main():
     windows_jobs_all = [j for j in matrix if j["platform"] == "windows"]
     aarch64_jobs = [j for j in matrix if j["platform"] == "linux_aarch64"]
 
-    # Sequential-checkpoint packages go into a separate `<platform>_chain`
-    # matrix per platform. The chain reusable workflow `_chain_link.yml` is
-    # called 10 times per platform from build.yml; the matrix here threads
-    # the per-cell coordinates through each chain link.
-    linux_jobs = [j for j in linux_jobs_all if int(j.get("sequential_checkpoint", 0)) == 0]
-    linux_chain_jobs = [j for j in linux_jobs_all if int(j.get("sequential_checkpoint", 0)) > 0]
-    windows_jobs = [j for j in windows_jobs_all if int(j.get("sequential_checkpoint", 0)) == 0]
-    windows_chain_jobs = [j for j in windows_jobs_all if int(j.get("sequential_checkpoint", 0)) > 0]
+    linux_jobs = linux_jobs_all
+    windows_jobs = windows_jobs_all
 
     linux_link_jobs = link_matrix_from(linux_jobs)
     windows_link_jobs = link_matrix_from(windows_jobs)
@@ -602,8 +585,6 @@ def main():
         "windows": {"include": windows_jobs},
         "linux_link": {"include": linux_link_jobs},
         "windows_link": {"include": windows_link_jobs},
-        "linux_chain": {"include": linux_chain_jobs},
-        "windows_chain": {"include": windows_chain_jobs},
     }
 
     with open(args.output, "w") as f:
@@ -612,9 +593,7 @@ def main():
 
     print(f"Generated {len(matrix)} build jobs "
           f"({len(linux_jobs)} Linux, {len(aarch64_jobs)} aarch64, "
-          f"{len(windows_jobs)} Windows, "
-          f"{len(linux_chain_jobs)} Linux chain, "
-          f"{len(windows_chain_jobs)} Windows chain)")
+          f"{len(windows_jobs)} Windows, " f")")
     if linux_link_jobs or windows_link_jobs:
         print(f"  + {len(linux_link_jobs)} Linux link jobs, "
               f"{len(windows_link_jobs)} Windows link jobs (sharded packages)")
