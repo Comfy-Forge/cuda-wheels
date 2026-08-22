@@ -253,10 +253,13 @@ def wheel_exists(existing_wheels: set, package: str, cuda_short: str,
         # links_torch: false (CW-ADR-0011): the binary is torch-agnostic, so a
         # wheel under ANY torch tag satisfies this (cuda, python, platform).
         import re as _re
+        # cp312-cp312 exact-python wheels, plus the abi-agnostic shapes:
+        # py3-none (llama_cpp_python) and cpXY-abi3 (torchao) satisfy every
+        # python cell, so their presence must skip the rebuild too.
         pat = _re.compile(
             (_re.escape(f"-{version}") if version else "") +
             _re.escape(f"+cu{cuda_short}torch") + r"[\d.]+" +
-            _re.escape(f"-cp{python_short}-cp{python_short}-"))
+            rf"-(?:cp{python_short}-cp{python_short}[a-z]*|py3-none|cp\d+-abi3)-")
         if platform == "linux":
             return any(pat.search(w) and "aarch64" not in w
                        and ("manylinux" in w or "linux_x86_64" in w)
@@ -265,8 +268,9 @@ def wheel_exists(existing_wheels: set, package: str, cuda_short: str,
             return any(pat.search(w) and "aarch64" in w for w in existing_wheels)
         return any(pat.search(w) and "win_amd64" in w for w in existing_wheels)
     combos = [
-        f"+cu{cuda_short}torch{torch_short}-cp{python_short}-cp{python_short}-",
-        f"+cu{cuda_short}torch{torch_short_v1}-cp{python_short}-cp{python_short}-",
+        f"+cu{cuda_short}torch{t}-{tag}"
+        for t in (torch_short, torch_short_v1)
+        for tag in (f"cp{python_short}-cp{python_short}-", "py3-none-")
     ]
     if version:
         # Wheel names are <dist>-<version>+<combo>-... so anchor the version to
@@ -274,16 +278,25 @@ def wheel_exists(existing_wheels: set, package: str, cuda_short: str,
         patterns = [f"-{version}{c}" for c in combos]
     else:
         patterns = combos
+
+    def _matches(w):
+        # abi3 wheels carry an arbitrary cp floor (cp310-abi3), so the tag
+        # can't be a fixed substring: pair the combo prefix with "-abi3-".
+        if any(p in w for p in patterns):
+            return True
+        return "-abi3-" in w and any(
+            (f"-{version}+cu{cuda_short}torch{t}-" if version
+             else f"+cu{cuda_short}torch{t}-") in w
+            for t in (torch_short, torch_short_v1))
+
     if platform == "linux":
-        return any(p in w and "aarch64" not in w
+        return any(_matches(w) and "aarch64" not in w
                    and ("manylinux" in w or "linux_x86_64" in w)
-                   for p in patterns for w in existing_wheels)
+                   for w in existing_wheels)
     elif platform == "linux_aarch64":
-        return any(p in w and "aarch64" in w
-                   for p in patterns for w in existing_wheels)
+        return any(_matches(w) and "aarch64" in w for w in existing_wheels)
     else:
-        return any(p in w and "win_amd64" in w
-                   for p in patterns for w in existing_wheels)
+        return any(_matches(w) and "win_amd64" in w for w in existing_wheels)
 
 
 def _validate_filters(package_filter, platform_filter,

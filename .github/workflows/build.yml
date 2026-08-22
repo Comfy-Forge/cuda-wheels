@@ -120,6 +120,10 @@ jobs:
           PY_SHORT=$(echo "${{ matrix.python }}" | tr -d '.')
           # Prefix without platform tag (auditwheel changes linux_x86_64 → manylinux_*)
           WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
+          # Abi-agnostic wheels (py3-none / cpXY-abi3) satisfy every python
+          # cell -- the exists-check must accept them too (grep -E below).
+          WHEEL_PREFIX_RE="^${PKG_NAME}-${PKG_VERSION}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
+          echo "wheel_prefix_re=$WHEEL_PREFIX_RE" >> $GITHUB_OUTPUT
 
           echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
           echo "pkg_name=$PKG_NAME" >> $GITHUB_OUTPUT
@@ -140,7 +144,7 @@ jobs:
             echo "::notice::Overwrite enabled, will rebuild"
           else
             # Require manylinux (auditwheel-repaired) wheels on Linux
-            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep "^${WHEEL_PREFIX}" | grep "manylinux" | head -1 || true)
+            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep -E "${{ steps.meta.outputs.wheel_prefix_re }}" | grep "manylinux" | head -1 || true)
             if [ -n "$MATCHING" ]; then
               echo "exists=true" >> $GITHUB_OUTPUT
               echo "::notice::Wheel exists in release: $MATCHING"
@@ -263,6 +267,10 @@ jobs:
           TORCH_SHORT=$(echo "${{ matrix.pytorch }}" | cut -d. -f1,2)
           PY_SHORT=$(echo "${{ matrix.python }}" | tr -d '.')
           WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
+          # Abi-agnostic wheels (py3-none / cpXY-abi3) satisfy every python
+          # cell -- the exists-check must accept them too (grep -E below).
+          WHEEL_PREFIX_RE="^${PKG_NAME}-${PKG_VERSION}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
+          echo "wheel_prefix_re=$WHEEL_PREFIX_RE" >> $GITHUB_OUTPUT
           echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
 
       - name: Check if wheel exists in release
@@ -278,7 +286,7 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
             echo "::notice::Overwrite enabled, will rebuild"
           else
-            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep "^${WHEEL_PREFIX}" | grep "aarch64" | head -1 || true)
+            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep -E "${{ steps.meta.outputs.wheel_prefix_re }}" | grep "aarch64" | head -1 || true)
             if [ -n "$MATCHING" ]; then
               echo "exists=true" >> $GITHUB_OUTPUT
               echo "::notice::Wheel exists in release: $MATCHING"
@@ -576,6 +584,10 @@ jobs:
           TORCH_SHORT=$(echo "${{ matrix.pytorch }}" | cut -d. -f1,2)
           PY_SHORT=$(echo "${{ matrix.python }}" | tr -d '.')
           WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
+          # Abi-agnostic wheels (py3-none / cpXY-abi3) satisfy every python
+          # cell -- the exists-check must accept them too (grep -E below).
+          WHEEL_PREFIX_RE="^${PKG_NAME}-${PKG_VERSION}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
+          echo "wheel_prefix_re=$WHEEL_PREFIX_RE" >> $GITHUB_OUTPUT
 
           echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
           echo "pkg_name=$PKG_NAME" >> $GITHUB_OUTPUT
@@ -596,7 +608,7 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
             echo "::notice::Overwrite enabled, will rebuild"
           else
-            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep "^${WHEEL_PREFIX}" | grep "win_amd64" | head -1 || true)
+            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep -E "${{ steps.meta.outputs.wheel_prefix_re }}" | grep "win_amd64" | head -1 || true)
             if [ -n "$MATCHING" ]; then
               echo "exists=true" >> $GITHUB_OUTPUT
               echo "::notice::Wheel exists in release: $MATCHING"

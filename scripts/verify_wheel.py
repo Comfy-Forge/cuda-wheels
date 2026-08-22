@@ -120,6 +120,11 @@ def wheel_members(zf):
     exts, vendored = [], []
     for name in zf.namelist():
         base = name.rsplit("/", 1)[-1]
+        if name.endswith(".dll"):
+            # Windows DLLs are never importable modules -- they are dlopen
+            # targets (llama_cpp's lib/*.dll) or vendored dependencies.
+            vendored.append(name)
+            continue
         if not (name.endswith(".so") or name.endswith(".pyd")
                 or ".so." in base):
             continue
@@ -169,8 +174,15 @@ def check_filename(rep, parsed, args, pkg, vknobs=None):
     if parsed["torch_short"] != want_minor:
         problems.append(f"torch {parsed['torch_short']} != {want_minor}")
     py_here = f"{sys.version_info.major}{sys.version_info.minor}"
-    if parsed["python"] != py_here:
-        problems.append(f"python cp{parsed['python']} != build env cp{py_here}")
+    abi = parsed.get("abi", "cp")
+    if abi == "cp":
+        if parsed["python"] != py_here:
+            problems.append(f"python cp{parsed['python']} != build env cp{py_here}")
+    elif abi == "abi3":
+        # Stable-ABI wheel: valid for every python >= its cp floor.
+        if int(parsed["python"]) > int(py_here):
+            problems.append(f"abi3 floor cp{parsed['python']} above build env cp{py_here}")
+    # abi == "none" (py3-none): abi-agnostic, any python 3 -- no check.
     plat_tag = parsed["plat_tag"]
     if args.platform == "linux" and "manylinux_2_28_x86_64" not in plat_tag:
         problems.append(f"platform tag {plat_tag!r} lacks manylinux_2_28_x86_64 "
@@ -267,11 +279,17 @@ def check_metadata(rep, wheel_path, parsed, pkg):
 # ── C3 ─────────────────────────────────────────────────────────────────────
 
 def check_binary_census(rep, wheel_path, vknobs, exts, vendored):
-    if not exts and not vknobs.get("allow_pure_python"):
+    if not exts and not vendored and not vknobs.get("allow_pure_python"):
         rep.add("binary_census", "fail",
-                "no compiled extension modules in wheel -- the CUDA compile "
+                "no compiled binaries in wheel at all -- the CUDA compile "
                 "silently produced a pure-python wheel (set "
                 "verify.allow_pure_python only for JIT-only packages)")
+    elif not exts and vendored:
+        # dlopen-style package (llama_cpp on Windows: DLLs, no .pyd) --
+        # compiled code exists, just nothing directly importable.
+        rep.add("binary_census", "pass",
+                f"no importable extensions; {len(vendored)} dlopen-style/"
+                f"vendored binaries", {"vendored": vendored})
     elif not exts:
         rep.add("binary_census", "skip",
                 "pure-python by design (verify.allow_pure_python)",

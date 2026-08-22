@@ -42,11 +42,14 @@ DEFAULT_REPO = "Comfy-Forge/cuda-wheels"
 # One wheel-name parser for all three lenses. Handles v2 (+cu124torch2.4) and
 # v1 (+cu124torch24) local tags, manylinux single- and dual-tag platforms,
 # plain linux, aarch64 and Windows.
+# Three python/abi tag shapes: ordinary CPython (cp312-cp312), stable-ABI
+# (cp310-abi3 -- torchao's limited-API wheel, one build serves cp310+),
+# and abi-agnostic (py3-none -- llama_cpp_python's ctypes-only binding).
 WHEEL_RE = re.compile(
     r"^(?P<pkg>[A-Za-z0-9_]+)"
     r"-(?P<ver>[0-9][^+-]*)"
     r"\+cu(?P<cuda>\d+)torch(?P<torch>[\d.]+)"
-    r"-cp(?P<py>\d+)-cp\d+-"
+    r"-(?:cp(?P<py>\d+)-cp\d+[a-z]*|cp(?P<pyabi>\d+)-abi3|py(?P<pynone>\d)-none)-"
     r"(?P<plat>[\w.]+)\.whl$"
 )
 _VALID_PLAT = ("manylinux", "linux_x86_64", "linux_aarch64", "win_amd64")
@@ -66,13 +69,20 @@ def parse_wheel(name: str) -> Optional[dict]:
         platform = "linux"
     else:
         platform = "windows"
+    if m.group("py"):
+        python, abi = m.group("py"), "cp"
+    elif m.group("pyabi"):
+        python, abi = m.group("pyabi"), "abi3"   # python = the cp floor
+    else:
+        python, abi = None, "none"               # any python 3
     return {
         "package": m.group("pkg"),
         "version": m.group("ver"),
         "cuda": f"{cuda_short[:2]}.{cuda_short[2:]}" if len(cuda_short) == 3 else cuda_short,
         "cuda_short": cuda_short,
         "torch_short": torch_short,
-        "python": m.group("py"),
+        "python": python,
+        "abi": abi,
         "platform": platform,
         "plat_tag": plat,
         "filename": name,

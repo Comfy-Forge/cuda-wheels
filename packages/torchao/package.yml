@@ -7,6 +7,10 @@ links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pa
 source_repo: pytorch/ao
 source_tag: v0.18.0
 version: 0.18.0
+# Kill upstream's +git<sha> version suffix (setup.py appends it when
+# VERSION_SUFFIX is unset) -- the farm's renamer then produced the
+# pip-invalid double local tag 0.18.0+git...+cu128torch2.11.
+pre_build_script: echo "VERSION_SUFFIX=" >> $GITHUB_ENV
 clone_recursive: true          # third_party/cutlass
 # Upstream passes -t=0 (= one thread per gencode, ~6 on cu128) to nvcc.
 # The farm's trailing --threads=1 neutralizes it; cap jobs for CUTLASS.

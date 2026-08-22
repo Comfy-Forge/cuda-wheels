@@ -331,8 +331,11 @@ runs:
         # Glob pattern matching every shard artifact for this (package, platform,
         # python, cuda, torch) tuple. Each shard uploaded its tarball under a
         # distinct name `shard-<pkg>-<platform>-py<py>-cu<cuda>-torch<torch>-<shard_index>-of-<shard_count>`.
+        # Workspace-relative: an absolute /tmp diverges on Windows (Node
+        # resolves it to <drive>:\tmp while Git-bash mounts its own /tmp) --
+        # natten's link job found zero artifacts that way.
         pattern: shard-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-*-of-${{ inputs.shard-count }}
-        path: /tmp/shard-artifacts
+        path: shard-artifacts
 
     - name: Restore shard objects (link-only mode)
       # Each shard uploaded a tarball of its `build/` tree (containing the
@@ -354,6 +357,9 @@ runs:
       if: inputs.link-only == 'true' && inputs.platform == 'windows'
       shell: bash
       run: |
+        # Resolve the artifact dir to a POSIX path FIRST (cd normalizes the
+        # D:\... workspace form), so tar never sees a drive-letter colon.
+        SA="$(cd "$GITHUB_WORKSPACE/shard-artifacts" 2>/dev/null && pwd || true)"
         cd source
         if [ -n "${{ inputs.build-subdir }}" ]; then
           cd "${{ inputs.build-subdir }}"
@@ -362,7 +368,7 @@ runs:
         shopt -s nullglob
         TEMP_DIR=$(mktemp -d)
         found=0
-        for tarball in /tmp/shard-artifacts/*/objects.tar.gz; do
+        for tarball in "$SA"/*/objects.tar.gz; do
           found=$((found+1))
           shard_dir=$(mktemp -d -p "$TEMP_DIR" shard.XXXX)
           echo "extracting $tarball -> $shard_dir"
@@ -377,8 +383,8 @@ runs:
           done
         done
         if [ "$found" = "0" ]; then
-          echo "::error::no shard artifacts found at /tmp/shard-artifacts -- did the upstream compile-shard jobs succeed?"
-          ls -laR /tmp/shard-artifacts || true
+          echo "::error::no shard artifacts found under $GITHUB_WORKSPACE/shard-artifacts -- did the upstream compile-shard jobs succeed?"
+          ls -laR "$GITHUB_WORKSPACE/shard-artifacts" || true
           exit 1
         fi
         # Strip stale ninja/cmake state so the link job's build system
@@ -487,7 +493,7 @@ runs:
       shell: bash
       run: |
         found=0
-        for tarball in /tmp/shard-artifacts/*/ccache.tar.gz; do
+        for tarball in "$GITHUB_WORKSPACE"/shard-artifacts/*/ccache.tar.gz; do
           [ -f "$tarball" ] || continue
           found=$((found+1))
           echo "merging $tarball"
@@ -495,7 +501,7 @@ runs:
         done
         if [ "$found" = "0" ]; then
           echo "::error::no shard ccache artifacts found -- did the shard jobs succeed?"
-          ls -laR /tmp/shard-artifacts || true
+          ls -laR "$GITHUB_WORKSPACE/shard-artifacts" || true
           exit 1
         fi
         echo "merged $found shard cache(s):"
@@ -700,6 +706,11 @@ runs:
           # vendoring would graft ~850MB of cuBLAS into the wheel; torch
           # preloads both at import, so DT_NEEDED resolves against the
           # already-loaded SONAME -- same contract as libcudart.
+          # libggml*/libllama*/libmtmd*: llama_cpp_python SHIPS these
+          # side-by-side in llama_cpp/lib/ with $ORIGIN rpaths; auditwheel
+          # can't resolve intra-wheel non-standard dirs ("required library
+          # libggml-base.so.0 could not be located") and grafting would
+          # duplicate them.
           if auditwheel repair "$whl" \
             --plat "$AUDITWHEEL_PLAT" \
             -w repaired/ \
@@ -716,6 +727,9 @@ runs:
             --exclude libc10_cuda.so \
             --exclude 'libcublas.so*' \
             --exclude 'libcublasLt.so*' \
+            --exclude 'libggml*.so*' \
+            --exclude 'libllama*.so*' \
+            --exclude 'libmtmd*.so*' \
             --exclude libgomp.so.1; then
             rm "$whl"
           else

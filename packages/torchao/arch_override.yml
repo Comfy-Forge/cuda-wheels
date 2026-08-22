@@ -7,3 +7,9 @@ arch_list_by_cuda:
   '12.8': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
   '12.9': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
   '13.0': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
+# ARM (dedicated field -- the aarch64 lane ignores the x86 rows): the
+# first ARM build produced sm_90/100/120 ONLY -- no sm_80 despite it
+# being in the env arch list; torchao 0.18's CUDA kernels are gated
+# sm90+. Declared so the gate asserts what the build can actually emit.
+arch_list_by_cuda_aarch64:
+  '12.8': 9.0 10.0 12.0+PTX
