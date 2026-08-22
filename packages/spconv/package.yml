@@ -24,6 +24,11 @@ requires_dist:
   - "cumm=={VER:cumm}+{LOCAL}"
 verify:
   extra_imports: [spconv.pytorch]
+  # core_cc is loaded by spconv's own __init__ (which registers cumm's
+  # tv::Tensor types first); a second DIRECT import re-runs the pybind
+  # registrations ("ExternalAllocator ... already defined") and poisons
+  # the sibling phases. The facade imports are the assert.
+  no_direct_import: ["*core_cc*"]
   skip_arch: >-
     runtime-JIT package: kernels are compiled at import/run time via the
     vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
