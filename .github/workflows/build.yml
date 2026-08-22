@@ -323,13 +323,18 @@ jobs:
           build-subdir: ${{ matrix.build_subdir }}
           nvcc-flags: ${{ matrix.nvcc_flags }}
           nvcc-threads: ${{ matrix.nvcc_threads }}
-          shard-index: 0
-          shard-count: 0
+          # Shard inputs from the matrix (were hardcoded 0/0 until
+          # 2026-08-22: a sharded ARM package fanned out N IDENTICAL full
+          # builds and the ARM link job never had shard caches to merge).
+          shard-index: ${{ matrix.shard_index }}
+          shard-count: ${{ matrix.shard_count }}
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
 
       - name: Upload artifact
-        if: steps.check.outputs.exists != 'true'
+        # Compile-shard jobs hand off via the action's ccache artifact;
+        # only full builds upload a wheel here (mirrors build-linux).
+        if: matrix.shard_count == 0 && steps.check.outputs.exists != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}-linux_aarch64-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
@@ -436,7 +441,7 @@ jobs:
     # generate-matrix is in needs because we reference its `matrix` output;
     # GH Actions only exposes outputs from direct needs.
     needs: [generate-matrix, build-linux-aarch64]
-    if: ${{ needs.build-linux.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64_link.include[0] != null }}
+    if: ${{ needs.build-linux-aarch64.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64_link.include[0] != null }}
     runs-on: ubuntu-24.04-arm
     container:
       image: quay.io/pypa/manylinux_2_28_aarch64
