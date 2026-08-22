@@ -32,6 +32,14 @@ pre_build_script: |
   CUMM_URL=$(python /tmp/pick_cumm.py)
   echo "farm cumm: $CUMM_URL"
   python -m pip install "$CUMM_URL"
+  # Farm wheels exclude libcudart by policy (torch preloads it), but
+  # spconv's setup imports cumm WITHOUT torch -- put the toolkit libs on
+  # the loader path for the whole job (harmless no-op on Windows, where
+  # the CUDA bin dir is already on PATH).
+  if [ -d "$CUDA_HOME/lib64" ]; then
+    echo "LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+    export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
+  fi
   python -c "import cumm.tensorview, cumm.constants; print('cumm OK:', cumm.constants.TENSORVIEW_INCLUDE_PATH)"
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
