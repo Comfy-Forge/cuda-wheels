@@ -24,12 +24,17 @@ extra_deps: pccm>=0.4.16 ccimport>=0.4.4
 pre_build_script: |
   if [ "$(uname -m)" = "aarch64" ]; then
     echo "aarch64: building cumm 0.7.11 from source (upstream ships no ARM wheels)"
-    # EDITABLE install on purpose: a plain git+ install builds the native
-    # core fine but does not package cumm's bundled include/ tree, and the
-    # installed package then fails its own TENSORVIEW_INCLUDE_PATH assert.
-    # Editable keeps the source layout where include/ exists.
+    # Plain git+ install builds the native core correctly but does not
+    # package cumm's bundled include/ tree (editable builds have the
+    # opposite hole: include/ present, core_cc never built into the
+    # source tree). Install normally, then graft include/ from a clone
+    # into the installed package -- constants.py accepts
+    # PACKAGE_ROOT/include and asserts BEFORE its env override.
+    python -m pip install --no-build-isolation "git+https://github.com/FindDefinition/cumm@v0.7.11"
     git clone --depth 1 --branch v0.7.11 https://github.com/FindDefinition/cumm.git "$RUNNER_TEMP/cumm-src"
-    python -m pip install --no-build-isolation -e "$RUNNER_TEMP/cumm-src"
+    CUMM_PKG=$(python -c "import cumm, pathlib; print(pathlib.Path(cumm.__file__).parent)")
+    cp -r "$RUNNER_TEMP/cumm-src/include" "$CUMM_PKG/include"
+    python -c "import cumm.constants; print('cumm include OK:', cumm.constants.TENSORVIEW_INCLUDE_PATH)"
   else
     python -m pip install "cumm<0.8.0,>=0.7.11"
   fi
