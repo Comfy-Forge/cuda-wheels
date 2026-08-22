@@ -41,6 +41,9 @@ jobs:
       - name: Render matrix page from the committed PCWM snapshot
         run: python scripts/fetch_torch_matrix.py --from-json defaults/scraped_torch_matrix.json --html _site/matrix
 
+      - name: Build the "Find your wheel" page
+        run: python scripts/generate_findwheel.py --out _site
+
       - name: Generate PEP 503 index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

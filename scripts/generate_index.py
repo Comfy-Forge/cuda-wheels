@@ -206,7 +206,7 @@ def main():
         # Root-level package dirs; skip the non-package families (combo
         # channels cuXXX/, matrix/, dashboard/).
         previous = {d.name for d in prev_root.iterdir() if d.is_dir()
-                    and d.name not in ("matrix", "dashboard", "v2")
+                    and d.name not in ("matrix", "dashboard", "v2", "find")
                     and not d.name.startswith("cu")
                     and not d.name.startswith(".")}
     else:
@@ -230,12 +230,26 @@ def main():
 
     all_packages = sorted(packages.keys())
 
-    # Generate root index
+    # Generate root index. Still a valid PEP 503 root (pip constructs
+    # /<package>/ URLs directly and never scrapes this page), so the human
+    # nav on top costs nothing.
     with open(docs / "index.html", "w") as f:
         f.write("<!DOCTYPE html>\n")
-        f.write("<html>\n<head><title>CUDA Wheels Index</title></head>\n")
+        f.write("<html>\n<head><title>CUDA Wheels Index</title>\n")
+        f.write('<style>body{font-family:sans-serif;max-width:900px;margin:2rem auto;'
+                'padding:0 1rem;line-height:1.5}nav{padding:.8rem 1rem;background:#f4f6f8;'
+                'border-radius:8px;margin-bottom:1.2rem}nav a{margin-right:1.2rem}'
+                'p.hint{color:#555;font-size:.92rem}</style></head>\n')
         f.write("<body>\n")
         f.write("<h1>CUDA Wheels</h1>\n")
+        f.write('<nav><a href="find/"><b>Find your wheel</b></a> '
+                '<a href="matrix/">Upstream PyTorch matrix</a> '
+                '<a href="dashboard/">Build dashboard</a></nav>\n')
+        f.write('<p class="hint">This page is the PEP 503 simple index '
+                '(what pip and comfy-env resolve against; per-combo channels '
+                'live at <code>/cu&lt;ver&gt;/&lt;torch&gt;/</code>). Humans '
+                'wanting an install command: use <a href="find/">Find your '
+                'wheel</a>.</p>\n')
         for pkg in all_packages:
             f.write(f'<a href="{pkg}/">{pkg}</a><br>\n')
         f.write("</body>\n</html>\n")
@@ -324,7 +338,10 @@ def main():
                 "version": parsed["version"],
                 "cuda": parsed["cuda"],
                 "torch": parsed["torch_short"],
+                # None for abi-agnostic wheels (py3-none / cpXY-abi3):
+                # they satisfy every python; "abi" says which shape.
                 "python": parsed["python"],
+                "abi": parsed.get("abi", "cp"),
                 "platform": parsed["platform"],
                 "url": w["url"],
                 "sha256": w.get("sha256", ""),
