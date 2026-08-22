@@ -220,3 +220,30 @@ cppcore_content = cppcore_content.replace(
 
 cppcore_py.write_text(cppcore_content)
 print("Patched spconv/pytorch/cppcore.py with bf16 dtype mapping")
+
+
+# ── manylinux symlink fix for ccimport's package resolver ────────────────
+# The container's python is /opt/python/cp312-cp312 -> symlink to
+# /opt/_internal/cpython-3.12.14. pccm resolves class FILES with
+# Path.resolve() (real path) but ccimport.locate_package compares against
+# importlib.find_spec origins (symlinked sys.path form) -- they can never
+# match, so locate_top_package walks past cumm, the module-id fallback
+# mangles the absolute path into "cpython-3", and the build dies with
+# ModuleNotFoundError. Resolve the spec origin in the INSTALLED ccimport
+# so both sides speak real paths. (This is why legacy spconv built on a
+# plain runner but never in the manylinux container.)
+import ccimport as _cc
+from pathlib import Path as _P3
+
+_loader = _P3(_cc.__file__).parent / "loader.py"
+_ls = _loader.read_text()
+_old_line = "    origin = Path(spec.origin)\n"
+_new_line = "    origin = Path(spec.origin).resolve()  # cuda-wheels: match resolved file paths\n"
+if _new_line in _ls:
+    print("ccimport loader already patched")
+elif _old_line not in _ls:
+    raise SystemExit("spconv patch: ccimport loader.py changed -- "
+                     "update the symlink fix")
+else:
+    _loader.write_text(_ls.replace(_old_line, _new_line, 1))
+    print("patched installed ccimport: spec origins resolved to real paths")

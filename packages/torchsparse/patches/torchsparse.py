@@ -56,11 +56,21 @@ if _os.name == "nt":
         _dst.mkdir(parents=True, exist_ok=True)
         for _d in ("google", "sparsehash"):
             _sh.copytree(_root / "src" / _d, _dst / _d, dirs_exist_ok=True)
-        _msvc_cfg = _root / "src" / "windows" / "sparsehash" / "internal" / "sparseconfig.h"
-        if not _msvc_cfg.exists():
-            raise SystemExit("torchsparse patch: sparsehash tarball layout "
-                             "changed (no windows sparseconfig.h)")
-        _sh.copy(_msvc_cfg, _dst / "sparsehash" / "internal" / "sparseconfig.h")
+        # The tarball's own windows sparseconfig targets pre-2015 MSVC
+        # (stdext::hash_compare -- error C2039 on VS2022). Write a modern
+        # config: std::hash from <functional>, stdint types.
+        (_dst / "sparsehash" / "internal" / "sparseconfig.h").write_text(
+            "#define GOOGLE_NAMESPACE ::google\n"
+            "#define HASH_NAMESPACE std\n"
+            "#define HASH_FUN_H <functional>\n"
+            "#define SPARSEHASH_HASH HASH_NAMESPACE::hash\n"
+            "#define HAVE_STDINT_H 1\n"
+            "#define HAVE_UINT16_T 1\n"
+            "#define HAVE_LONG_LONG 1\n"
+            "#define HAVE_MEMCPY 1\n"
+            "#define STL_NAMESPACE std\n"
+            "#define _START_GOOGLE_NAMESPACE_ namespace google {\n"
+            "#define _END_GOOGLE_NAMESPACE_ }\n")
         _sh.rmtree("_sparsehash_src")
         _P("_sparsehash.tar.gz").unlink()
         print("vendored sparsehash 2.0.4 into third_party/sparsehash")

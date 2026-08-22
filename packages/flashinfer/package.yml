@@ -28,8 +28,10 @@ verify:
 # requests for the AOT compile loop -- wave 2 died on tqdm).
 extra_deps: apache-tvm-ffi pynvml tqdm requests
 # The AOT compile needs FLASHINFER_CUDA_ARCH_LIST explicitly (no GPU to
-# probe on CI). ${{ inputs.arch-list }} expands when the action inlines
-# this script; the conversion strips +PTX and swaps ';' for ' ' (the
-# format compilation_context.py parses; suffixes are auto-normalized).
+# probe on CI). The pre-build step exports the cell's arch list as
+# TORCH_CUDA_ARCH_LIST env (GitHub expressions do NOT re-expand inside
+# input values -- a ${{ }} written here would stay literal); strip +PTX
+# and switch to spaces (compilation_context.py's format; arch suffixes
+# are auto-normalized there).
 pre_build_script: |
-  echo "FLASHINFER_CUDA_ARCH_LIST=$(echo '${{ inputs.arch-list }}' | tr ';' ' ' | sed 's/+PTX//g')" >> $GITHUB_ENV
+  echo "FLASHINFER_CUDA_ARCH_LIST=$(echo "$TORCH_CUDA_ARCH_LIST" | tr ';' ' ' | sed 's/+PTX//g')" >> $GITHUB_ENV

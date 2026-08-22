@@ -132,8 +132,14 @@ runs:
 
     - name: Pre-build script
       # Already ran on iter=0; effects preserved in the source/ tarball.
+      # env: cell facts a package script may need (GitHub expressions do NOT
+      # re-expand inside input values, so ${{ inputs.arch-list }} written in
+      # a package.yml pre_build_script stays a literal -- use these instead).
       if: inputs.pre-build-script != ''
       shell: bash
+      env:
+        TORCH_CUDA_ARCH_LIST: ${{ inputs.arch-list }}
+        CUW_CUDA_VERSION: ${{ inputs.cuda-version }}
       run: |
         cd source
         ${{ inputs.pre-build-script }}
