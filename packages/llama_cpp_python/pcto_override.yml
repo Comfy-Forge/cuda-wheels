@@ -3,8 +3,10 @@
 # NO combinations here: links_torch: false makes generate_matrix collapse the
 # torch axis automatically (one build per cuda x python x platform, newest
 # torch per CUDA line as the build env, pythons from that grid row).
-# Only the platform axis is restricted: no aarch64 -- the GGML CUDA build
-# takes hours and runs through the sequential-checkpoint chain, which has no
-# ARM lane; an aarch64 cell would land in a plain 6h job and time out.
+# ARM enabled 2026-08-22 (the old "no aarch64: checkpoint chain has no ARM
+# lane" justification died with the chain): llama.cpp's own CI builds
+# arm64 CUDA images on GitHub-hosted ubuntu-24.04-arm in ~1h, the GGML
+# CUDA backend is arch-neutral, the farm's x86 build is 22 min, and
+# upstream ships ZERO aarch64 CUDA wheels -- a real gap.
 build_matrix:
-  platforms: ["linux", "windows"]
+  platforms: ["linux", "windows", "linux_aarch64"]

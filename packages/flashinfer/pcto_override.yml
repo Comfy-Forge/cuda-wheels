@@ -3,8 +3,14 @@
 # NO combinations here: links_torch: false makes generate_matrix collapse the
 # torch axis automatically (one build per cuda x python x platform, newest
 # torch per CUDA line as the build env, pythons from that grid row).
-# Only the platform axis is restricted: no aarch64 -- the AOT build takes
-# hours and runs through the sequential-checkpoint chain, which has no ARM
-# lane; an aarch64 cell would land in a plain 6h job and time out.
+# Only the platform axis is restricted: no aarch64. The old justification
+# (checkpoint chain) is dead, but the conclusion holds on fresh evidence
+# (2026-08-22): upstream's own aarch64 jit-cache builds take 3h12m-5h13m
+# on a 64-vCPU/512GB r6g.16xlarge -- ~200 core-hours, an order of
+# magnitude past the 6h cap on a 4-core hosted runner. Upstream also
+# already ships manylinux_2_28_aarch64 jit-cache wheels for cu128/129/130,
+# so the farm's only novel ARM cell would be cu126. Revisit only with
+# sharding through the nvcc seat (verify flashinfer's forked jit/cpp_ext.py
+# honors CUDACXX/PYTORCH_NVCC first).
 build_matrix:
   platforms: ["linux", "windows"]

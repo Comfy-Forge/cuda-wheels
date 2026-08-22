@@ -523,16 +523,27 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                     # The downstream link job is fanned out by a separate matrix
                     # produced via _link_matrix_from() below.
                     sharding = int(pkg.get("sharding", 0))
+                    # "seat" (default): the nvcc-seat wrapper / CUDAExtension
+                    # monkeypatch partitions. "source": the package's patch
+                    # partitions its own source list (natten) and the seat
+                    # must not double-partition.
+                    shard_filter = pkg.get("shard_filter", "seat")
+                    if shard_filter not in ("seat", "source"):
+                        print(f"ERROR: {pkg_name}: shard_filter must be "
+                              f"'seat' or 'source', got {shard_filter!r}")
+                        sys.exit(1)
                     if sharding > 0:
                         for shard_index in range(1, sharding + 1):
                             entry = dict(base_entry)
                             entry["shard_index"] = shard_index
                             entry["shard_count"] = sharding
+                            entry["shard_filter"] = shard_filter
                             matrix.append(entry)
                     else:
                         # Unsharded: emit defaults so action.yml inputs always get sane values.
                         base_entry["shard_index"] = 0
                         base_entry["shard_count"] = 0
+                        base_entry["shard_filter"] = shard_filter
                         matrix.append(base_entry)
 
     if skipped > 0:

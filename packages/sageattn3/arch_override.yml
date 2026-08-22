@@ -1,3 +1,10 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
 arch_list: 10.0 12.0+PTX
+# Same kernels on ARM (sm_100a for GB200/B200, sm_120a for Blackwell
+# consumer-class): the aarch64 lane ignores x86 overrides, so the default
+# ARM policy row (8.0/9.0/...) would demand archs upstream cannot build.
+# Future: consider adding 12.1 on cu12.9+/13.0 for DGX Spark (GB10,
+# sm_121) -- sm_120a cubins carry no official compat guarantee on sm_121,
+# and the patch's arch map already knows 12.1 -> sm_121a.
+arch_list_aarch64: 10.0 12.0+PTX

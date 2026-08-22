@@ -35,3 +35,9 @@ nvcc_flags: --threads=1
 # time). Ninja generator is used.
 extra_deps: cmake ninja
 sharding: 20  # sharded for wall-clock; patch reads CUDA_WHEELS_SHARD_INDEX/COUNT; owner order 2026-08-22
+# The PATCH partitions (deletes foreign autogen .cu files before cmake);
+# the nvcc-seat wrapper must stay a pure ccache pass-through. Running both
+# partitions the intersection (~1/N^2 per shard) -- and the seat wrapper
+# also stubbed cmake's compiler-probe TUs, which killed configure
+# ("Detecting CUDA compiler ABI info - failed", waves 1-2).
+shard_filter: source

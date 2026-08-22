@@ -98,3 +98,8 @@ build_matrix:
   platforms:
   - linux
   - windows
+  # ARM enabled 2026-08-22: source is architecture-clean (plain
+  # CUDAExtension, two TUs, zero x86 intrinsics) and the audience is real
+  # -- GB200/B200 (sm_100a) natively, Blackwell consumer via sm_120a.
+  # See arch_override.yml's arch_list_aarch64.
+  - linux_aarch64

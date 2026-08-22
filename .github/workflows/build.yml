@@ -207,6 +207,7 @@ jobs:
           nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: ${{ matrix.shard_index }}
           shard-count: ${{ matrix.shard_count }}
+          shard-filter: ${{ matrix.shard_filter }}
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
 
@@ -328,6 +329,7 @@ jobs:
           # builds and the ARM link job never had shard caches to merge).
           shard-index: ${{ matrix.shard_index }}
           shard-count: ${{ matrix.shard_count }}
+          shard-filter: ${{ matrix.shard_filter }}
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
 
@@ -423,6 +425,7 @@ jobs:
           nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: '0'
           shard-count: ${{ matrix.shard_count }}
+          shard-filter: ${{ matrix.shard_filter }}
           link-only: 'true'
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
@@ -515,6 +518,7 @@ jobs:
           nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: '0'
           shard-count: ${{ matrix.shard_count }}
+          shard-filter: ${{ matrix.shard_filter }}
           link-only: 'true'
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
@@ -642,6 +646,7 @@ jobs:
           nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: ${{ matrix.shard_index }}
           shard-count: ${{ matrix.shard_count }}
+          shard-filter: ${{ matrix.shard_filter }}
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
 
@@ -721,6 +726,7 @@ jobs:
           nvcc-threads: ${{ matrix.nvcc_threads }}
           shard-index: '0'
           shard-count: ${{ matrix.shard_count }}
+          shard-filter: ${{ matrix.shard_filter }}
           link-only: 'true'
           package: ${{ matrix.package }}
           python-version: ${{ matrix.python }}
