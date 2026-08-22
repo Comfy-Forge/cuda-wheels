@@ -23,8 +23,12 @@ pre_build_script: |
   py = f"cp{sys.version_info.major}{sys.version_info.minor}"
   mach = platform.machine().lower()
   plat = "win_amd64" if os.name == "nt" else ("aarch64" if "aarch64" in mach or "arm64" in mach else "x86_64")
-  rel = json.load(urllib.request.urlopen(
-      "https://api.github.com/repos/Comfy-Forge/cuda-wheels/releases/tags/cumm-latest"))
+  req = urllib.request.Request(
+      "https://api.github.com/repos/Comfy-Forge/cuda-wheels/releases/tags/cumm-latest")
+  tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+  if tok:
+      req.add_header("Authorization", f"Bearer {tok}")
+  rel = json.load(urllib.request.urlopen(req))
   print(next(a["browser_download_url"] for a in rel["assets"]
              if f"+cu{cu}torch" in a["name"] and py in a["name"] and plat in a["name"]))
   PY

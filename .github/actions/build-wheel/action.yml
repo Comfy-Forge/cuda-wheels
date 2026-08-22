@@ -140,6 +140,9 @@ runs:
       env:
         TORCH_CUDA_ARCH_LIST: ${{ inputs.arch-list }}
         CUW_CUDA_VERSION: ${{ inputs.cuda-version }}
+        # For package scripts hitting api.github.com: anonymous calls are
+        # rate-limited per runner IP (60/h) and died mid-grid.
+        GH_TOKEN: ${{ github.token }}
       run: |
         cd source
         ${{ inputs.pre-build-script }}
@@ -847,6 +850,9 @@ runs:
       uses: ilammy/msvc-dev-cmd@v1
       with:
         toolset: ${{ inputs.cuda-version < '12.8' && '14.29' || '' }}
+        # New Windows SDK 10.0.26100 headers crash nvcc 12.4's cudafe++
+        # (0xC0000409) even under the old toolset; pin the older SDK.
+        sdk: ${{ inputs.cuda-version < '12.8' && '10.0.22621.0' || '' }}
 
     - name: Build wheel (Windows)
       id: build_windows
