@@ -47,7 +47,12 @@ verify:
     vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
     CUMM_DISABLE_JIT=1 -- true of every wheel the farm has ever shipped
     (verified against legacy releases). See README.
-# sharding test (2026-08-21) reverted: the shard filter hooks
-# torch cpp_extension's CUDAExtension, which a pccm build never calls --
-# 6 shards each compiled the full source. spconv needs no sharding
-# (unsharded build fits the 6h limit comfortably).
+# Sharding (owner order 2026-08-22): linux only, via the nvcc-seat
+# wrapper. Windows stays unsharded (the CUDAExtension filter never fires
+# for a pccm build -- proven 2026-08-21: 6 shards each compiled the full
+# source); ARM stays unsharded (its pre_build rebuilds cumm from source,
+# which every shard would repeat). If pccm invokes nvcc by absolute path
+# the seat misses and the link job's hit-rate assert reds out -- that is
+# the experiment's tripwire.
+sharding: 10
+sharding_platforms: ["linux"]

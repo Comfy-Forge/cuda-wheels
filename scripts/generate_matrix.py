@@ -536,6 +536,14 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                     # The downstream link job is fanned out by a separate matrix
                     # produced via _link_matrix_from() below.
                     sharding = int(pkg.get("sharding", 0))
+                    # Optional platform restriction for sharding: a package
+                    # whose partition mechanism only exists on some lanes
+                    # (spconv: seat wrapper on linux; the Windows
+                    # CUDAExtension filter never fires for pccm builds)
+                    # builds unsharded elsewhere.
+                    shard_platforms = pkg.get("sharding_platforms")
+                    if shard_platforms is not None and platform not in shard_platforms:
+                        sharding = 0
                     # "seat" (default): the nvcc-seat wrapper / CUDAExtension
                     # monkeypatch partitions. "source": the package's patch
                     # partitions its own source list (natten) and the seat
