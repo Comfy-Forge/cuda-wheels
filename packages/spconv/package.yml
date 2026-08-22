@@ -41,11 +41,13 @@ pre_build_script: |
     export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
   fi
   python -c "import cumm.tensorview, cumm.constants; print('cumm OK:', cumm.constants.TENSORVIEW_INCLUDE_PATH)"
-  # cumm 0.8.2's float8.h specializes std::numeric_limits but includes
-  # only <cmath>/<cstdint>; in cumm's own build another header supplies
-  # <limits> first, in spconv's TU order nothing does ("numeric_limits
-  # is not a template", all 10 shards). Graft the missing include.
-  python -c "import importlib.util, pathlib; p = pathlib.Path(importlib.util.find_spec('cumm').submodule_search_locations[0]) / 'include/tensorview/gemm/dtypes/float8.h'; s = p.read_text(); ('#include <limits>' in s) or p.write_text(s.replace('#include <cstdint>', '#include <cstdint>\n#include <limits>', 1)); print('cumm float8.h <limits> ensured')"
+  # cumm 0.8.2's dtype headers (tf32.h first, float8.h in cascade)
+  # specialize std::numeric_limits / use std::float_round_style without
+  # guaranteeing <limits>: cumm's own TU order supplies it first,
+  # spconv's generated TUs do not ("float_round_style ... explicit type
+  # is missing" at tf32.h:254, then float8.h cascade, all 10 shards).
+  # Graft <limits> into every dtype header that touches those names.
+  python -c "import importlib.util, pathlib, re; d = pathlib.Path(importlib.util.find_spec('cumm').submodule_search_locations[0]) / 'include/tensorview/gemm/dtypes'; [(p.write_text(re.sub(r'(#include <[^>]+>)', r'#include <limits>\n\1', p.read_text(), count=1)), print('grafted <limits> into', p.name)) for p in sorted(d.glob('*.h')) if re.search(r'float_round_style|float_denorm_style|numeric_limits', p.read_text()) and '#include <limits>' not in p.read_text()]; print('dtype headers <limits> ensured')"
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
 # which our own farm cumm (0.8.2) does not even satisfy. The sibling pin

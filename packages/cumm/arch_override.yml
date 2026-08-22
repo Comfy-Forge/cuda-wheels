@@ -1,10 +1,8 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-# cumm 0.8.2's arch table ends at Blackwell 12.0 -- it does not know
-# 11.0 (Thor), which the aarch64 policy adds on CUDA 13.x, so setup dies
-# with "Unknown CUDA arch (11.0)". Inert for wheel content (runtime NVRTC
-# JIT, no AOT SASS; verify.skip_arch documents this) -- the list only
-# needs to parse.
-arch_list_by_cuda_aarch64:
-  "13.0": "8.0;9.0+PTX;10.0;12.0+PTX"
-  "13.2": "8.0;9.0+PTX;10.0;12.0+PTX"
+# cumm 0.7.11's arch table ends at 9.0 (plus 8.7): Blackwell (10.0/12.0)
+# and Thor (11.0) tokens crash setup with "Unknown CUDA arch". Inert for
+# wheel content (runtime NVRTC JIT, no AOT SASS; verify.skip_arch) --
+# the list only needs to parse. Trimmed on every lane.
+arch_list: "7.5;8.0;8.6;8.9;9.0+PTX"
+arch_list_aarch64: "8.0;8.7;9.0+PTX"

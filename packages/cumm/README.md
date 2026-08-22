@@ -18,6 +18,6 @@ runtime deps. `requires_dist` in package.yml trims to numpy + sympy.
 
 ## Overrides
 
-`arch_override.yml`: cumm 0.8.2's arch table does not know 11.0 (Thor),
-which the aarch64 policy adds on CUDA 13.x -- dropped there so setup
-parses. Inert for wheel content (runtime NVRTC JIT, no AOT SASS).
+`arch_override.yml`: cumm 0.7.11's arch table ends at 9.0 (plus 8.7)
+-- Blackwell and Thor tokens are trimmed on every lane so setup parses.
+Inert for wheel content (runtime NVRTC JIT, no AOT SASS).

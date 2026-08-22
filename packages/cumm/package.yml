@@ -4,8 +4,13 @@ name: cumm
 # build, compile or link time.
 links_torch: false
 source_repo: FindDefinition/cumm
-source_tag: v0.8.2
-version: 0.8.2   # also read by sibling {VER:cumm} pins (spconv)
+source_tag: v0.7.11
+# 0.7.11 (was 0.8.2, reverted 2026-08-22): spconv 2.3.8's harness
+# cannot compile 0.8.x GEMM sources (std::numeric_limits block
+# breakage in tf32.h/float8.h under its TU order), upstream pins
+# cumm<0.8, and the farm's bf16 patch anchors are IDENTICAL in both
+# tags -- 0.8.2 bought nothing. One cumm for build, gate and runtime.
+version: 0.7.11   # also read by sibling {VER:cumm} pins (spconv)
 clone_recursive: true
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/pybind11) and its CLI helper (fire) as runtime deps.
