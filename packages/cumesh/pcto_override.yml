@@ -1,0 +1,9 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+# CUDA ceiling 13.0: CUDA 13.2's CCCL 3.2 removed CUB's classic two-phase
+# DeviceScan API and cumesh's ExclusiveSum calls in src/shared.h
+# mis-resolve onto the env-based overload (deduced InputIteratorT=
+# nullptr_t -- overload-shift, not a toolchain issue; cu13.0 still
+# carries compat shims and builds green). Lift when upstream adapts or
+# the farm patches compress_ids to the new API.
+max_cuda: "13.0"

@@ -453,6 +453,13 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
         min_pytorch_parts = None
         if pkg.get("min_pytorch"):
             min_pytorch_parts = [int(x) for x in str(pkg["min_pytorch"]).split(".")[:2]]
+        # Optional per-package CUDA ceiling: skip combos with cuda > max_cuda.
+        # For sources broken by a frontier toolkit (CCCL 3.2 in CUDA 13.2
+        # removed CUB's classic two-phase API; cumesh's DeviceScan calls
+        # mis-resolve there). Lift when upstream adapts.
+        max_cuda_parts = None
+        if pkg.get("max_cuda"):
+            max_cuda_parts = [int(x) for x in str(pkg["max_cuda"]).split(".")[:2]]
 
         for cuda, pytorch, python_versions, combo_arch_list, combo_source_tag, default_arch_list in combos:
             if cuda_filter != "all" and cuda != cuda_filter:
@@ -466,6 +473,11 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
             if min_pytorch_parts is not None:
                 pt_parts = [int(x) for x in pytorch.split(".")[:2]]
                 if pt_parts < min_pytorch_parts:
+                    continue
+            # Enforce per-package CUDA ceiling
+            if max_cuda_parts is not None:
+                cu_parts = [int(x) for x in cuda.split(".")[:2]]
+                if cu_parts > max_cuda_parts:
                     continue
 
             cuda_short = cuda.replace(".", "")
