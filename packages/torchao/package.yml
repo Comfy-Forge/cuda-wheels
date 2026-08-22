@@ -18,3 +18,8 @@ clone_recursive: true          # third_party/cutlass
 # communication" (OOM starvation kill) at 3 -- CUTLASS TU peaks exceed the
 # 16GB box. At 1 the swap parachute is also legal under the swap gate.
 max_jobs: 1
+verify:
+  # _C_cutlass_90a / _C_mxfp8 are torch-ops libraries with no PyInit --
+  # loaded via torch.ops.load_library by torchao's facade, never imported
+  # directly (same pattern as torch_scatter's *_cuda.so).
+  no_direct_import: ["*_C_cutlass*", "*_C_mxfp8*"]
