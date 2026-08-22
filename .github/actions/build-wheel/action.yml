@@ -251,7 +251,7 @@ runs:
       # setuptools' regenerated build.ninja), and (b) the distutils
       # fallback honors mtime natively and the shard's touched .o files
       # are recognized as up-to-date, collapsing compile to a no-op.
-      if: inputs.link-only == 'true' && inputs.platform == 'windows'
+      if: inputs.link-only == 'true' && inputs.platform == 'windows' && inputs.shard-filter != 'source'
       shell: bash
       run: |
         cd source
@@ -360,7 +360,7 @@ runs:
       #
       #  - `touch -m` every .o so its mtime is comfortably after any .cu/
       #    .cpp source's mtime in the freshly-cloned source tree.
-      if: inputs.link-only == 'true' && inputs.platform == 'windows'
+      if: inputs.link-only == 'true' && inputs.platform == 'windows' && inputs.shard-filter != 'source'
       shell: bash
       run: |
         # Resolve the artifact dir to a POSIX path FIRST (cd normalizes the
@@ -793,6 +793,48 @@ runs:
       shell: bash
       run: echo "LINK=/FORCE:UNRESOLVED" >> $GITHUB_ENV
 
+    - name: Setup sccache transport (Windows source-filter shard/link)
+      # The Linux shard handoff is a content-addressed compiler cache; the
+      # Windows object-tarball + mtime path CANNOT work for cmake packages
+      # (the link job re-runs configure, regenerating files newer than any
+      # restored .o -- natten's link rebuilt everything serially for hours).
+      # sccache is the Windows ccache: cmake >= 3.17 picks the launcher up
+      # from CMAKE_<LANG>_COMPILER_LAUNCHER env vars, no build changes.
+      if: inputs.platform == 'windows' && inputs.shard-count != '0' && inputs.shard-filter == 'source'
+      shell: bash
+      run: |
+        if ! command -v sccache >/dev/null 2>&1; then
+          choco install sccache -y --no-progress >/dev/null
+        fi
+        SC="$RUNNER_TEMP/sccache"
+        mkdir -p "$SC"
+        {
+          echo "SCCACHE_DIR=$SC"
+          echo "SCCACHE_IDLE_TIMEOUT=0"
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
+          echo "CMAKE_CUDA_COMPILER_LAUNCHER=sccache"
+        } >> $GITHUB_ENV
+        echo "sccache transport armed ($(sccache --version 2>/dev/null | head -1))"
+
+    - name: Restore shard sccache (Windows source-filter link)
+      if: inputs.platform == 'windows' && inputs.link-only == 'true' && inputs.shard-filter == 'source'
+      shell: bash
+      run: |
+        SA="$(cd "$GITHUB_WORKSPACE/shard-artifacts" 2>/dev/null && pwd || true)"
+        mkdir -p "$RUNNER_TEMP/sccache"
+        found=0
+        for tarball in "$SA"/*/sccache.tar.gz; do
+          [ -f "$tarball" ] || continue
+          found=$((found+1))
+          tar -xzf "$tarball" -C "$RUNNER_TEMP/sccache"
+        done
+        if [ "$found" = "0" ]; then
+          echo "::error::no shard sccache artifacts found -- did the shard jobs succeed?"
+          exit 1
+        fi
+        echo "merged $found sccache shard(s): $(du -sh "$RUNNER_TEMP/sccache" | cut -f1)"
+
     - name: Setup MSVC (Windows)
       # Host-compiler pairing, Windows edition (mirror of the Linux
       # gcc-toolset rule): the runner image rolled to MSVC 14.4x
@@ -871,7 +913,7 @@ runs:
         # Link-only mode: same USE_NINJA=0 fallback that the Linux step uses
         # (torch 2.8's BuildExtension does respect the kwargs we patched in,
         # but defensively set this too in case some code path checks env).
-        if ("${{ inputs.link-only }}" -eq "true") {
+        if ("${{ inputs.link-only }}" -eq "true" -and "${{ inputs.shard-filter }}" -ne "source") {
           $env:USE_NINJA = "0"
           Write-Host "[link-only] USE_NINJA=0"
         }
@@ -913,7 +955,7 @@ runs:
         ls -lh $GITHUB_WORKSPACE/shard-out/
 
     - name: Package shard objects (Windows compile-shard mode)
-      if: inputs.platform == 'windows' && inputs.shard-count != '0' && inputs.link-only != 'true'
+      if: inputs.platform == 'windows' && inputs.shard-count != '0' && inputs.link-only != 'true' && inputs.shard-filter != 'source'
       shell: bash
       run: |
         cd source
@@ -945,6 +987,21 @@ runs:
         # all 6 natten shards, wave 2).
         tar --force-local -czf $GITHUB_WORKSPACE/shard-out/objects.tar.gz build/
         ls -lh $GITHUB_WORKSPACE/shard-out/
+
+
+    - name: Package shard sccache (Windows source-filter compile-shard)
+      if: inputs.platform == 'windows' && inputs.shard-count != '0' && inputs.link-only != 'true' && inputs.shard-filter == 'source'
+      shell: bash
+      run: |
+        sccache --stop-server >/dev/null 2>&1 || true
+        mkdir -p $GITHUB_WORKSPACE/shard-out
+        ENTRIES=$(find "$RUNNER_TEMP/sccache" -type f | wc -l)
+        echo "sccache entries this shard: $ENTRIES"
+        if [ "$ENTRIES" = "0" ]; then
+          echo "::error::empty sccache after compile -- launcher not engaged?"
+          exit 1
+        fi
+        tar --force-local -czf $GITHUB_WORKSPACE/shard-out/sccache.tar.gz -C "$RUNNER_TEMP/sccache" .
 
     - name: Upload shard artifact (compile-shard mode)
       if: inputs.shard-count != '0' && inputs.link-only != 'true'
