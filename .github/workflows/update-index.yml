@@ -44,6 +44,9 @@ jobs:
       - name: Build the "Find your wheel" page
         run: python scripts/generate_findwheel.py --out _site
 
+      - name: Build the GPU architectures page
+        run: python scripts/generate_archs_page.py --out _site
+
       - name: Generate PEP 503 index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

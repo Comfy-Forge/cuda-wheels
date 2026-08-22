@@ -206,7 +206,7 @@ def main():
         # Root-level package dirs; skip the non-package families (combo
         # channels cuXXX/, matrix/, dashboard/).
         previous = {d.name for d in prev_root.iterdir() if d.is_dir()
-                    and d.name not in ("matrix", "dashboard", "v2", "find")
+                    and d.name not in ("matrix", "dashboard", "v2", "find", "archs")
                     and not d.name.startswith("cu")
                     and not d.name.startswith(".")}
     else:
@@ -243,7 +243,8 @@ def main():
         f.write("<body>\n")
         f.write("<h1>CUDA Wheels</h1>\n")
         f.write('<nav><a href="find/"><b>Find your wheel</b></a> '
-                '<a href="matrix/">Upstream PyTorch matrix</a> </nav>\n')
+                '<a href="matrix/">Upstream PyTorch matrix</a> '
+                '<a href="archs/">GPU architectures</a></nav>\n')
         f.write('<p class="hint">This page is the PEP 503 simple index '
                 '(what pip and comfy-env resolve against; per-combo channels '
                 'live at <code>/cu&lt;ver&gt;/&lt;torch&gt;/</code>). Humans '
