@@ -41,6 +41,11 @@ pre_build_script: |
     export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
   fi
   python -c "import cumm.tensorview, cumm.constants; print('cumm OK:', cumm.constants.TENSORVIEW_INCLUDE_PATH)"
+  # cumm 0.8.2's float8.h specializes std::numeric_limits but includes
+  # only <cmath>/<cstdint>; in cumm's own build another header supplies
+  # <limits> first, in spconv's TU order nothing does ("numeric_limits
+  # is not a template", all 10 shards). Graft the missing include.
+  python -c "import importlib.util, pathlib; p = pathlib.Path(importlib.util.find_spec('cumm').submodule_search_locations[0]) / 'include/tensorview/gemm/dtypes/float8.h'; s = p.read_text(); ('#include <limits>' in s) or p.write_text(s.replace('#include <cstdint>', '#include <cstdint>\n#include <limits>', 1)); print('cumm float8.h <limits> ensured')"
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
 # which our own farm cumm (0.8.2) does not even satisfy. The sibling pin
