@@ -12,8 +12,9 @@ links_torch: false
 # links_torch: false makes generate_matrix collapse the torch axis itself
 # (newest torch per CUDA line as the build env) -- see pcto_override.yml,
 # which only restricts platforms.
-# Gap this fills: no Windows on any channel, and no modern jit-cache for
-# cu124/cu126 (flashinfer.ai/whl only serves cu128/cu129/cu130).
+# Gap this fills: modern jit-cache for cu124/cu126 (flashinfer.ai/whl only
+# serves cu128/cu129/cu130). Windows turned out to be an upstream porting
+# project (see pcto_override.yml) -- not served.
 source_repo: flashinfer-ai/flashinfer
 source_tag: v0.6.17
 version: 0.6.17

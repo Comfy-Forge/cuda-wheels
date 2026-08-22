@@ -92,3 +92,21 @@ if _os.name == "nt":
     else:
         _setup.write_text(_s.replace(_needle, _repl))
         print("injected sparsehash include_dirs into setup.py")
+
+
+# ── Windows: atomic.cuh redefines CUDA's builtin atomicExch ──────────────
+# On Linux uint64_t is `unsigned long` (a distinct overload); with MSVC
+# uint64_t IS `unsigned long long`, so the helper collides with CUDA's
+# builtin ("function has already been defined"). The builtin covers the
+# Windows case entirely -- compile the helper out there.
+_atomic = Path("torchsparse/backend/utils/atomic.cuh")
+_as = _atomic.read_text()
+if "#ifndef _WIN32" in _as:
+    print("atomic.cuh guard already applied")
+else:
+    _as = _as.replace(
+        "#pragma once\n",
+        "#pragma once\n#ifndef _WIN32  // cuda-wheels: uint64_t==ULL on MSVC; "
+        "CUDA's builtin already provides this overload\n", 1) + "#endif  // _WIN32\n"
+    _atomic.write_text(_as)
+    print("atomic.cuh: helper guarded out on Windows")

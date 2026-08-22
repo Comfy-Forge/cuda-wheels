@@ -24,3 +24,6 @@ numpy plus an exact local-version pin on the farm's cumm.
 rejects Blackwell arch tokens ("Unknown CUDA arch (10.0)"), so the arch
 list is trimmed to cumm-known archs. Inert for the wheel content: spconv
 bakes no AOT SASS (runtime NVRTC JIT, `verify.skip_arch`).
+
+`pcto_override.yml`: no aarch64 -- the required cumm<0.8.0 has no
+aarch64 wheels on PyPI (and upstream never shipped ARM spconv).

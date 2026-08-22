@@ -12,5 +12,11 @@
 # so the farm's only novel ARM cell would be cu126. Revisit only with
 # sharding through the nvcc seat (verify flashinfer's forked jit/cpp_ext.py
 # honors CUDACXX/PYTORCH_NVCC first).
+# No Windows either (2026-08-22): upstream's AOT infrastructure has never
+# run on Windows -- jit/core.py writes `subninja D:\...` with unescaped
+# drive colons (ninja: "loading 'D'"), and the per-spec ninja files use
+# absolute Windows paths in build statements with the same problem. That
+# is an upstream porting project, not a farm patch; upstream ships no
+# Windows jit-cache wheels on any channel.
 build_matrix:
-  platforms: ["linux", "windows"]
+  platforms: ["linux"]

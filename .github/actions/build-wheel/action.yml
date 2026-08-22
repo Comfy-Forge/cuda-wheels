@@ -957,9 +957,15 @@ runs:
           if [[ "$f" == *"-py3-none-any.whl" ]]; then
             echo "WARNING: Built pure Python wheel $f - CUDA compilation may have failed"
             newname="$f"
+          elif [[ "$f" == *"+cu"* ]]; then
+            echo "already carries a local tag: $f"
+            newname="$f"
           else
-            newname=$(echo "$f" | sed "s/-cp/+cu${CUDA_SHORT}torch${TORCH_MM}-cp/")
-            mv "$f" "$newname"
+            # Anchor on the VERSION segment (name-version-...), not on -cp:
+            # abi-agnostic wheels (py3-none / cpXY-abi3) have no -cp pair
+            # and the old sed no-op'd, then mv'd a file onto itself.
+            newname=$(echo "$f" | sed -E "s/^([A-Za-z0-9_.]+-[0-9][^-]*)-/\1+cu${CUDA_SHORT}torch${TORCH_MM}-/")
+            if [ "$newname" != "$f" ]; then mv "$f" "$newname"; fi
           fi
           echo "wheel-path=$BUILD_DIR/dist/$newname" >> $GITHUB_OUTPUT
         done
@@ -984,10 +990,14 @@ runs:
           if ($_.Name -like "*-py3-none-any.whl") {
             Write-Host "WARNING: Built pure Python wheel $($_.Name) - CUDA compilation may have failed"
             $newName = $_.Name
+          } elseif ($_.Name -like "*+cu*") {
+            Write-Host "already carries a local tag: $($_.Name)"
+            $newName = $_.Name
           } else {
-            # Only replace first occurrence of -cp (use regex with explicit pattern)
-            $newName = $_.Name -replace '^([^-]+-[^-]+)-cp', "`$1+cu${cudaShort}torch${torchMM}-cp"
-            Rename-Item $_.FullName $newName
+            # Anchor on the VERSION segment: abi-agnostic wheels (py3-none)
+            # have no -cp pair and the old -cp anchor silently no-op'd.
+            $newName = $_.Name -replace '^([A-Za-z0-9_.]+-[0-9][^-]*)-', "`$1+cu${cudaShort}torch${torchMM}-"
+            if ($newName -ne $_.Name) { Rename-Item $_.FullName $newName }
           }
           echo "wheel-path=$buildDir/dist/$newName" >> $env:GITHUB_OUTPUT
         }

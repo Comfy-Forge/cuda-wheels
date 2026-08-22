@@ -1,0 +1,8 @@
+# Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
+# for this package only.
+# No aarch64: the build REQUIRES cumm<0.8.0 (0.8.x breaks spconv 2.3.8's
+# pccm codegen walk), and cumm 0.7.11 ships no aarch64 wheels on PyPI at
+# all (uv: "no wheels with a matching platform tag") -- and no sdist path
+# is viable in the build env. Upstream never shipped ARM spconv either.
+build_matrix:
+  platforms: ["linux", "windows"]
