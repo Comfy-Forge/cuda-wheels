@@ -794,8 +794,17 @@ runs:
       run: echo "LINK=/FORCE:UNRESOLVED" >> $GITHUB_ENV
 
     - name: Setup MSVC (Windows)
+      # Host-compiler pairing, Windows edition (mirror of the Linux
+      # gcc-toolset rule): the runner image rolled to MSVC 14.4x
+      # (VS 17.10+), whose STL breaks CUDA <= 12.6's CUB headers
+      # ("no operator >=" in dispatch_histogram.cuh -- the legacy farm
+      # built these very cells on an older image). Pin the VS2019-era
+      # 14.29 toolset for old CUDA lines; 12.8+ supports the default.
+      # (Lexical compare is safe here: every "13.x" >= "12.8".)
       if: inputs.platform == 'windows'
       uses: ilammy/msvc-dev-cmd@v1
+      with:
+        toolset: ${{ inputs.cuda-version < '12.8' && '14.29' || '' }}
 
     - name: Build wheel (Windows)
       id: build_windows
