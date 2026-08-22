@@ -110,3 +110,22 @@ else:
         "CUDA's builtin already provides this overload\n", 1) + "#endif  // _WIN32\n"
     _atomic.write_text(_as)
     print("atomic.cuh: helper guarded out on Windows")
+
+
+# ── LLP64: data_ptr<long> is wrong on Windows ────────────────────────────
+# Tensors created with ScalarType::Long hold int64_t. On Linux (LP64)
+# `long` == int64_t so data_ptr<long>() happens to work; with MSVC
+# (LLP64) `long` is 32-bit and the kernel arguments no longer match
+# ("argument of type long* is incompatible with parameter of type
+# int64_t*", downsample_cuda.cu). int64_t is correct on both.
+_ll_total = 0
+for _f2 in sorted(Path("torchsparse/backend").rglob("*")):
+    if _f2.suffix not in (".cu", ".cpp", ".cuh", ".h"):
+        continue
+    _t2 = _f2.read_text()
+    _n2 = _t2.count("data_ptr<long>")
+    if _n2:
+        _f2.write_text(_t2.replace("data_ptr<long>", "data_ptr<int64_t>"))
+        print(f"  {_f2}: {_n2} data_ptr<long> -> data_ptr<int64_t>")
+        _ll_total += _n2
+print(f"LLP64 fix: {_ll_total} data_ptr<long> call(s) rewritten")
