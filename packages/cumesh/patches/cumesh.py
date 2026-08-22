@@ -126,8 +126,8 @@ def _fix_inplace_exclusive_sum(text: str) -> tuple[str, int]:
     return "".join(out), fixed
 
 _total = 0
-for _f in ["src/clean_up.cu", "src/connectivity.cu", "src/remesh/svox2vert.cu",
-           "src/simplify.cu", "src/atlas.cu"]:
+for _f in ["src/shared.h", "src/clean_up.cu", "src/connectivity.cu",
+           "src/remesh/svox2vert.cu", "src/simplify.cu", "src/atlas.cu"]:
     _path = Path(_f)
     if not _path.exists():
         continue
@@ -137,4 +137,7 @@ for _f in ["src/clean_up.cu", "src/connectivity.cu", "src/remesh/svox2vert.cu",
         _path.write_text(_new)
         _total += _n
         print(f"cumesh patch: {_f}: {_n} in-place ExclusiveSum call(s) -> 5-arg form")
+if _total == 0:
+    raise SystemExit("cumesh patch: no in-place ExclusiveSum calls found -- "
+                     "the CCCL-3.2 breakage lives in src/shared.h; upstream changed?")
 print(f"cumesh patch: {_total} CCCL-3.x call sites fixed")

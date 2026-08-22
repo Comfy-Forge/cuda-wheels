@@ -4,7 +4,8 @@
 
 **CUDA-version-specific behavior:** Patch handles `CUDART_VERSION >= 12090` for CUB's DeviceReduce API change.
 
-## Overrides
+## CCCL 3.2 (CUDA 13.2)
 
-`pcto_override.yml`: max_cuda 13.0 -- CUDA 13.2's CCCL removed CUB's
-classic two-phase DeviceScan API, which cumesh's compress_ids uses.
+CCCL 3.2 removed CUB's in-place `ExclusiveSum(temp, bytes, data, N)`
+convenience overload; the patch rewrites src/shared.h's two calls to the
+explicit five-argument form (in == out), which every CCCL accepts.
