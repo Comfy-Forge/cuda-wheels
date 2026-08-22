@@ -10,4 +10,7 @@ version: 0.18.0
 clone_recursive: true          # third_party/cutlass
 # Upstream passes -t=0 (= one thread per gencode, ~6 on cu128) to nvcc.
 # The farm's trailing --threads=1 neutralizes it; cap jobs for CUTLASS.
-max_jobs: 3
+# max_jobs 1 (was 3): the ARM runner died twice with "runner lost
+# communication" (OOM starvation kill) at 3 -- CUTLASS TU peaks exceed the
+# 16GB box. At 1 the swap parachute is also legal under the swap gate.
+max_jobs: 1

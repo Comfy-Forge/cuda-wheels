@@ -11,3 +11,4 @@ version: 2.0.0
 # TORCH_CUDA_ARCH_LIST, so the shared grid arch lists apply unchanged.
 max_jobs: 3   # five 100-120KB implicit-GEMM TUs; heavy tail
 extra_deps: tqdm   # setup.py imports it at metadata generation
+patch_script: packages/torchsparse/patches/torchsparse.py

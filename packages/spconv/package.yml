@@ -6,7 +6,15 @@ links_torch: false
 source_repo: traveller59/spconv
 source_tag: v2.3.8
 patch_script: packages/spconv/patches/spconv.py
-extra_deps: pccm>=0.4.16 ccimport>=0.4.4 cumm
+# cumm PINNED to upstream spconv-2.3.8's own spec: with cumm 0.8.2 in the
+# build env, pccm 0.4.16's extract_module_id_of_class crashes resolving
+# cumm's classes (site-packages path not under any registered root) --
+# cumm 0.8.x reorganized its codegen layout past what spconv 2.3.8's
+# pccm walk understands. OPEN: the farm ships cumm 0.8.2 wheels; whether
+# spconv-2.3.8-at-runtime tolerates 0.8.2 (import gate tests 0.7.x, the
+# build env's version) is unproven -- revisit the curated sibling pin
+# once the build is green.
+extra_deps: pccm>=0.4.16 ccimport>=0.4.4 cumm<0.8.0,>=0.7.11
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
 # which our own farm cumm (0.8.2) does not even satisfy. The sibling pin

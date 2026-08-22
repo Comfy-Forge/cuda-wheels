@@ -23,4 +23,7 @@ max_jobs: 3   # AOT cache: hundreds of medium TUs; 3 fits the 16GB budget
 verify:
   expect_device_error: true
   needs_driver: true
-extra_deps: apache-tvm-ffi pynvml   # jit-cache setup imports tvm_ffi + pynvml at metadata generation
+# The farm builds --no-build-isolation, so upstream's build-system.requires
+# must be mirrored here (tvm-ffi/pynvml for metadata generation; tqdm +
+# requests for the AOT compile loop -- wave 2 died on tqdm).
+extra_deps: apache-tvm-ffi pynvml tqdm requests

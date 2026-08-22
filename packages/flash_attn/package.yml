@@ -10,4 +10,4 @@ nvcc_flags: -diag-suppress=221
 # the farm's 4-arch list computes 18GB/job and lands on jobs=1 (serial).
 # With nvcc_threads=1 the real per-job peak is ~one cicc, so 2 fits.
 max_jobs: 2
-sharding: 6   # historic 4-way shard success story; 6 for faster cells
+sharding: 20  # ~90 .cu TUs -> ~4-5 per shard; owner order 2026-08-22
