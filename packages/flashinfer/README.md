@@ -16,3 +16,8 @@ the actual dist: the generate_matrix perpetual-rebuild warning caught the
 mismatch (wheels named flashinfer_jit_cache-* could never satisfy a
 "flashinfer-" prefix check, which is why this package never released).
 Users install BOTH: flashinfer-python from PyPI + this wheel from the farm.
+
+## Overrides
+
+`arch_override.yml`: flashinfer 0.6.17 refuses SM 12.x below CUDA 12.9,
+so cu12.8 drops Blackwell-consumer (upstream's cu128 wheels do the same).

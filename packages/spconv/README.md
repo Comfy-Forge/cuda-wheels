@@ -17,3 +17,10 @@ Upstream leaks its build stack (pccm, ccimport, pybind11, fire) as
 runtime deps and pins `cumm<0.8.0` -- which our own farm cumm (0.8.2)
 does not satisfy. `requires_dist` in package.yml replaces the list with
 numpy plus an exact local-version pin on the farm's cumm.
+
+## Overrides
+
+`arch_override.yml`: cumm 0.7.11 (upstream's pinned codegen stack)
+rejects Blackwell arch tokens ("Unknown CUDA arch (10.0)"), so the arch
+list is trimmed to cumm-known archs. Inert for the wheel content: spconv
+bakes no AOT SASS (runtime NVRTC JIT, `verify.skip_arch`).

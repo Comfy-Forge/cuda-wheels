@@ -1,0 +1,9 @@
+# Overrides of the shared arch policy (defaults/arch_policy.yml)
+# for this package only.
+# flashinfer 0.6.17's arch normalizer hard-errors on SM 12.x below CUDA
+# 12.9 ("SM 12.x requires CUDA >= 12.9" -- compute_120f needs the 12.9
+# toolchain), so the cu12.8 cell drops Blackwell-consumer, matching
+# upstream's own cu128 jit-cache wheels. sm_90/100 get their 'a'
+# suffixes from flashinfer's own normalizer at build time.
+arch_list_by_cuda:
+  "12.8": "7.5;8.0;8.6;9.0+PTX;10.0"

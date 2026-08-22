@@ -27,3 +27,9 @@ verify:
 # must be mirrored here (tvm-ffi/pynvml for metadata generation; tqdm +
 # requests for the AOT compile loop -- wave 2 died on tqdm).
 extra_deps: apache-tvm-ffi pynvml tqdm requests
+# The AOT compile needs FLASHINFER_CUDA_ARCH_LIST explicitly (no GPU to
+# probe on CI). ${{ inputs.arch-list }} expands when the action inlines
+# this script; the conversion strips +PTX and swaps ';' for ' ' (the
+# format compilation_context.py parses; suffixes are auto-normalized).
+pre_build_script: |
+  echo "FLASHINFER_CUDA_ARCH_LIST=$(echo '${{ inputs.arch-list }}' | tr ';' ' ' | sed 's/+PTX//g')" >> $GITHUB_ENV

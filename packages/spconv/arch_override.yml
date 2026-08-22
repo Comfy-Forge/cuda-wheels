@@ -1,0 +1,10 @@
+# Overrides of the shared arch policy (defaults/arch_policy.yml)
+# for this package only.
+# cumm 0.7.11 (the build-time codegen stack upstream spconv 2.3.8 pins)
+# validates TORCH_CUDA_ARCH_LIST against a table that ends at 9.0 --
+# Blackwell tokens (10.0/12.0) crash setup with "Unknown CUDA arch".
+# The list only needs to PARSE: spconv bakes no AOT SASS at all
+# (runtime NVRTC JIT; verify.skip_arch documents this), so trimming to
+# cumm-known archs changes nothing about the shipped wheel.
+arch_list: "7.5;8.0;8.6;8.9;9.0+PTX"
+arch_list_aarch64: "8.0;9.0+PTX"
