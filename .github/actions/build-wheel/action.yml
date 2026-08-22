@@ -450,6 +450,15 @@ runs:
           esac
           prev="$a"
         done
+        # Build-system probes must NEVER be stubbed: cmake's compiler-id and
+        # try_compile TUs (CMakeScratch/CompilerId/CMakeTmp/cmTC_, meson's
+        # meson-private, autoconf's conftest) get linked into probe
+        # executables -- a stubbed one has no main and kills configure
+        # ("Detecting CUDA compiler ABI info - failed", natten waves 1-2).
+        # Probes cost seconds; when in doubt, compile.
+        case "$src|$out" in
+          *CMakeScratch*|*CompilerId*|*CMakeTmp*|*cmTC_*|*meson-private*|*conftest*) src="" ;;
+        esac
         if [ -n "$src" ] && [ -n "$out" ] && [ "${CUW_SHARD_COUNT:-0}" != "0" ]; then
           h=$(printf %s "$src" | md5sum | cut -c1-8)
           if [ $(( 0x$h % CUW_SHARD_COUNT )) -ne "${CUW_SHARD_INDEX0:-0}" ]; then

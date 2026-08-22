@@ -37,6 +37,13 @@ patch_script: packages/llama_cpp_python/patches/llama_cpp_python.py
 # GGML's CMake build never sees ninja -j from MAX_JOBS; the build action
 # mirrors max_jobs into CMAKE_BUILD_PARALLEL_LEVEL, which it does obey.
 max_jobs: 4
+# Sharding (owner order 2026-08-22): seat-wrapper lanes only. The wrapper's
+# probe deny-list keeps cmake's compiler-id/try_compile TUs compiling for
+# real; GGML links without RDC, so stubbed foreign .cu objects pass the
+# shard-stage .so link. Windows stays unsharded (CUDAExtension filter is
+# blind to cmake builds).
+sharding: 10
+sharding_platforms: ["linux", "linux_aarch64"]
 verify:
   import_name: llama_cpp
   # bare shared libs (libllama.so, libggml*.so) are dlopen targets of the
