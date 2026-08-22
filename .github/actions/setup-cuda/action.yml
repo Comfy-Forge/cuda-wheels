@@ -167,9 +167,11 @@ runs:
       run: |
         if [ ! -f /etc/redhat-release ]; then exit 0; fi
         CUDA_MM="${{ inputs.cuda-version }}"
-        # <= 12.8: torch 2.11's cpp_extension enforces g++ < 14 there;
-        # toolset-13 is fine for every 12.x line; 12.9+ accepts g++ 14.
-        if [ "$(printf '%s\n' "$CUDA_MM" "12.9" | sort -V | head -1)" != "12.9" ]; then
+        # ALL of 12.x: torch's cpp_extension caps g++ < 14 for every CUDA
+        # 12 line (proven at cu12.9 on ARM: "g++ 14.2.1 is greater than
+        # the maximum required by CUDA 12.9 ... <14.0"). CUDA 13.x lifts
+        # the ceiling and keeps the image default.
+        if [ "$(printf '%s\n' "$CUDA_MM" "13.0" | sort -V | head -1)" != "13.0" ]; then
           dnf install -y -q gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ >/dev/null
           TS=/opt/rh/gcc-toolset-13/root/usr/bin
           echo "$TS" >> $GITHUB_PATH
