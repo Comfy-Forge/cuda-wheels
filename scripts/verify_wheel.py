@@ -579,7 +579,26 @@ if ok:
                   "env_ok": bool(v_ok and cu_ok),
                   "cuda_available": torch.cuda.is_available()}
     for mod in spec["facade"]:
-        phase("facade", mod, lambda m=mod: importlib.import_module(m))
+        f_ok, f_entry = phase("facade", mod, lambda m=mod: importlib.import_module(m))
+        # Windows WinError 126 is opaque ("...or one of its dependencies").
+        # Name the culprit: probe every DLL the package ships individually.
+        if not f_ok and os.name == "nt" and "Could not find module" in (f_entry["error"] or ""):
+            import ctypes, glob
+            probes = {}
+            sites = [p for p in sys.path if "verify-import" in p] or sys.path[:1]
+            for site in sites:
+                for dll in glob.glob(os.path.join(site, "**", "*.dll"), recursive=True):
+                    rel = os.path.basename(dll)
+                    if rel in probes:
+                        continue
+                    try:
+                        ctypes.WinDLL(dll)
+                        probes[rel] = "loads"
+                    except OSError as pe:
+                        probes[rel] = f"FAILS: {pe}"
+            f_entry["dll_probe"] = probes
+            bad = {k: v for k, v in probes.items() if v != "loads"}
+            print("VERIFY_PROG:dll_probe:" + json.dumps(bad)[:1500], flush=True)
     for mod in spec["compiled"]:
         phase("compiled", mod, lambda m=mod: importlib.import_module(m))
     for op in spec.get("expect_ops", []):
