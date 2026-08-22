@@ -243,8 +243,7 @@ def main():
         f.write("<body>\n")
         f.write("<h1>CUDA Wheels</h1>\n")
         f.write('<nav><a href="find/"><b>Find your wheel</b></a> '
-                '<a href="matrix/">Upstream PyTorch matrix</a> '
-                '<a href="dashboard/">Build dashboard</a></nav>\n')
+                '<a href="matrix/">Upstream PyTorch matrix</a> </nav>\n')
         f.write('<p class="hint">This page is the PEP 503 simple index '
                 '(what pip and comfy-env resolve against; per-combo channels '
                 'live at <code>/cu&lt;ver&gt;/&lt;torch&gt;/</code>). Humans '
@@ -357,40 +356,6 @@ def main():
 
     print(f"Generated {len(combos)} per-combo indexes "
           f"({sum(len(p) for p in combos.values())} package entries)")
-
-    # Generate dashboard (separate from PEP 503 index)
-    try:
-        from generate_dashboard import generate_dashboard, parse_wheel_filename, get_workflow_runs
-
-        built_for_dashboard = {}
-        release_urls = {}
-        for release in releases:
-            for asset in release.get("assets", []):
-                name = asset["name"]
-                if not name.endswith(".whl"):
-                    continue
-                info = parse_wheel_filename(name)
-                if not info:
-                    continue
-                info["url"] = asset["browser_download_url"]
-                info["source"] = "built"
-                info["size"] = asset.get("size")
-                info["display_name"] = name
-                pkg_name = name.split("-")[0].lower().replace("_", "-")
-                built_for_dashboard.setdefault(pkg_name, []).append(info)
-                if pkg_name not in release_urls:
-                    release_urls[pkg_name] = release.get("html_url")
-
-        print("Fetching workflow runs...")
-        workflow_runs = get_workflow_runs(repo, token)
-        total_runs = sum(len(v) for v in workflow_runs.values())
-        print(f"  {total_runs} runs across {len(workflow_runs)} packages")
-
-        generate_dashboard(built_for_dashboard, docs / "dashboard",
-                           release_urls=release_urls, workflow_runs=workflow_runs, repo=repo,
-                           token=token)
-    except Exception as e:
-        print(f"Dashboard generation failed (non-fatal): {e}")
 
 
 if __name__ == "__main__":

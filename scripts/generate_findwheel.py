@@ -90,7 +90,6 @@ footer { margin-top: 2.5rem; color: #484f58; font-size: 0.88rem; border-top: 1px
 <nav>
   <a href="../">PEP 503 index (for pip / comfy-env)</a>
   <a href="../matrix/">Upstream PyTorch matrix</a>
-  <a href="../dashboard/">Build dashboard</a>
 </nav>
 
 <div class="selectors">

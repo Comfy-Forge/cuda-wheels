@@ -1,7 +1,9 @@
 # cuda-wheels
 
 Pre-built CUDA Python wheels for ML/3D packages that are painful to compile
-from source. One rolling GitHub Release per package holds the wheels; a
+from source.
+
+One rolling GitHub Release per package holds the wheels; a
 static PEP 503 index on gh-pages makes them pip-installable.
 
 Two ways in, both on the same gh-pages site:
@@ -13,8 +15,7 @@ Two ways in, both on the same gh-pages site:
   PEP 503 simple index for machines (pip, uv, comfy-env), with per-combo
   channels at `/cu<ver>/torch<M.m>/`.
 
-Also: **[Dashboard](https://comfy-forge.github.io/cuda-wheels/dashboard/)** ·
-**[PyTorch CUDA Wheel Matrix](https://comfy-forge.github.io/cuda-wheels/matrix/)**
+Also: **[PyTorch CUDA Wheel Matrix](https://comfy-forge.github.io/cuda-wheels/matrix/)**
 (what upstream ships — the farm builds exactly those cells; both pages above
 link it too)
 
