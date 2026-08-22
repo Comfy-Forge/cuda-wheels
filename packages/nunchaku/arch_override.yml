@@ -8,3 +8,9 @@
 # verify gate's arch assert matches what the build actually produces.
 arch_list_by_cuda:
   "12.8": "7.5;8.0;8.6;8.9;12.0"
+# Same reality on the ARM lane: ALL-mode bakes the identical set there
+# (the gate found sm_75/80/86/89/120 in the aarch64 wheel), so the default
+# aarch64 policy row (80/90/100/120) can never match. Declared via the
+# dedicated aarch64 field because the ARM lane ignores x86 overrides.
+arch_list_by_cuda_aarch64:
+  "12.8": "7.5;8.0;8.6;8.9;12.0"

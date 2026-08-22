@@ -171,19 +171,30 @@ runs:
                         sources = args[1]
                     if sources is None:
                         sources = []
+                    # Partition ONLY the .cu files: host .cpp sources carry
+                    # the module's PyInit_* entry point and compile in
+                    # seconds -- dropping them from a shard makes distutils'
+                    # /EXPORT:PyInit_* link fail with LNK1120, which even
+                    # /FORCE:UNRESOLVED cannot forgive (an export needs an
+                    # address). Every shard keeps every host source.
                     # Sorted round-robin keeps the partition balanced (a, b)
                     # and deterministic across shards and the link job.
                     sources_sorted = sorted(str(s) for s in sources)
-                    kept = [s for i, s in enumerate(sources_sorted)
-                            if i % _CUW_SHARD_COUNT == (_CUW_SHARD_INDEX - 1)]
+                    cu_sources = [s for s in sources_sorted
+                                  if s.lower().endswith('.cu')]
+                    host_sources = [s for s in sources_sorted
+                                    if not s.lower().endswith('.cu')]
+                    kept = host_sources + [
+                        s for i, s in enumerate(cu_sources)
+                        if i % _CUW_SHARD_COUNT == (_CUW_SHARD_INDEX - 1)]
                     print(f'[cuda-wheels shard {{_CUW_SHARD_INDEX}}/{{_CUW_SHARD_COUNT}}] keeping {{len(kept)}}/{{len(sources)}} sources:')
                     for s in kept:
                         print(f'    {{s}}')
-                    if not kept:
+                    if cu_sources and not [s for s in kept if s.lower().endswith('.cu')]:
                         raise RuntimeError(
                             f'cuda-wheels: shard {{_CUW_SHARD_INDEX}}/{{_CUW_SHARD_COUNT}} '
-                            f'is empty (only {{len(sources)}} sources). Reduce the '
-                            f'`sharding:` field in the package yaml to at most {{len(sources)}}.'
+                            f'holds no .cu sources (only {{len(cu_sources)}} exist). Reduce '
+                            f'the `sharding:` field in the package yaml to at most {{len(cu_sources)}}.'
                         )
                     if 'sources' in kwargs:
                         kwargs['sources'] = kept
@@ -475,6 +486,12 @@ runs:
         fi
         echo "merged $found shard cache(s):"
         du -sh "$RUNNER_TEMP/ccache"
+        # The tarballs carry the shards' ccache stats files (stats live
+        # inside the cache dir) and tar-overwrite each other, so the last
+        # shard's compile misses would pollute this job's numbers -- the
+        # 90% assert once failed a link job that actually replayed at 100%.
+        # Zero ALL stats now so the assert measures ONLY the link build.
+        ccache -z
 
     - name: Build wheel (Linux)
       id: build_linux
