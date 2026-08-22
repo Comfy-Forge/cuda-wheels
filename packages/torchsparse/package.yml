@@ -6,7 +6,9 @@ links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pa
 # 404s, and the v2.0.0/v1.4.0 GH releases carry zero assets. Source build only.
 source_repo: mit-han-lab/torchsparse
 source_tag: v2.0.0
-version: 2.0.0
+# The v2.0.0 TAG declares __version__ = "2.0.0b0" -- pin the truth (the
+# gate rightly blocked the aspirational 2.0.0; same lesson as dpvo_cuda).
+version: 2.0.0b0
 # Plain CUDAExtension with no gencode of its own -- it inherits
 # TORCH_CUDA_ARCH_LIST, so the shared grid arch lists apply unchanged.
 max_jobs: 3   # five 100-120KB implicit-GEMM TUs; heavy tail
