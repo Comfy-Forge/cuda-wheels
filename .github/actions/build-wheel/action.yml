@@ -841,18 +841,21 @@ runs:
     - name: Setup MSVC (Windows)
       # Host-compiler pairing, Windows edition (mirror of the Linux
       # gcc-toolset rule): the runner image rolled to MSVC 14.4x
-      # (VS 17.10+), whose STL breaks CUDA <= 12.6's CUB headers
+      # (VS 17.10+), whose STL breaks CUDA 12.4's CUB headers
       # ("no operator >=" in dispatch_histogram.cuh -- the legacy farm
       # built these very cells on an older image). Pin the VS2019-era
-      # 14.29 toolset for old CUDA lines; 12.8+ supports the default.
-      # (Lexical compare is safe here: every "13.x" >= "12.8".)
+      # 14.29 toolset for 12.4 ONLY: nvcc 12.6 handles the default
+      # toolset (proven by pre-pin cumm/cumesh cu126 wheels), and
+      # torch >= 2.12 headers REQUIRE it (TypeList.h dies under
+      # 14.29's STL -- cc_torch cu126 torch2.12/2.13, 2026-08-22).
+      # (Lexical compare is safe here: "12.4" < "12.6" <= every 13.x.)
       if: inputs.platform == 'windows'
       uses: ilammy/msvc-dev-cmd@v1
       with:
-        toolset: ${{ inputs.cuda-version < '12.8' && '14.29' || '' }}
+        toolset: ${{ inputs.cuda-version < '12.6' && '14.29' || '' }}
         # New Windows SDK 10.0.26100 headers crash nvcc 12.4's cudafe++
         # (0xC0000409) even under the old toolset; pin the older SDK.
-        sdk: ${{ inputs.cuda-version < '12.8' && '10.0.22621.0' || '' }}
+        sdk: ${{ inputs.cuda-version < '12.6' && '10.0.22621.0' || '' }}
 
     - name: Build wheel (Windows)
       id: build_windows
