@@ -10,7 +10,11 @@ links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pa
 source_repo: vllm-project/vllm
 source_tag: v0.27.1
 version: 0.27.1
-extra_deps: cmake ninja packaging setuptools-scm
+# Mirrors upstream's [build-system].requires (farm builds
+# --no-build-isolation): first-ever attempt died on setuptools_rust at
+# metadata generation. torch is deliberately NOT mirrored (upstream pins
+# torch==2.13.0 there; the farm builds against the cell's torch).
+extra_deps: cmake ninja packaging setuptools-scm setuptools-rust jinja2
 # vllm is the one package with the jobs/threads tradeoff wired upstream
 # (MAX_JOBS -> job pool AND cmake --build -j; NVCC_THREADS -> --threads).
 max_jobs: 3
