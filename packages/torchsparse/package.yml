@@ -12,3 +12,15 @@ version: 2.0.0
 max_jobs: 3   # five 100-120KB implicit-GEMM TUs; heavy tail
 extra_deps: tqdm   # setup.py imports it at metadata generation
 patch_script: packages/torchsparse/patches/torchsparse.py
+# Google sparsehash (header-only) -- hashmap_cpu.hpp includes
+# <google/dense_hash_map>. Linux/ARM: EPEL's sparsehash-devel ships the
+# properly generated sparseconfig.h into the default include path.
+# Windows: the patch vendors the tarball (with upstream's MSVC
+# sparseconfig.h) and injects include_dirs. The guard keeps this a
+# no-op on Windows' bash (no dnf there).
+pre_build_script: |
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q epel-release >/dev/null
+    dnf install -y -q sparsehash-devel >/dev/null
+    echo "sparsehash-devel installed (linux)"
+  fi
