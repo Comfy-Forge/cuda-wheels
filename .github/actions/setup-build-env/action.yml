@@ -76,7 +76,11 @@ runs:
       run: |
         python -m pip install uv
         uv pip install --system --reinstall torch==${{ inputs.pytorch-version }}+cu${{ inputs.cuda-short }} --index-url https://download.pytorch.org/whl/cu${{ inputs.cuda-short }}
-        uv pip install --system wheel setuptools ninja numpy triton packaging pyyaml $EXTRA_DEPS
+        uv pip install --system wheel setuptools ninja numpy packaging pyyaml $EXTRA_DEPS
+        # triton best-effort: some setup.pys import it at build time, but it
+        # trails new pythons (no cp315 wheels while 3.15 is rc) -- a missing
+        # triton must not kill every cell of a brand-new python line.
+        uv pip install --system triton || echo "::notice::no triton for this python -- continuing without it"
 
     - name: Save uv cache (Linux)
       if: |
