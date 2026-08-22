@@ -34,7 +34,9 @@ pre_build_script: |
     # without it ext_modules is EMPTY and pip produces a pure-python
     # cumm in 2 seconds (setup.py:162-186). Kernels stay runtime-JIT
     # either way; this compiles only the tensorview bindings.
-    CUMM_DISABLE_JIT=1 CUMM_CUDA_VERSION="12.8" \
+    # CUMM_CUDA_ARCH_LIST: without it the build probes the GPU via
+    # nvidia-smi, which does not exist on a GPU-less runner.
+    CUMM_DISABLE_JIT=1 CUMM_CUDA_VERSION="12.8" CUMM_CUDA_ARCH_LIST="8.0;9.0" \
       python -m pip install --no-build-isolation "git+https://github.com/FindDefinition/cumm@v0.7.11"
     # find_spec, NOT import: importing cumm fires the include/ assert
     # this graft exists to satisfy. Graft only if the build's own
