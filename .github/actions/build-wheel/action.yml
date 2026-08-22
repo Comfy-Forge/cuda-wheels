@@ -696,6 +696,10 @@ runs:
           # eagerly at `import torch`. Do NOT add excludes "for safety": a
           # missing exclude costs megabytes, a wrong one costs a broken import.
           # The assertion below catches anything unexpected instead.
+          # cublas/cublasLt (llama_cpp_python's libggml-cuda DT_NEEDs them):
+          # vendoring would graft ~850MB of cuBLAS into the wheel; torch
+          # preloads both at import, so DT_NEEDED resolves against the
+          # already-loaded SONAME -- same contract as libcudart.
           if auditwheel repair "$whl" \
             --plat "$AUDITWHEEL_PLAT" \
             -w repaired/ \
@@ -710,6 +714,8 @@ runs:
             --exclude libcaffe2_nvrtc.so \
             --exclude libc10.so \
             --exclude libc10_cuda.so \
+            --exclude 'libcublas.so*' \
+            --exclude 'libcublasLt.so*' \
             --exclude libgomp.so.1; then
             rm "$whl"
           else
@@ -896,7 +902,10 @@ runs:
         # The link job extracts at the same relative path and the build
         # system's mtime check finds the .o files in place.
         mkdir -p $GITHUB_WORKSPACE/shard-out
-        tar -czf $GITHUB_WORKSPACE/shard-out/objects.tar.gz build/
+        # --force-local: under Git-bash $GITHUB_WORKSPACE is D:\a\... and GNU
+        # tar reads the colon as a remote host ("Cannot write: Broken pipe",
+        # all 6 natten shards, wave 2).
+        tar --force-local -czf $GITHUB_WORKSPACE/shard-out/objects.tar.gz build/
         ls -lh $GITHUB_WORKSPACE/shard-out/
 
     - name: Upload shard artifact (compile-shard mode)

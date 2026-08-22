@@ -17,8 +17,16 @@ clone_recursive: true          # vendors ggml-org/llama.cpp
 # CUDA is OFF by default in llama.cpp's CMake. There is no `env:` field in this
 # schema, and pre_build_script runs in its own shell step, so the variable is
 # exported to later steps via $GITHUB_ENV rather than a plain export.
-pre_build_script: echo "CMAKE_ARGS=-DGGML_CUDA=on" >> $GITHUB_ENV
+# CMAKE_GENERATOR=Ninja: on Windows, scikit-build-core keeps CMake's
+# default Visual Studio generator, whose enable_language(CUDA) demands
+# NVIDIA's VS-integration MSBuild files ("No CUDA toolset found") that
+# the network installer does not ship. Ninja invokes nvcc directly.
+# Harmless on Linux (already Ninja).
+pre_build_script: |
+  echo "CMAKE_ARGS=-DGGML_CUDA=on" >> $GITHUB_ENV
+  echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
 extra_deps: scikit-build-core cmake ninja
+patch_script: packages/llama_cpp_python/patches/llama_cpp_python.py
 # GGML's CMake build never sees ninja -j from MAX_JOBS; the build action
 # mirrors max_jobs into CMAKE_BUILD_PARALLEL_LEVEL, which it does obey.
 max_jobs: 4
