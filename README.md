@@ -71,7 +71,7 @@ One folder per package under [`packages/`](packages/).
 | [sageattention](packages/sageattention/) | [thu-ml/SageAttention](https://github.com/thu-ml/SageAttention) | per-torch | linux win arm |
 | [sageattn3](packages/sageattn3/) | [thu-ml/SageAttention](https://github.com/thu-ml/SageAttention) | per-torch | linux win arm |
 | [simple_knn](packages/simple_knn/) | [camenduru/simple-knn](https://github.com/camenduru/simple-knn) | per-torch | linux win arm |
-| [spconv](packages/spconv/) | [traveller59/spconv](https://github.com/traveller59/spconv) | torch-free | linux win |
+| [spconv](packages/spconv/) | [traveller59/spconv](https://github.com/traveller59/spconv) | torch-free | linux win arm |
 | [torch_cluster](packages/torch_cluster/) | [rusty1s/pytorch_cluster](https://github.com/rusty1s/pytorch_cluster) | per-torch | linux win arm |
 | [torch_generic_nms](packages/torch_generic_nms/) | [ronghanghu/torch_generic_nms](https://github.com/ronghanghu/torch_generic_nms) | per-torch | linux win arm |
 | [torch_scatter](packages/torch_scatter/) | [rusty1s/pytorch_scatter](https://github.com/rusty1s/pytorch_scatter) | per-torch | linux win arm |

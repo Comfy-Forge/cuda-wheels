@@ -14,7 +14,20 @@ patch_script: packages/spconv/patches/spconv.py
 # spconv-2.3.8-at-runtime tolerates 0.8.2 (import gate tests 0.7.x, the
 # build env's version) is unproven -- revisit the curated sibling pin
 # once the build is green.
-extra_deps: pccm>=0.4.16 ccimport>=0.4.4 cumm<0.8.0,>=0.7.11
+extra_deps: pccm>=0.4.16 ccimport>=0.4.4
+# cumm arrives in pre_build, not extra_deps: x86/win take the PyPI wheel;
+# aarch64 has NO cumm 0.7.x wheels OR sdist upstream, so it builds from
+# the git tag (JIT-mode cumm: pccm codegen + tensorview core, no AOT
+# kernels). Runs after the patch step, so the ccimport symlink fix is
+# already in place for cumm's own pccm build. CUDA version detection is
+# left to cumm (torch + CUDA_HOME are both present).
+pre_build_script: |
+  if [ "$(uname -m)" = "aarch64" ]; then
+    echo "aarch64: building cumm 0.7.11 from source (upstream ships no ARM wheels)"
+    python -m pip install --no-build-isolation "git+https://github.com/FindDefinition/cumm@v0.7.11"
+  else
+    python -m pip install "cumm<0.8.0,>=0.7.11"
+  fi
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
 # which our own farm cumm (0.8.2) does not even satisfy. The sibling pin
