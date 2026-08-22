@@ -30,13 +30,21 @@ pre_build_script: |
     # source tree). Install normally, then graft include/ from a clone
     # into the installed package -- constants.py accepts
     # PACKAGE_ROOT/include and asserts BEFORE its env override.
-    python -m pip install --no-build-isolation "git+https://github.com/FindDefinition/cumm@v0.7.11"
-    git clone --depth 1 --branch v0.7.11 https://github.com/FindDefinition/cumm.git "$RUNNER_TEMP/cumm-src"
-    # find_spec, NOT import: importing cumm fires the very include/
-    # assert this graft exists to satisfy.
+    # CUMM_DISABLE_JIT=1 is what makes setup.py build core_cc at all --
+    # without it ext_modules is EMPTY and pip produces a pure-python
+    # cumm in 2 seconds (setup.py:162-186). Kernels stay runtime-JIT
+    # either way; this compiles only the tensorview bindings.
+    CUMM_DISABLE_JIT=1 CUMM_CUDA_VERSION="12.8" \
+      python -m pip install --no-build-isolation "git+https://github.com/FindDefinition/cumm@v0.7.11"
+    # find_spec, NOT import: importing cumm fires the include/ assert
+    # this graft exists to satisfy. Graft only if the build's own
+    # CopyHeaderCallback didn't already bundle include/.
     CUMM_PKG=$(python -c "import importlib.util; print(importlib.util.find_spec('cumm').submodule_search_locations[0])")
-    cp -r "$RUNNER_TEMP/cumm-src/include" "$CUMM_PKG/include"
-    python -c "import cumm.constants; print('cumm include OK:', cumm.constants.TENSORVIEW_INCLUDE_PATH)"
+    if [ ! -d "$CUMM_PKG/include" ]; then
+      git clone --depth 1 --branch v0.7.11 https://github.com/FindDefinition/cumm.git "$RUNNER_TEMP/cumm-src"
+      cp -r "$RUNNER_TEMP/cumm-src/include" "$CUMM_PKG/include"
+    fi
+    python -c "import cumm.tensorview, cumm.constants; print('cumm OK:', cumm.constants.TENSORVIEW_INCLUDE_PATH)"
   else
     python -m pip install "cumm<0.8.0,>=0.7.11"
   fi
