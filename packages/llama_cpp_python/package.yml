@@ -22,9 +22,16 @@ clone_recursive: true          # vendors ggml-org/llama.cpp
 # NVIDIA's VS-integration MSBuild files ("No CUDA toolset found") that
 # the network installer does not ship. Ninja invokes nvcc directly.
 # Harmless on Linux (already Ninja).
+# CUDAARCHS: GGML's cmake never sees TORCH_CUDA_ARCH_LIST; without it,
+# cmake's ancient default produced an sm_52-only libggml-cuda (gate
+# caught it). CUDAARCHS is cmake >= 3.20's env for
+# CMAKE_CUDA_ARCHITECTURES: semicolon-separated bare numbers (each emits
+# SASS + PTX). Derived from the cell's arch list, which the pre-build
+# step exports as TORCH_CUDA_ARCH_LIST.
 pre_build_script: |
   echo "CMAKE_ARGS=-DGGML_CUDA=on" >> $GITHUB_ENV
   echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
+  echo "CUDAARCHS=$(echo "$TORCH_CUDA_ARCH_LIST" | tr ';' ' ' | sed 's/+PTX//g; s/\.//g' | xargs | tr ' ' ';')" >> $GITHUB_ENV
 extra_deps: scikit-build-core cmake ninja
 patch_script: packages/llama_cpp_python/patches/llama_cpp_python.py
 # GGML's CMake build never sees ninja -j from MAX_JOBS; the build action
@@ -35,3 +42,8 @@ verify:
   # bare shared libs (libllama.so, libggml*.so) are dlopen targets of the
   # python binding, never importable modules
   no_direct_import: ["*/lib/*.so*", "*libllama*", "*libggml*"]
+  # cuBLAS stays external (CW-ADR-0009 justification): vendoring grafts
+  # ~850MB; in the comfy-env/ComfyUI context torch preloads
+  # libcublas/libcublasLt before llama loads, so DT_NEEDED resolves by
+  # SONAME. Standalone users need the CUDA toolkit on the loader path.
+  allowed_needed: ["libcublas.so*", "libcublasLt.so*"]

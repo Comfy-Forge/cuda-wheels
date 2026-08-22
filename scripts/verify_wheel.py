@@ -342,7 +342,14 @@ def elf_infos_for(wheel_path, members):
 
 
 def check_elf_sanity(rep, infos, vendored, vknobs, links_torch=True):
+    # Anything shipped in the wheel itself satisfies a DT_NEEDED on its
+    # basename: multi-library packages (llama_cpp's GGML family) link
+    # their siblings via $ORIGIN rpaths -- self-contained, not a leak.
     vendored_sonames = {v.rsplit("/", 1)[-1] for v in vendored}
+    inwheel = vendored_sonames | {m.rsplit("/", 1)[-1] for m in infos}
+    # Per-package justified externals (CW-ADR-0009's "or justify"):
+    # fnmatch patterns from verify.allowed_needed.
+    allowed_pats = list(vknobs.get("allowed_needed") or [])
     problems, driver_linked = [], False
     for m, info in infos.items():
         if "error" in info:
@@ -352,13 +359,14 @@ def check_elf_sanity(rep, infos, vendored, vknobs, links_torch=True):
             if need == "libcuda.so.1":
                 driver_linked = True
                 continue
-            vendored_ok = (need in vendored_sonames
+            vendored_ok = (need in inwheel
                            or any(need in v for v in vendored_sonames))
             torch_class = any(need.startswith(p) for p in TORCH_PROVIDED)
             ok = (any(f in need for f in GLIBC_FAMILY)
                   or TORCH_NEEDED_RE.match(need)
                   or any(need.startswith(p) for p in ALLOWED_NEEDED_PREFIXES)
                   or vendored_ok
+                  or any(fnmatch.fnmatch(need, p) for p in allowed_pats)
                   or (torch_class and links_torch))
             if not ok:
                 why = ("torch-free package links it unvendored -- torch will "
