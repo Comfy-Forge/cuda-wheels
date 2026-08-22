@@ -1,0 +1,1406 @@
+{
+ "schema": 1,
+ "repo": "Comfy-Forge/cuda-wheels",
+ "packages": {
+  "vox2seq": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "vox2seq-0.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/vox2seq-latest/vox2seq-0.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "2f70d7bf803353f47d13d535934b50f6df7ec7fe38144015eb80a4d36e1b3ded"
+    },
+    {
+     "filename": "vox2seq-0.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/vox2seq-latest/vox2seq-0.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "6a3605b804da5ca56d0826a2e77b413f7e7050aab859a946ea435ab651687b29"
+    },
+    {
+     "filename": "vox2seq-0.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/vox2seq-latest/vox2seq-0.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "5600e4c0eea8b42b43a00236791bcb4f7f1bdfe343d93d940b72f57702b56b2b"
+    }
+   ]
+  },
+  "torchsparse": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "torchsparse-2.0.0b0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "2.0.0b0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torchsparse-latest/torchsparse-2.0.0b0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "b28f8ad0a979d746c4bed5f8300ef7e8efce6f94d46cde42655c94f9d885a81b"
+    }
+   ]
+  },
+  "torch-spline-conv": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "torch_spline_conv-1.2.2+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.2.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_spline_conv-latest/torch_spline_conv-1.2.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "0d8c4eb286ce1e6fc780015118f645ff943c06e2fdcaaa5a1c94799200333a05"
+    },
+    {
+     "filename": "torch_spline_conv-1.2.2+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.2.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_spline_conv-latest/torch_spline_conv-1.2.2%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "caf668626a2b39e8deded43a7ba4c770eec4f87364b30a391ca6434791c44814"
+    },
+    {
+     "filename": "torch_spline_conv-1.2.2+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.2.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_spline_conv-latest/torch_spline_conv-1.2.2%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "0e1e2b0da0aadeae6b9029bf1a8e48dc6ec34ea501b3776f55c2afa3aa3fff59"
+    }
+   ]
+  },
+  "torch-sparse": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "torch_sparse-0.6.18+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.6.18",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_sparse-latest/torch_sparse-0.6.18%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "7864c0b9274090e445071988fffd76f57f3e2aba0b63c51127a7c40a9ec31742"
+    },
+    {
+     "filename": "torch_sparse-0.6.18+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.6.18",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_sparse-latest/torch_sparse-0.6.18%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "b73a245b55e4c7de514c39c8c166ca47ab089853302feb05cd1fe52eeb2a7097"
+    },
+    {
+     "filename": "torch_sparse-0.6.18+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.6.18",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_sparse-latest/torch_sparse-0.6.18%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "eb255f90050499b4d6610cc671e420282e973f54b661414305d76b376b9880a1"
+    }
+   ]
+  },
+  "torch-scatter": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "torch_scatter-2.1.2+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "2.1.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_scatter-latest/torch_scatter-2.1.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "c1663a22c27e7bd0b781f3d0a61524e8ab6fb3d8878ea6ad822a00d28e5636f0"
+    },
+    {
+     "filename": "torch_scatter-2.1.2+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "2.1.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_scatter-latest/torch_scatter-2.1.2%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "fcdc534f7f3e9ab7e8dc636f8318422e1aed39ddaf38bef7b73b92649e058a70"
+    },
+    {
+     "filename": "torch_scatter-2.1.2+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "2.1.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_scatter-latest/torch_scatter-2.1.2%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "7e16e66d0d80ae5ba54123d7d049266830a78c8ccd3d15001087d1828137809d"
+    }
+   ]
+  },
+  "torch-generic-nms": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "torch_generic_nms-0.1+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_generic_nms-latest/torch_generic_nms-0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "5a2d9cbca1745f5b50ad388469d2088e63434fc06b5fbf1c31c8660e17df1046"
+    },
+    {
+     "filename": "torch_generic_nms-0.1+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_generic_nms-latest/torch_generic_nms-0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "6024596616ca386586a2c54d03c60882b18da981234ad66fd4ffed91d5eecb59"
+    },
+    {
+     "filename": "torch_generic_nms-0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_generic_nms-latest/torch_generic_nms-0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "0e07194100dde06e4d9bd8ae3f863e1e533a61e5e0166fad7e20f574be874430"
+    }
+   ]
+  },
+  "torch-cluster": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "torch_cluster-1.6.3+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.6.3",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_cluster-latest/torch_cluster-1.6.3%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "c0dccd177d3cc1a5fe23661a245b2304b7bf6071e624d8e3db3d8e05e25bd93b"
+    },
+    {
+     "filename": "torch_cluster-1.6.3+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.6.3",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_cluster-latest/torch_cluster-1.6.3%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "7c17e31a682ef94269a02075cc283185a234ad41794556e0ee159b1ed1c51612"
+    },
+    {
+     "filename": "torch_cluster-1.6.3+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.6.3",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/torch_cluster-latest/torch_cluster-1.6.3%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "c335a40493e3647b226417f8624368a402f1085058eaf4d87a65182cd78b1615"
+    }
+   ]
+  },
+  "simple-knn": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "simple_knn-1.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/simple_knn-latest/simple_knn-1.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "dcf68fc9738c3e953d9332c6cd99786f2afc785c36398d776dc0600ad4b70793"
+    },
+    {
+     "filename": "simple_knn-1.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/simple_knn-latest/simple_knn-1.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "cd875b22e45afc06c977a3abb21b81f3c084b028d4891906499491288c5f089a"
+    },
+    {
+     "filename": "simple_knn-1.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/simple_knn-latest/simple_knn-1.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "3cd619dd77308152d310820862d26d506181200427476a1923841ba73767b010"
+    }
+   ]
+  },
+  "sageattn3": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "sageattn3-1.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/sageattn3-latest/sageattn3-1.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "2a70012226adc9c8c0dc69e0e1694ce2c309590fb7a8a328ad424b515dd6f43f"
+    },
+    {
+     "filename": "sageattn3-1.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/sageattn3-latest/sageattn3-1.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "9e42347089c089661f01e980710aba8e33802df4c4f03593342ed8536906339f"
+    },
+    {
+     "filename": "sageattn3-1.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/sageattn3-latest/sageattn3-1.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "fa508789a9a3ec256e6283ec6c9b68166b3cb411e33589fbb248f6ab96bb3972"
+    }
+   ]
+  },
+  "sageattention": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "sageattention-2.2.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "2.2.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/sageattention-latest/sageattention-2.2.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "4f38d98bbc135340151f1786b6b8fb99611ff6865afd59388797c43c2b6dfde6"
+    },
+    {
+     "filename": "sageattention-2.2.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "2.2.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/sageattention-latest/sageattention-2.2.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "2bfef65ca7b7c9bbb88a331649861939e78041e450c0505d937e931da5eb353e"
+    },
+    {
+     "filename": "sageattention-2.2.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "2.2.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/sageattention-latest/sageattention-2.2.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "ee68b9592fbc1264e6143dc24dde3265e117588d47d4495156bbe5082f805340"
+    }
+   ]
+  },
+  "pytorch3d": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "pytorch3d-0.7.9+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.7.9",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pytorch3d-latest/pytorch3d-0.7.9%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "65479d7f5bd5425a09a51e8d8f2f2ca46bb90f9178b1c71e2739b301cf9fb2bf"
+    },
+    {
+     "filename": "pytorch3d-0.7.9+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.7.9",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pytorch3d-latest/pytorch3d-0.7.9%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "9a37954a6a2dca72e05feba91af52429acca2e98332eb2115f8108721e7af0cf"
+    },
+    {
+     "filename": "pytorch3d-0.7.9+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.7.9",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pytorch3d-latest/pytorch3d-0.7.9%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "38ca4a57e01293c417c8044a0a17767aa2bf648da1162188a9247dedd9f7c36c"
+    }
+   ]
+  },
+  "pyg-lib": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "pyg_lib-0.5.0+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.5.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pyg_lib-latest/pyg_lib-0.5.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "ccb31b8d5157fc7c7dfd9f321d5862af253611a57eb2dfc93e854856c0e977a9"
+    },
+    {
+     "filename": "pyg_lib-0.5.0+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.5.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pyg_lib-latest/pyg_lib-0.5.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "54f963f74eadb683b5ed5ebbbae5e79fa4d11099183563d97fc4d6419004e1ca"
+    },
+    {
+     "filename": "pyg_lib-0.5.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.5.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pyg_lib-latest/pyg_lib-0.5.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "86a1239d1442a8621dfdcd4e6260c0542a6255eb2fbd2ba206b49a3d0729c074"
+    }
+   ]
+  },
+  "pointnet2-ops": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "pointnet2_ops-3.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "3.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pointnet2_ops-latest/pointnet2_ops-3.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "ba23f7c946dedbc70f95799b929fac01425dd1f5819265918b649f7bd51f6f40"
+    },
+    {
+     "filename": "pointnet2_ops-3.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "3.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pointnet2_ops-latest/pointnet2_ops-3.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "2acde3f02480a0932ce56c01ae861c02a7bee1ab13ffb694d85cac05c70d9576"
+    },
+    {
+     "filename": "pointnet2_ops-3.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "3.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/pointnet2_ops-latest/pointnet2_ops-3.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "2ad7a7e2e427b7b9c62ac0f06b6b487a34c24186a54192084d9dd2571a3816d8"
+    }
+   ]
+  },
+  "o-voxel-vb-ap": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "o_voxel_vb_ap-0.0.1+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel_vb_ap-latest/o_voxel_vb_ap-0.0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "4108a8fb3e3ce81cc37aa2820797194ba3b02c250c95b19653bb9fea6c15b303"
+    },
+    {
+     "filename": "o_voxel_vb_ap-0.0.1+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel_vb_ap-latest/o_voxel_vb_ap-0.0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "c8daf9b04cddf1cc5c912717360d23e05dd5ad45132b08152f25092d16a1c9fe"
+    },
+    {
+     "filename": "o_voxel_vb_ap-0.0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel_vb_ap-latest/o_voxel_vb_ap-0.0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "d2d98d8452e70acd678d939889fa56ea66f8a9b86de043e41a30ba149fd23450"
+    }
+   ]
+  },
+  "o-voxel-vb": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "o_voxel_vb-0.0.1+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel_vb-latest/o_voxel_vb-0.0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "a479f04f72873db5b14fe0664ab7654cde1fb0853d72650016a0fb7e2d775b96"
+    },
+    {
+     "filename": "o_voxel_vb-0.0.1+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel_vb-latest/o_voxel_vb-0.0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "2f3ad27b559eed241940397f6a4b5db10af653982c23e6edff903ec5cfa174cf"
+    },
+    {
+     "filename": "o_voxel_vb-0.0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel_vb-latest/o_voxel_vb-0.0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "54ed118f7c47aa1b0bc54721b13fff10b93ef263efb2f963ee3085ac391fde78"
+    }
+   ]
+  },
+  "o-voxel": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "o_voxel-0.0.1+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel-latest/o_voxel-0.0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "cf393f05f8b12dda82d7f516c22a9f59bbb9c9c71fe578948c1073dfaf77f9ae"
+    },
+    {
+     "filename": "o_voxel-0.0.1+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel-latest/o_voxel-0.0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "806b1fc863163ed4ee04fe140abe842626c13514040ca27a34cf96951fa87080"
+    },
+    {
+     "filename": "o_voxel-0.0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/o_voxel-latest/o_voxel-0.0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "ff3479fe8eb86e26f8d4665d9511929765c895dc2994fa0fb05563851405a20d"
+    }
+   ]
+  },
+  "nvdiffrec-render": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "nvdiffrec_render-0.0.1+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nvdiffrec_render-latest/nvdiffrec_render-0.0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "dd20250ccd05ff9000ef79424907726d9c924c42c1d019a6427a6ec4d04a6c0a"
+    },
+    {
+     "filename": "nvdiffrec_render-0.0.1+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nvdiffrec_render-latest/nvdiffrec_render-0.0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "4c4d6b9abde661c9725ca36a8633cb1b98285aa5b1471ed72f795b93a3cf0909"
+    },
+    {
+     "filename": "nvdiffrec_render-0.0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nvdiffrec_render-latest/nvdiffrec_render-0.0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "4bce535b786430a0a4e52703c15380c6ff81b1ffd3548c9c59852816facb5485"
+    }
+   ]
+  },
+  "nvdiffrast": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "nvdiffrast-0.4.0+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.4.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nvdiffrast-latest/nvdiffrast-0.4.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "3859f22816602f850e611bcec12a6e3264ff153259e0d745b172f3b96af87e20"
+    },
+    {
+     "filename": "nvdiffrast-0.4.0+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.4.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nvdiffrast-latest/nvdiffrast-0.4.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "1cba086171f0b52a932067ab97e6a19fcec352d16aaa2ec0856c8fa89e21a88d"
+    },
+    {
+     "filename": "nvdiffrast-0.4.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.4.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nvdiffrast-latest/nvdiffrast-0.4.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "ab39a04d0dd1d0f25dde395681b4998abfa6c9f532794f54d73d7c34a08caf5f"
+    }
+   ]
+  },
+  "nunchaku": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "nunchaku-1.2.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.2.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/nunchaku-latest/nunchaku-1.2.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "d00aff22e68ee43b4b77b4cd3ed74da4a48ca395fb784352f3465af30475023a"
+    }
+   ]
+  },
+  "mmcv": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "mmcv-1.7.2+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.7.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/mmcv-latest/mmcv-1.7.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "d06acc9199dcd505ac1b8e2b7dcc2a83e4c2df6c0cabbb61d613d457d5c5c48d"
+    },
+    {
+     "filename": "mmcv-1.7.2+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.7.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/mmcv-latest/mmcv-1.7.2%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "59bf9f8e87ee467793379822024901546a2390aa1678e193691030942472eaff"
+    },
+    {
+     "filename": "mmcv-1.7.2+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.7.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/mmcv-latest/mmcv-1.7.2%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "f133879f6596f467a2e0bf1fbb2bd5b1c3c42b0bd68edf1e18ab3b73c677ef14"
+    }
+   ]
+  },
+  "gsplat-maskgaussian": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "gsplat_maskgaussian-1.5.3+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.5.3",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/gsplat_maskgaussian-latest/gsplat_maskgaussian-1.5.3%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "722d76bb4bfb56c7921ee1a122c4310d7ebcc418f7758577b66f47c2167e8cd3"
+    },
+    {
+     "filename": "gsplat_maskgaussian-1.5.3+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.5.3",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/gsplat_maskgaussian-latest/gsplat_maskgaussian-1.5.3%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "d74373b8102580ea41cc88c74e661c54289173332efd0cfb60dde56833e79a5b"
+    },
+    {
+     "filename": "gsplat_maskgaussian-1.5.3+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.5.3",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/gsplat_maskgaussian-latest/gsplat_maskgaussian-1.5.3%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "1d404e40d68632cf4b2ec1913cf691431a3e94b8e5699b24da475832a76e86f4"
+    }
+   ]
+  },
+  "gsplat": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "gsplat-1.5.3+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.5.3",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/gsplat-latest/gsplat-1.5.3%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "307b9a9ca840fd12df82c5e9af2341f5bd2939ef95bbdf6214cd2561f1d7e420"
+    },
+    {
+     "filename": "gsplat-1.5.3+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.5.3",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/gsplat-latest/gsplat-1.5.3%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "ab6e522bd69a77dbc7c36a1a974290e168439abf34e587566105441dc0163b5b"
+    },
+    {
+     "filename": "gsplat-1.5.3+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.5.3",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/gsplat-latest/gsplat-1.5.3%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "23d08796a70751eeb598558741ac862fdb0f17578b5fa17b9fac21ebc2c2d192"
+    }
+   ]
+  },
+  "fused-ssim": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "fused_ssim-0.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/fused_ssim-latest/fused_ssim-0.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "1a1415243883835cba811f2736d9de4fa04351ca4f4c8de5f3e1efa0095d8127"
+    },
+    {
+     "filename": "fused_ssim-0.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/fused_ssim-latest/fused_ssim-0.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "6b76b60017f07a756190da40b97c8c345772bce650dc7b309c5867d165dd3853"
+    },
+    {
+     "filename": "fused_ssim-0.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/fused_ssim-latest/fused_ssim-0.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "9202e5a5f0391c845b63d0740edf1477937f6e6517137e4b77e840761742ebf6"
+    }
+   ]
+  },
+  "flex-gemm-vb": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "flex_gemm_vb-1.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm_vb-latest/flex_gemm_vb-1.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "9a9987e849f9e0a545e09a9220ce7ac82eb6b952f97779e81cee0494bce6a620"
+    },
+    {
+     "filename": "flex_gemm_vb-1.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm_vb-latest/flex_gemm_vb-1.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "3049ce6c7b8d606b7c876a31fc076ba3e96ac2f39be7ff34f0baff3a0ea0f7d8"
+    },
+    {
+     "filename": "flex_gemm_vb-1.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm_vb-latest/flex_gemm_vb-1.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "0dd5353d111206ea10146f70fad0798e176ebe9a20eff0235f7475dc863aab1a"
+    }
+   ]
+  },
+  "flex-gemm-ap": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "flex_gemm_ap-1.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm_ap-latest/flex_gemm_ap-1.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "6e05252c3953365420e2799c225ba2ff0eea45c45c2df6f711e9ddf73d5662de"
+    },
+    {
+     "filename": "flex_gemm_ap-1.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm_ap-latest/flex_gemm_ap-1.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "4794741ac55c4f7a38d2ca7c0538d3dc60f5df9bd0d99d235ab72a5f0677aba7"
+    },
+    {
+     "filename": "flex_gemm_ap-1.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm_ap-latest/flex_gemm_ap-1.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "bd871c8cb1782aeeb578e773a99e8b6b6a550043684411f691be38241938a927"
+    }
+   ]
+  },
+  "flex-gemm": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "flex_gemm-1.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm-latest/flex_gemm-1.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "30d38a34f3e80839fde934b0920fc45b8a95ec5aefb85db2e291454c93a507fa"
+    },
+    {
+     "filename": "flex_gemm-1.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm-latest/flex_gemm-1.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "367c938a45cf7b827adfcbf72f32d55e61387059403c1a561182f2d919c69cd7"
+    },
+    {
+     "filename": "flex_gemm-1.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/flex_gemm-latest/flex_gemm-1.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "31dfcf84d749b964b6fc03dcdd5c803f51a69d42521a0b867327df8e27a459de"
+    }
+   ]
+  },
+  "faithc-aot": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "faithc_aot-1.5.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.5.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/faithc_aot-latest/faithc_aot-1.5.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "f2565f84acfea21016389f6b18eef296229fe2a62674358b3ceee536be145ff3"
+    },
+    {
+     "filename": "faithc_aot-1.5.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.5.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/faithc_aot-latest/faithc_aot-1.5.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "6eb444b60c272e5826106c9218b6fd499cc2b1eb02d15dcea754988d6abd53bb"
+    },
+    {
+     "filename": "faithc_aot-1.5.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.5.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/faithc_aot-latest/faithc_aot-1.5.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "19b788c1a14b89131a6ada0ab1a73732a682b7fd9cc39e9bb5906748333a7675"
+    }
+   ]
+  },
+  "drtk": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "drtk-0.1.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.1.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/drtk-latest/drtk-0.1.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "814314ed9cbe52b0ed55b8c714cfd656743b5cc27f28515689bdbb58a6129c5f"
+    },
+    {
+     "filename": "drtk-0.1.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.1.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/drtk-latest/drtk-0.1.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "c0135f3ee4627c5d6be7be8ceb4da21d496b87cf28a69d5b5b5626071dd38c7f"
+    },
+    {
+     "filename": "drtk-0.1.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.1.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/drtk-latest/drtk-0.1.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "30d8c34e1deb9f983af954957326346deb4fee330503260e101549b235b1611a"
+    }
+   ]
+  },
+  "dpvo-cuda": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "dpvo_cuda-0.0.0+cu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/dpvo_cuda-latest/dpvo_cuda-0.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "9240450043cc5ba6c94d2656c6ae347531bd3d36a678a5e347ca685ee70375e4"
+    },
+    {
+     "filename": "dpvo_cuda-0.0.0+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/dpvo_cuda-latest/dpvo_cuda-0.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "93075d51d0f36955131d55422d1113f34b51c00fa36b9a836fe529237193776c"
+    },
+    {
+     "filename": "dpvo_cuda-0.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/dpvo_cuda-latest/dpvo_cuda-0.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "5c24b3542c1d62d2b9dd19bd403fc123f74f43cc5f1ba8e4ec93ba004bcc55bf"
+    }
+   ]
+  },
+  "diso": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "diso-0.1.4+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.1.4",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/diso-latest/diso-0.1.4%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "9e1808224f8ca554c41be7df20cbba7d0be6d461a0f1d79841bd83b85f1820b3"
+    },
+    {
+     "filename": "diso-0.1.4+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.1.4",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/diso-latest/diso-0.1.4%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "081f00877e82ad26bb32a9cb0ec7136f9672ea9a6356a5324461e8c24cfd184a"
+    },
+    {
+     "filename": "diso-0.1.4+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.1.4",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/diso-latest/diso-0.1.4%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "bf6c20a40d6c10302150dedbb3a9332f406ace84cbddd6589bc2e13cad964e38"
+    }
+   ]
+  },
+  "diff-gaussian-rasterization": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "diff_gaussian_rasterization-0.0.0+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/diff_gaussian_rasterization-latest/diff_gaussian_rasterization-0.0.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "3eab672c6ac9304f55b51f9dea36d91892da394d0a80e1dc34bd6f2805ab6aab"
+    },
+    {
+     "filename": "diff_gaussian_rasterization-0.0.0+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/diff_gaussian_rasterization-latest/diff_gaussian_rasterization-0.0.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "4b9e707288ab1d74bdc19691bebff8169e0048a80cd861143a9e38965a38edde"
+    },
+    {
+     "filename": "diff_gaussian_rasterization-0.0.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/diff_gaussian_rasterization-latest/diff_gaussian_rasterization-0.0.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "df5a727f2cc6722af59240e9451a71474633373e5405c67d24f115a8e182cb2c"
+    }
+   ]
+  },
+  "detectron2": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "detectron2-0.6+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.6",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/detectron2-latest/detectron2-0.6%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "e117912cc81a7f4418e6917175ed6459b9155ac64fcd83ac752be2ea5493e9db"
+    },
+    {
+     "filename": "detectron2-0.6+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.6",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/detectron2-latest/detectron2-0.6%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "d153ec0c0e94854f76bde1bb856962aa3f18285b3a602eccb6f8b38d4a9003f3"
+    },
+    {
+     "filename": "detectron2-0.6+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.6",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/detectron2-latest/detectron2-0.6%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "5448a3e26aa8d52bdd2f2ce4be243392e8e588be15d1f41333794cfd773e810b"
+    }
+   ]
+  },
+  "custom-rasterizer-hy3d2": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "custom_rasterizer_hy3d2-0.1+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/custom_rasterizer_hy3d2-latest/custom_rasterizer_hy3d2-0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "9b46eecdd4475fbfd26a09aa427b357077cd5dbda48822fc1149fc464a105b8c"
+    },
+    {
+     "filename": "custom_rasterizer_hy3d2-0.1+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/custom_rasterizer_hy3d2-latest/custom_rasterizer_hy3d2-0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "6d6617a5829bc06fe3be470c6b9236d58a57a2832e9d22eb2034e7de21e1e22d"
+    },
+    {
+     "filename": "custom_rasterizer_hy3d2-0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/custom_rasterizer_hy3d2-latest/custom_rasterizer_hy3d2-0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "938a5e7cba2566d346f36d674c372b13c395a50cdb49ab3f6dc2a107484acd7f"
+    }
+   ]
+  },
+  "cumm": {
+   "torch_free": true,
+   "wheels": [
+    {
+     "filename": "cumm-0.8.2+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.8.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumm-latest/cumm-0.8.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "102794250cc30ba22657293711df061e48665d56b212c5dab5357e063af10f75"
+    },
+    {
+     "filename": "cumm-0.8.2+cu128torch2.11-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.8.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumm-latest/cumm-0.8.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "5ed01a456770080da7a0c8cd811d37f2bac344a548bb5a2014a197e8e9787407"
+    },
+    {
+     "filename": "cumm-0.8.2+cu128torch2.11-cp312-cp312-win_amd64.whl",
+     "version": "0.8.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumm-latest/cumm-0.8.2%2Bcu128torch2.11-cp312-cp312-win_amd64.whl",
+     "sha256": "b2b79cbc1a428b1dd02665b3169346468397bc71c6f65acf9430d55f6b5d73ef"
+    }
+   ]
+  },
+  "cumesh-vb": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "cumesh_vb-1.0+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "1.0",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumesh_vb-latest/cumesh_vb-1.0%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "f94af387664461713dd32f18cd06b9b06e4df4d1eba73dfe272f3b7a420b8752"
+    },
+    {
+     "filename": "cumesh_vb-1.0+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "1.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumesh_vb-latest/cumesh_vb-1.0%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "0e2b20a1402a0fc6e20cfcc86a7fee8a200c253cfdd61f926885703355c7842d"
+    },
+    {
+     "filename": "cumesh_vb-1.0+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "1.0",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumesh_vb-latest/cumesh_vb-1.0%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "c0be50a251c07f382700a8dcc01ee240684115b446062dc3ccb59c06ceb48fbc"
+    }
+   ]
+  },
+  "cumesh": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "cumesh-0.0.1+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumesh-latest/cumesh-0.0.1%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "79aaebb10fcf365a40648afbd523024f2518fb89703d4615d87c29b560a67ef4"
+    },
+    {
+     "filename": "cumesh-0.0.1+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumesh-latest/cumesh-0.0.1%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "2e73ca75e5452ce94cdff05095b3ca167bb9f88fb4084d038cf5af9fdd351c2a"
+    },
+    {
+     "filename": "cumesh-0.0.1+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.0.1",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cumesh-latest/cumesh-0.0.1%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "83c003927e1818b52249bfb38f04e6fffc067e14006d42998e3b46e577784457"
+    }
+   ]
+  },
+  "cubvh": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "cubvh-0.1.2+cu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.1.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cubvh-latest/cubvh-0.1.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "53aecd9ced3175f3af9755411ac4de9ed2b259320e152107e1bc8646739dc664"
+    },
+    {
+     "filename": "cubvh-0.1.2+cu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.1.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cubvh-latest/cubvh-0.1.2%2Bcu128torch2.8-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "adb0fd4134c918d6c9f5b863497d41826451c2646b34d16ecbddbb563622997c"
+    },
+    {
+     "filename": "cubvh-0.1.2+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.1.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cubvh-latest/cubvh-0.1.2%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "200013d0b04928a4def00219a149750e96c429d4a5fd9e341242eac2bb6a58f4"
+    }
+   ]
+  },
+  "cc-torch": {
+   "torch_free": false,
+   "wheels": [
+    {
+     "filename": "cc_torch-0.2+cu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "version": "0.2",
+     "cuda": "12.8",
+     "torch": "2.11",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux_aarch64",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cc_torch-latest/cc_torch-0.2%2Bcu128torch2.11-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+     "sha256": "8868f2e4cc650433d1363e927cb1281122e41402a077b43ff124c5c2130faf3b"
+    },
+    {
+     "filename": "cc_torch-0.2+cu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "version": "0.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "linux",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cc_torch-latest/cc_torch-0.2%2Bcu128torch2.8-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "e5729c84dfc336f82f3eb38c786cf59ec28dfa720594bf060f09b1612737fe4c"
+    },
+    {
+     "filename": "cc_torch-0.2+cu128torch2.8-cp312-cp312-win_amd64.whl",
+     "version": "0.2",
+     "cuda": "12.8",
+     "torch": "2.8",
+     "python": "312",
+     "abi": "cp",
+     "platform": "windows",
+     "url": "https://github.com/Comfy-Forge/cuda-wheels/releases/download/cc_torch-latest/cc_torch-0.2%2Bcu128torch2.8-cp312-cp312-win_amd64.whl",
+     "sha256": "82d5d58bf19cacd01d68fe0ca272ee7c5c5cfa1239add9e618cf69ffa3835363"
+    }
+   ]
+  }
+ }
+}
