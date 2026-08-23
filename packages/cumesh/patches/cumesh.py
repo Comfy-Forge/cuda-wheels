@@ -130,23 +130,9 @@ if _mm("CUW_CUDA_VERSION") < (12, 6):
         _setup.write_text(_t2)
         print("cumesh patch: dropped /permissive- + /Zc:__cplusplus for CUDA < 12.6 (C2872 'cuda' ambiguity)")
 
-# (1b) CUDA 12.9's bundled CCCL 2.8 has an LLP64 bug in the generated PTX
-# header: 64-bit "l" asm constraints bound to long2 members, which are
-# 4 bytes under MSVC (long is 32-bit on Windows) -- every Windows cu12.9
-# TU that pulls <cuda/ptx> dies with "asm operand type size(4) does not
-# match constraint 'l'". Upstream CCCL 3.x fixed it by casting to
-# longlong2; apply the same one-token fix to the installed toolkit copy.
-# Content-gated and idempotent: no-op wherever the file is absent
-# (<= 12.8) or already fixed (13.x).
-_cuda_home = _os.environ.get("CUDA_HOME") or _os.environ.get("CUDA_PATH")
-if _cuda_home:
-    _clc = Path(_cuda_home) / "include/cuda/__ptx/instructions/generated/clusterlaunchcontrol.h"
-    if _clc.exists():
-        _h = _clc.read_text()
-        if "reinterpret_cast<long2*>" in _h:
-            _clc.write_text(_h.replace("reinterpret_cast<long2*>",
-                                       "reinterpret_cast<longlong2*>"))
-            print("cumesh patch: clusterlaunchcontrol.h long2 -> longlong2 (CCCL LLP64 fix)")
+# (1b) The CUDA 12.9 clusterlaunchcontrol.h LLP64 fix that used to live
+# here is now farm-wide in scripts/patch_cuda_toolkit.py, run by the
+# setup-cuda action: it is NVIDIA's bug, and cubvh hit it too (2026-08-23).
 
 # (2) CCCL 3.x (shipped with CUDA 13.2) removed DeviceScan::ExclusiveSum's
 # 4-arg IN-PLACE overload (d_temp, bytes, d_data, num). The arguments then

@@ -336,6 +336,16 @@ runs:
         echo "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         echo "CUDA_HOME=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+    # Toolkit header fixes, all platforms. Runs AFTER install/cache-restore
+    # and after CUDA_HOME is exported, so it repairs a restored cache too.
+    # Content-gated per fix (see the script): a no-op on unaffected
+    # toolkits, so there is no per-CUDA-version list to maintain.
+    - name: Patch known CUDA toolkit header bugs
+      shell: bash
+      env:
+        CUDA_HOME: ${{ inputs.platform == 'windows' && format('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v{0}', inputs.cuda-version) || format('/usr/local/cuda-{0}', inputs.cuda-version) }}
+      run: python "$GITHUB_WORKSPACE/scripts/patch_cuda_toolkit.py"
+
     # Set combined output
     - name: Set cache-hit output
       id: cuda-cache
