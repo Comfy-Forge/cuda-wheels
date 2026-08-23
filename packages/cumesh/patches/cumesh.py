@@ -109,6 +109,27 @@ if _mm("CUW_TORCH_VERSION") >= (2, 13) or _mm("CUW_CUDA_VERSION") >= (13, 2):
 else:
     print("cumesh patch: keeping upstream c++17 (torch < 2.13, CUDA < 13.2)")
 
+# (1a) On the CUDA < 12.6 Windows lanes (pinned MSVC 14.29), cumesh's
+# /permissive- makes 'cuda' ambiguous between libcu++'s ::cuda and
+# c10::cuda from torch <= 2.6 headers -- 303x C2872 across CUDA 12.4's
+# bundled CUB/libcu++, whose 'cuda::std' references are unqualified
+# (upstream CCCL qualified them to ::cuda::std later, which is why
+# 12.6+ toolkits are immune). Strict conformance is a style choice, not
+# a build requirement: drop /permissive- (and the /Zc:__cplusplus that
+# only matters alongside it) on these lanes; everything else keeps
+# upstream's flags byte-identical.
+if _mm("CUW_CUDA_VERSION") < (12, 6):
+    import re as _re2
+    _setup = Path("setup.py")
+    _t = _setup.read_text()
+    # Drop the whole list element (string, trailing comma/space) in both the
+    # cxx_flags and -Xcompiler= spellings; keep list syntax valid whether or
+    # not the element is last (the flag lists end with a non-stripped flag).
+    _t2 = _re2.sub(r'\s*"(?:-Xcompiler=)?/(?:permissive-|Zc:__cplusplus)"\s*,?', '', _t)
+    if _t2 != _t:
+        _setup.write_text(_t2)
+        print("cumesh patch: dropped /permissive- + /Zc:__cplusplus for CUDA < 12.6 (C2872 'cuda' ambiguity)")
+
 # (1b) CUDA 12.9's bundled CCCL 2.8 has an LLP64 bug in the generated PTX
 # header: 64-bit "l" asm constraints bound to long2 members, which are
 # 4 bytes under MSVC (long is 32-bit on Windows) -- every Windows cu12.9
