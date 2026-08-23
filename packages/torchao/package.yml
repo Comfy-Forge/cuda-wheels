@@ -23,3 +23,11 @@ verify:
   # loaded via torch.ops.load_library by torchao's facade, never imported
   # directly (same pattern as torch_scatter's *_cuda.so).
   no_direct_import: ["*_C_cutlass*", "*_C_mxfp8*"]
+  skip_arch: >-
+    arch-specialized package: 0.18's only CUDA kernels are CUTLASS sm90a
+    (_C_cutlass_90a) and mxfp8 sm100a (_C_mxfp8, cu12.8+/torch2.11+ cells
+    that build it); the main _C is pure C++. There is no generic-arch SASS,
+    so the cell arch list is a compile-capability input here, not a content
+    expectation -- checking it fails every wheel on "missing sm_8x" that
+    upstream never compiles for any arch list (proven 2026-08-23, 11 linux
+    cells). Presence of compiled kernels is still enforced by the census.
