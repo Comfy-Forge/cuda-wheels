@@ -6,3 +6,13 @@
 # import below 2.9 anyway, and aligning the floor to the shipped ARM torch
 # keeps its only live cells honest (owner call 2026-08-22).
 min_pytorch: "2.11.0"
+# No Windows: upstream setup.py gates every CUTLASS kernel (all the CUDA
+# sources that survive its own Windows source filters) behind
+# `use_cuda and not IS_WINDOWS` -- there is no cutlass include path on
+# Windows, so a Windows "CUDA" build can only ever produce the same pure
+# python wheel PyPI already serves (proven 2026-08-23: all 45 Windows
+# cells emitted torchao-0.18.0-py3-none-any.whl and the census gate
+# rightly blocked them). Compiled Windows torchao is an upstream porting
+# project, not a packaging cell.
+build_matrix:
+  platforms: ["linux", "linux_aarch64"]
