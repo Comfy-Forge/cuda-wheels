@@ -80,12 +80,52 @@ else:
 # (1) torch 2.13's headers use C++20 features (designated initializers,
 # bit-field default member init). GCC tolerates them under c++17; MSVC and
 # Windows nvcc hard-error. cumesh pins c++17 in four places in setup.py.
-_setup = Path("setup.py")
-_t = _setup.read_text()
-_t2 = _t.replace("c++17", "c++20")
-if _t2 != _t:
-    _setup.write_text(_t2)
-    print("cumesh patch: setup.py c++17 -> c++20")
+#
+# GATED on the cells that need it (torch >= 2.13 or CUDA >= 13.2): applied
+# unconditionally, this rewrite killed every Windows cu12.4/12.6 old-torch
+# cell with cudafe++ 0xC0000409 -- under the pinned MSVC 14.29 host, nvcc
+# rejects -std=c++20 ("flag will be ignored", demoting cudafe++ to C++17)
+# yet still forwards /std:c++20 to the host compiler, and a C++17 EDG
+# parsing a 14.29 STL forced into _MSVC_LANG=202002L fastfails. Old torch
+# headers aren't C++20-clean either even on 14.4x hosts (ivalue_inl.h).
+# Fallback is "0.0" so a missing env FAILS CLOSED (no rewrite): the safe
+# mode is upstream's own c++17, proven green on every legacy cell.
+import os as _os
+
+def _mm(env: str) -> tuple[int, int]:
+    parts = _os.environ.get(env, "0.0").split(".")[:2]
+    try:
+        return tuple(int(p) for p in parts)
+    except ValueError:
+        return (0, 0)
+
+if _mm("CUW_TORCH_VERSION") >= (2, 13) or _mm("CUW_CUDA_VERSION") >= (13, 2):
+    _setup = Path("setup.py")
+    _t = _setup.read_text()
+    _t2 = _t.replace("c++17", "c++20")
+    if _t2 != _t:
+        _setup.write_text(_t2)
+        print("cumesh patch: setup.py c++17 -> c++20")
+else:
+    print("cumesh patch: keeping upstream c++17 (torch < 2.13, CUDA < 13.2)")
+
+# (1b) CUDA 12.9's bundled CCCL 2.8 has an LLP64 bug in the generated PTX
+# header: 64-bit "l" asm constraints bound to long2 members, which are
+# 4 bytes under MSVC (long is 32-bit on Windows) -- every Windows cu12.9
+# TU that pulls <cuda/ptx> dies with "asm operand type size(4) does not
+# match constraint 'l'". Upstream CCCL 3.x fixed it by casting to
+# longlong2; apply the same one-token fix to the installed toolkit copy.
+# Content-gated and idempotent: no-op wherever the file is absent
+# (<= 12.8) or already fixed (13.x).
+_cuda_home = _os.environ.get("CUDA_HOME") or _os.environ.get("CUDA_PATH")
+if _cuda_home:
+    _clc = Path(_cuda_home) / "include/cuda/__ptx/instructions/generated/clusterlaunchcontrol.h"
+    if _clc.exists():
+        _h = _clc.read_text()
+        if "reinterpret_cast<long2*>" in _h:
+            _clc.write_text(_h.replace("reinterpret_cast<long2*>",
+                                       "reinterpret_cast<longlong2*>"))
+            print("cumesh patch: clusterlaunchcontrol.h long2 -> longlong2 (CCCL LLP64 fix)")
 
 # (2) CCCL 3.x (shipped with CUDA 13.2) removed DeviceScan::ExclusiveSum's
 # 4-arg IN-PLACE overload (d_temp, bytes, d_data, num). The arguments then
