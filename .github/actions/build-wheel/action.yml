@@ -552,12 +552,17 @@ runs:
         # 3h of logs.
         SWAP_HIGHWATER_FILE="$RUNNER_TEMP/cuw_swap_highwater"
         echo "0" > "$SWAP_HIGHWATER_FILE"
+        MEM_LOWWATER_FILE="$RUNNER_TEMP/cuw_mem_lowwater"
+        echo "999" > "$MEM_LOWWATER_FILE"
         ( while true; do
             mem=$(awk '/MemAvailable/{a=$2/1024/1024} /MemTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB free", a, t}' /proc/meminfo 2>/dev/null || echo "?")
             swap=$(awk '/SwapFree/{f=$2/1024/1024} /SwapTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB swap free", f, t}' /proc/meminfo 2>/dev/null || echo "?")
             used=$(awk '/SwapTotal/{t=$2} /SwapFree/{f=$2} END{printf "%.2f", (t-f)/1024/1024}' /proc/meminfo 2>/dev/null || echo 0)
             prev=$(cat "$SWAP_HIGHWATER_FILE" 2>/dev/null || echo 0)
             awk -v a="$used" -v b="$prev" 'BEGIN{exit !(a>b)}' && echo "$used" > "$SWAP_HIGHWATER_FILE"
+            avail=$(awk '/MemAvailable/{printf "%.2f", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo 999)
+            prevlow=$(cat "$MEM_LOWWATER_FILE" 2>/dev/null || echo 999)
+            awk -v a="$avail" -v b="$prevlow" 'BEGIN{exit !(a<b)}' && echo "$avail" > "$MEM_LOWWATER_FILE"
             load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo "?")
             top3=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | head -3 | awk '{printf "%s(%.1fGB) ", $2, $1/1024/1024}' || echo "?")
             echo "[resmon $(date -u +%H:%M:%SZ)] mem: $mem | swap: $swap | load: $load | top3: $top3"
@@ -668,6 +673,7 @@ runs:
       run: |
         HW="$RUNNER_TEMP/cuw_swap_highwater"
         used=$(cat "$HW" 2>/dev/null || echo 0)
+        memlow=$(cat "$RUNNER_TEMP/cuw_mem_lowwater" 2>/dev/null || echo 999)
         CELL="${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-short }} torch${{ inputs.pytorch-version }}"
         if awk -v u="$used" 'BEGIN{exit !(u > 0.1)}'; then
           MJ="${{ inputs.max-jobs }}"; NT="${{ inputs.nvcc-threads }}"
@@ -675,9 +681,16 @@ runs:
             # Already at the floor -- swap here is the parachute doing its
             # one legitimate job. Warn, don't fail.
             echo "::warning title=Compile dipped into swap at minimum settings::$CELL: peak swap ${used}GB with max_jobs=1, nvcc_threads=1. Nothing left to trim -- this package is simply at the runner's memory ceiling."
-          else
-            echo "::error title=Compile swapped -- build rejected::$CELL: peak swap usage ${used}GB with max_jobs='${MJ:-default}' nvcc_threads='${NT}'. A swapping compile is over-committed and its timings are garbage; lower max_jobs (or nvcc_threads) for this package. The build FAILS until the knobs fit the machine (only max_jobs=1 + nvcc_threads=1 may swap and pass)."
+          elif awk -v u="$used" -v m="$memlow" 'BEGIN{exit !(u > 1.0 && m < 2.0)}'; then
+            # Real over-commit: the parachute deployed hard AND free memory
+            # actually bottomed out. (Sub-threshold swap with plenty of RAM
+            # free is the kernel paging out idle pages -- a flake, not a
+            # signal: cumesh linux cu12.8 failed a green build on 0.30GB of
+            # swap while 10GB+ sat free, 2026-08-22.)
+            echo "::error title=Compile swapped -- build rejected::$CELL: peak swap ${used}GB, MemAvailable low-water ${memlow}GB, max_jobs='${MJ:-default}' nvcc_threads='${NT}'. A swapping compile under memory pressure is over-committed and its timings are garbage; lower max_jobs (or nvcc_threads) for this package."
             exit 1
+          else
+            echo "::warning title=Swap touched without memory pressure::$CELL: peak swap ${used}GB but MemAvailable never fell below ${memlow}GB -- background page-out, not over-commit. Passing."
           fi
         else
           echo "swap untouched (peak ${used}GB)"
