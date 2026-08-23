@@ -72,6 +72,18 @@ _sys0.path.insert(0, str(Path(__file__).parent))
 from package_loader import load_pcto as _load_pcto, load_arch_policy as _load_arch_policy, iter_packages as _iter_packages  # noqa: E402
 DEFAULTS = _load_pcto()
 
+# Per-platform patch overrides (pytorch_windows / pytorch_linux_aarch64 on a
+# policy row): upstream sometimes ships a platform only at a different patch
+# of the same minor (cu129 Windows: 2.9.0, never 2.9.1). Keyed by the row's
+# (cuda, pytorch) anchor; applied at cell-emission time.
+_PT_OVERRIDES = {
+    (c["cuda"], c["pytorch"]): {
+        k[len("pytorch_"):]: v for k, v in c.items()
+        if k.startswith("pytorch_") and k != "pytorch"
+    }
+    for c in DEFAULTS["combinations"]
+}
+
 # The owned arch policy (CW-ADR-0012): per-CUDA rows plus hand-maintained
 # per-(cuda, torch-minor) exceptions. Read at BUILD time -- _defaults.yml
 # carries cells only, never arch data, so there is exactly one arch source.
@@ -516,7 +528,10 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         "source_tag": combo_source_tag or pkg.get("source_tag", ""),
                         "cuda": cuda,
                         "cuda_short": cuda_short,
-                        "pytorch": pytorch,
+                        # Same minor, possibly a different patch on this
+                        # platform (see _PT_OVERRIDES).
+                        "pytorch": _PT_OVERRIDES.get((cuda, pytorch), {})
+                                   .get(platform, pytorch),
                         "python": python_ver,
                         "platform": platform,
                         # aarch64 resolves from its own policy table, NOT the

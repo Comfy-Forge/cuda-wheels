@@ -99,15 +99,37 @@ def main() -> None:
                       and pmin <= vkey(py)}, key=vkey)
         if not pys:
             continue
-        rows.append({
+        # Per-platform patch anchoring: when the chosen patch shipped ZERO
+        # wheels for a platform but a sibling patch of the same minor did,
+        # anchor that platform to the sibling instead of declaring the
+        # whole line phantom there. Upstream really does this: cu129
+        # Windows exists for 2.9.0 and not 2.9.1 -- the wheel tag promises
+        # the minor (torch2.9), so the farm owes the line wherever ANY
+        # patch shipped it. Partial per-python differences within a
+        # platform stay with the chosen patch (normal upstream raggedness).
+        overrides = {}
+        plat_cells = {"linux": cells, "windows": cells, "linux_aarch64": cells}
+        for pk in ("windows", "linux_aarch64"):
+            if any(pl == pk for _, pl in cells):
+                continue
+            alts = [t for t, cs in by_patch.items()
+                    if any(pl == pk for _, pl in cs)]
+            if alts:
+                alt = max(alts, key=vkey)
+                overrides[pk] = alt
+                plat_cells[pk] = by_patch[alt]
+        row = {
             "cuda": cuda,
             "pytorch": chosen,
             "python_versions": pys,
-        })
+        }
+        for pk, alt in sorted(overrides.items()):
+            row[f"pytorch_{pk}"] = alt
+        rows.append(row)
         for py in pys:
             for plat in dict.fromkeys(platforms + ["linux_aarch64"]):
                 key = plat if plat in ("windows", "linux_aarch64") else "linux"
-                if (py, key) not in cells:
+                if (py, key) not in plat_cells[key]:
                     phantoms.append([cuda.replace(".", ""), minor,
                                      py.replace(".", ""), plat])
 
@@ -131,6 +153,9 @@ def main() -> None:
         block.append(f'  - cuda: "{r["cuda"]}"')
         block.append(f'    pytorch: "{r["pytorch"]}"')
         block.append(f"    python_versions: [{pyl}]")
+        for k in sorted(r):
+            if k.startswith("pytorch_"):
+                block.append(f'    {k}: "{r[k]}"')
     new_text = text[:m.start()] + "\n".join(block) + "\n"
 
     old_rows = yaml.safe_load(text)["combinations"]
