@@ -4,4 +4,8 @@ source_repo: facebookresearch/DRTK
 source_tag: c5a3e523435b4daa37572c0653d6686531c787b2
 version: 0.1.0
 patch_script: packages/drtk/patches/drtk.py
-extra_deps: numpy
+# setuptools pinned below 81: drtk's setup.py imports pkg_resources,
+# which setuptools 81 removed (ModuleNotFoundError at metadata prep on
+# every linux cell, 2026-08-23). ~= spelling because extra_deps expands
+# unquoted in the install shell line ("<81" would redirect).
+extra_deps: numpy setuptools~=80.0
