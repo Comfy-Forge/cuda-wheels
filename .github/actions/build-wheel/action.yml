@@ -922,11 +922,17 @@ runs:
         # cl.exe invocation -- including nvcc's host passes -- and
         # command-line flags still win, so packages that set their own
         # /std: are unaffected.
-        $tv = "${{ inputs.pytorch-version }}".Split(".")
-        if ([int]$tv[0] -eq 2 -and [int]$tv[1] -lt 7) {
-          $env:CL = "/std:c++17 $($env:CL)".Trim()
-          Write-Host "torch < 2.7: CL=$($env:CL)"
-        }
+        # CL is PREPENDED to every cl.exe command line, so anything the
+        # package or torch puts on the command line still wins -- this is a
+        # floor, not an override. Applied unconditionally because MSVC
+        # defaults to C++14 whenever nothing supplies /std:, and which torch
+        # versions emit one is not a clean boundary: torch < 2.7 emits
+        # nothing, and torch 2.8 was ALSO found not to for the PyG packages
+        # (C2429 "nested-namespace-definition requires /std:c++17" on
+        # torch_cluster/scatter/spline_conv cu12.8 Windows, 2026-08-24).
+        # torch >= 2.12 puts /std:c++20 on the command line and overrides it.
+        $env:CL = "/std:c++17 $($env:CL)".Trim()
+        Write-Host "MSVC C++ floor: CL=$($env:CL)"
         # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
         $env:FORCE_CUDA = "1"
         # For cumm/spconv: set CUDA version for prebuilt mode

@@ -16,7 +16,7 @@ extra_deps: pccm>=0.4.16 ccimport>=0.4.4
 # gate judges. Asset selection matches this cell's cuda/python/platform
 # from the release listing (the torch tag varies per CUDA line, so it is
 # matched loosely).
-pre_build_script: bash packages/spconv/pre_build.sh
+pre_build_script: bash "$GITHUB_WORKSPACE/packages/spconv/pre_build.sh"
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/ccimport/pybind11/fire) as runtime deps and pins cumm<0.8.0,
 # which our own farm cumm (0.8.2) does not even satisfy. The sibling pin
