@@ -122,7 +122,14 @@ jobs:
           WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
           # Abi-agnostic wheels (py3-none / cpXY-abi3) satisfy every python
           # cell -- the exists-check must accept them too (grep -E below).
-          WHEEL_PREFIX_RE="^${PKG_NAME}-${PKG_VERSION}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
+          # 27 of 44 packages declare no version and none is discoverable
+          # upstream, so PKG_VERSION is empty for them. Interpolating it
+          # produced "^pkg-\+cu128torch2.8-..." which cannot match a real
+          # "pkg-1.5.3+cu128torch2.8-..." name -- the check silently matched
+          # nothing. Mirror generate_matrix.wheel_exists(), which drops the
+          # version anchor when the version is unknown.
+          if [ -n "$PKG_VERSION" ]; then VER_RE="$PKG_VERSION"; else VER_RE="[0-9][^-]*"; fi
+          WHEEL_PREFIX_RE="^${PKG_NAME}-${VER_RE}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
           echo "wheel_prefix_re=$WHEEL_PREFIX_RE" >> $GITHUB_OUTPUT
 
           echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
@@ -144,7 +151,7 @@ jobs:
             echo "::notice::Overwrite enabled, will rebuild"
           else
             # Require manylinux (auditwheel-repaired) wheels on Linux
-            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep -E "${{ steps.meta.outputs.wheel_prefix_re }}" | grep "manylinux" | head -1 || true)
+            MATCHING=$({ gh release view "$RELEASE" --json assets -q ".assets[].name" 2>/dev/null || true; } | grep -E "${{ steps.meta.outputs.wheel_prefix_re }}" | grep "manylinux" | grep -v "aarch64" | head -1 || true)
             if [ -n "$MATCHING" ]; then
               echo "exists=true" >> $GITHUB_OUTPUT
               echo "::notice::Wheel exists in release: $MATCHING"
@@ -269,7 +276,14 @@ jobs:
           WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
           # Abi-agnostic wheels (py3-none / cpXY-abi3) satisfy every python
           # cell -- the exists-check must accept them too (grep -E below).
-          WHEEL_PREFIX_RE="^${PKG_NAME}-${PKG_VERSION}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
+          # 27 of 44 packages declare no version and none is discoverable
+          # upstream, so PKG_VERSION is empty for them. Interpolating it
+          # produced "^pkg-\+cu128torch2.8-..." which cannot match a real
+          # "pkg-1.5.3+cu128torch2.8-..." name -- the check silently matched
+          # nothing. Mirror generate_matrix.wheel_exists(), which drops the
+          # version anchor when the version is unknown.
+          if [ -n "$PKG_VERSION" ]; then VER_RE="$PKG_VERSION"; else VER_RE="[0-9][^-]*"; fi
+          WHEEL_PREFIX_RE="^${PKG_NAME}-${VER_RE}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
           echo "wheel_prefix_re=$WHEEL_PREFIX_RE" >> $GITHUB_OUTPUT
           echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
 
@@ -600,7 +614,14 @@ jobs:
           WHEEL_PREFIX="${PKG_NAME}-${PKG_VERSION}+cu${CUDA_SHORT}torch${TORCH_SHORT}-cp${PY_SHORT}-cp${PY_SHORT}-"
           # Abi-agnostic wheels (py3-none / cpXY-abi3) satisfy every python
           # cell -- the exists-check must accept them too (grep -E below).
-          WHEEL_PREFIX_RE="^${PKG_NAME}-${PKG_VERSION}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
+          # 27 of 44 packages declare no version and none is discoverable
+          # upstream, so PKG_VERSION is empty for them. Interpolating it
+          # produced "^pkg-\+cu128torch2.8-..." which cannot match a real
+          # "pkg-1.5.3+cu128torch2.8-..." name -- the check silently matched
+          # nothing. Mirror generate_matrix.wheel_exists(), which drops the
+          # version anchor when the version is unknown.
+          if [ -n "$PKG_VERSION" ]; then VER_RE="$PKG_VERSION"; else VER_RE="[0-9][^-]*"; fi
+          WHEEL_PREFIX_RE="^${PKG_NAME}-${VER_RE}\\+cu${CUDA_SHORT}torch${TORCH_SHORT}-(cp${PY_SHORT}-cp${PY_SHORT}|py3-none|cp[0-9]+-abi3)-"
           echo "wheel_prefix_re=$WHEEL_PREFIX_RE" >> $GITHUB_OUTPUT
 
           echo "wheel_prefix=$WHEEL_PREFIX" >> $GITHUB_OUTPUT
@@ -891,6 +912,17 @@ jobs:
 
       - name: Render matrix page from the committed PCWM snapshot
         run: python scripts/fetch_torch_matrix.py --from-json defaults/scraped_torch_matrix.json --html _site/matrix
+
+      # These two were missing here while present in update-index.yml. Since
+      # the deploy uses force_orphan (replaces the branch wholesale), a build
+      # run with update_index=true would have DELETED the live /find/ and
+      # /archs/ pages. Kept in sync until this job is replaced by a
+      # workflow_call into update-index.yml.
+      - name: Build the "Find your wheel" page
+        run: python scripts/generate_findwheel.py --out _site
+
+      - name: Build the GPU architectures page
+        run: python scripts/generate_archs_page.py --out _site
 
       - name: Generate PEP 503 index
         env:

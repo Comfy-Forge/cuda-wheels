@@ -13,6 +13,10 @@ setup.py bundles libcudacxx headers into the wheel for NVRTC.
 bf16 tensor core MMA instructions require sm_80+ (Ampere).
 bf16 Simt uses CUDA cores with f32 accumulation (works on any arch).
 """
+import sys as _sys_pl
+import pathlib as _pl_pl
+_sys_pl.path.insert(0, str(_pl_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require as _require
 import os
 import re
 import shutil
@@ -190,7 +194,12 @@ if simt_match:
     content = content[:insert_pos] + BF16_SIMT_PARAMS + content[insert_pos:]
     print("  - Added bf16 Simt fallback params to SHUFFLE_SIMT_PARAMS")
 else:
-    print("WARNING: Could not find SHUFFLE_SIMT_PARAMS closing bracket")
+    # Previously a warning followed by four unconditional "Added ..." lines,
+    # so a miss looked like success in the log while the wheel shipped
+    # without bf16 Simt fallback params.
+    _require(False,
+             "cumm: SHUFFLE_SIMT_PARAMS closing bracket not found -- the "
+             "wheel would ship without bf16 Simt fallback params")
 
 main_py.write_text(content)
 print("Patched cumm/gemm/main.py with bf16 GEMM params")

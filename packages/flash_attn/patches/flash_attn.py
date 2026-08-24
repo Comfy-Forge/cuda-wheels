@@ -5,6 +5,10 @@
 3. Fix MAX_JOBS auto-detect to account for arch count (upstream assumes 2 archs = 9GB/job,
    but cu128+ has 4 archs = ~18GB/job, causing OOM on 32GB machines).
 """
+import sys as _sys_pl
+import pathlib as _pl_pl
+_sys_pl.path.insert(0, str(_pl_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require as _require
 import subprocess
 from pathlib import Path
 
@@ -48,7 +52,12 @@ if old_func in content:
     content = content.replace(old_func, new_func)
     print("Patched cuda_archs() to read TORCH_CUDA_ARCH_LIST")
 else:
-    print("WARNING: Could not find cuda_archs() function - source may have changed")
+    # A miss leaves upstream's hardcoded ["80","90","100","120"] in place, so
+    # the wheel is built for the WRONG arch set while the build goes green.
+    _require(False,
+             "flash_attn: cuda_archs() not found in setup.py -- the wheel "
+             "would be built for upstream's hardcoded arch list, not the "
+             "farm's policy")
 
 # Fix MAX_JOBS auto-detect: use arch count instead of hardcoded /9
 # Upstream assumes 2 archs (9GB/job). With 4 archs (cu128+), it's ~18GB/job.

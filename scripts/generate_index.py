@@ -207,7 +207,12 @@ def main():
         # channels cuXXX/, matrix/, dashboard/).
         previous = {d.name for d in prev_root.iterdir() if d.is_dir()
                     and d.name not in ("matrix", "dashboard", "v2", "find", "archs")
-                    and not d.name.startswith("cu")
+                    # Combo channels are cu128/, cu13.2/ etc. A prefix test
+                    # also exempted REAL packages whose names start with "cu"
+                    # (cubvh, cumesh, cumesh-vb, cumm, custom-rasterizer-hy3d2)
+                    # -- they could vanish from the index unnoticed under
+                    # force_orphan. Match the channel shape exactly.
+                    and not re.fullmatch(r"cu\d+(\.\d+)?", d.name)
                     and not d.name.startswith(".")}
     else:
         previous = set()

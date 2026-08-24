@@ -19,7 +19,13 @@ if old_parser in content:
     content = content.replace(old_parser, new_parser)
     print("Patched arch parser to handle space-separated TORCH_CUDA_ARCH_LIST")
 else:
-    print("WARNING: Could not find arch parser line - source may have changed")
+    # A miss here is NOT cosmetic: without the rewrite, HAS_SM80/89/90 are
+    # never set from a space-separated TORCH_CUDA_ARCH_LIST, every qattn CUDA
+    # kernel is skipped, and the build still succeeds -- producing a wheel
+    # that raises cudaErrorNoKernelImageForDevice on real hardware.
+    _require(False,
+             "sageattention: arch parser line not found in setup.py -- the "
+             "wheel would ship without its qattn kernels")
 
 # Replace hardcoded GCC CXX_FLAGS with platform-aware version
 old_flags = '    CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]'

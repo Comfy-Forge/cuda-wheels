@@ -9,6 +9,10 @@ Also forces package name to 'spconv' (not 'spconv-cu{version}').
 spconv uses gen_shuffle_params_v2 (imported as gen_shuffle_params) which has
 an extra ds_for_sab parameter compared to cumm's gen_shuffle_params.
 """
+import sys as _sys_pl
+import pathlib as _pl_pl
+_sys_pl.path.insert(0, str(_pl_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require as _require
 import re
 from pathlib import Path
 
@@ -201,7 +205,11 @@ else:
         content = content[:pos-1] + BF16_CONV_PARAMS + content[pos-1:]
         print("  - Inserted bf16 conv params at end of IMPLGEMM_AMPERE_PARAMS (fallback)")
     else:
-        print("WARNING: Could not find IMPLGEMM_AMPERE_PARAMS to insert bf16 conv params")
+        # Same shape as cumm: the four "Added bf16 ..." lines below printed
+        # unconditionally, so a miss read as success.
+        _require(False,
+                 "spconv: IMPLGEMM_AMPERE_PARAMS not found -- the wheel would "
+                 "ship without bf16 conv params")
 
 core_py.write_text(content)
 print("Patched spconv/core.py with bf16 support")
