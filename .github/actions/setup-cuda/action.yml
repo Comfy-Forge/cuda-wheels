@@ -344,7 +344,24 @@ runs:
       shell: bash
       env:
         CUDA_HOME: ${{ inputs.platform == 'windows' && format('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v{0}', inputs.cuda-version) || format('/usr/local/cuda-{0}', inputs.cuda-version) }}
-      run: python "$GITHUB_WORKSPACE/scripts/patch_cuda_toolkit.py"
+      # The manylinux container has no bare `python` (only python3 and the
+      # versioned /opt/python/cpXY interpreters), while Windows runners have
+      # `python`. Pick whichever exists rather than assuming.
+      run: |
+        PY=""
+        for cand in python3 python /usr/libexec/platform-python; do
+          if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+        done
+        if [ -z "$PY" ]; then
+          # manylinux images ship only versioned interpreters under /opt/python
+          PY="$(ls -d /opt/python/cp3*/bin/python 2>/dev/null | head -1)"
+        fi
+        if [ -z "$PY" ]; then
+          echo "::error::no python interpreter found to run patch_cuda_toolkit.py"
+          exit 1
+        fi
+        echo "using $PY"
+        "$PY" "$GITHUB_WORKSPACE/scripts/patch_cuda_toolkit.py"
 
     # Set combined output
     - name: Set cache-hit output
