@@ -579,7 +579,10 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                     if shard_filter not in ("seat", "source"):
                         print(f"ERROR: {pkg_name}: shard_filter must be "
                               f"'seat' or 'source', got {shard_filter!r}")
-                        sys.exit(1)
+                        # the module binds `import sys as _sys0`; plain `sys`
+                        # was a NameError, so the one existing key-value check
+                        # crashed instead of failing cleanly.
+                        _sys0.exit(1)
                     if sharding > 0:
                         for shard_index in range(1, sharding + 1):
                             entry = dict(base_entry)
