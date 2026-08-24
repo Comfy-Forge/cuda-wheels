@@ -344,20 +344,27 @@ runs:
       shell: bash
       env:
         CUDA_HOME: ${{ inputs.platform == 'windows' && format('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v{0}', inputs.cuda-version) || format('/usr/local/cuda-{0}', inputs.cuda-version) }}
-      # The manylinux container has no bare `python` (only python3 and the
-      # versioned /opt/python/cpXY interpreters), while Windows runners have
-      # `python`. Pick whichever exists rather than assuming.
+      # Runs BEFORE setup-build-env, so no interpreter is guaranteed -- on
+      # Windows in particular this step precedes any Setup Python. Decide with
+      # grep whether the toolkit actually carries a known-bad header, and only
+      # insist on an interpreter when there is real work to do. Failing every
+      # Windows job to enforce a fix that is a no-op on that toolkit was the
+      # wrong trade (introduced 84385b3, hit the whole 2026-08-24 restart).
       run: |
+        CLC="$CUDA_HOME/include/cuda/__ptx/instructions/generated/clusterlaunchcontrol.h"
+        if ! grep -q "reinterpret_cast<long2\*>" "$CLC" 2>/dev/null; then
+          echo "patch_cuda_toolkit: no known-bad headers in this toolkit -- skipping"
+          exit 0
+        fi
         PY=""
-        for cand in python3 python /usr/libexec/platform-python; do
+        for cand in python3 python py; do
           if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
         done
         if [ -z "$PY" ]; then
-          # manylinux images ship only versioned interpreters under /opt/python
           PY="$(ls -d /opt/python/cp3*/bin/python 2>/dev/null | head -1)"
         fi
         if [ -z "$PY" ]; then
-          echo "::error::no python interpreter found to run patch_cuda_toolkit.py"
+          echo "::error::this toolkit needs the clusterlaunchcontrol fix but no python interpreter was found to apply it"
           exit 1
         fi
         echo "using $PY"
