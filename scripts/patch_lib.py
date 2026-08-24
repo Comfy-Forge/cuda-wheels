@@ -71,15 +71,43 @@ _STD_XCOMPILER_PAIR = re.compile(
 )
 
 
-def strip_std_flags(text: str) -> tuple[str, int]:
-    """Remove hardcoded C++-standard flags from Python list literals.
+# A whole statement whose only argument is a standard flag, e.g.
+#     nvcc_args.append("-std=c++17")
+# Deleting just the literal would leave `nvcc_args.append()`, which raises
+# TypeError at setup.py import time -- it silently destroyed every non-Windows
+# pytorch3d cell (2026-08-24). Remove the entire statement instead.
+_STD_APPEND_STMT = re.compile(
+    r"^[ \t]*[A-Za-z_][\w.]*\.append\(\s*(['\"])(?:-Xcompiler[= ])?"
+    r"[-/]std[:=]c\+\+\d+\1\s*\)[ \t]*\r?\n",
+    re.M,
+)
 
-    Returns (new_text, count). Removing a middle element consumes its trailing
-    comma; removing the last leaves a harmless trailing comma.
+
+def strip_std_flags(text: str) -> tuple[str, int]:
+    """Remove hardcoded C++-standard flags.
+
+    Handles list elements (`["-O3", "-std=c++17"]`), -Xcompiler pairs, and
+    whole `x.append("-std=c++17")` statements. Never leaves a syntactically
+    broken call behind: an empty `append()` that was not already present is a
+    hard error rather than a silently poisoned setup.py.
     """
+    empty_before = len(re.findall(r"\.append\(\s*\)", text))
+    # Replace with `pass`, not nothing: the statement may be the only
+    # one in an `if` block (pytorch3d guards its append with
+    # `if os.name != "nt":`), and deleting it would leave an empty
+    # block -> IndentationError.
+    text, n0 = _STD_APPEND_STMT.subn(
+        lambda m: re.match(r"[ \t]*", m.group(0)).group(0) + "pass\n", text)
     text, n1 = _STD_XCOMPILER_PAIR.subn("", text)
     text, n2 = _STD_LITERAL.subn("", text)
-    return text, n1 + n2
+    empty_after = len(re.findall(r"\.append\(\s*\)", text))
+    if empty_after > empty_before:
+        raise SystemExit(
+            "PATCH FAILED: stripping the C++-standard flag would leave an "
+            "empty .append() call -- the source uses a form this helper does "
+            "not recognise. Fix patch_lib.strip_std_flags rather than "
+            "shipping a setup.py that cannot import.")
+    return text, n0 + n1 + n2
 
 
 def strip_std_flags_in_file(path: str | Path, label: str = "") -> int:

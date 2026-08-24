@@ -21,3 +21,12 @@ arch_list_by_cuda:
 # the default aarch64 policy row):
 arch_list_by_cuda_aarch64:
   '12.8': 8.0 9.0 12.0+PTX
+  # Same kernel gap on every newer ARM line: the default aarch64 policy rows
+  # carry 10.0 (and 11.0 on 13.x), which SageAttention 2.2 cannot emit, so the
+  # arch_sass gate rejected all 67 cu12.9/13.0/13.2 ARM wheels ("missing arch
+  # families sm_[10]"). cuobjdump proves the built wheels contain 80/90/120
+  # only, so this drops NO real coverage -- it aligns the expectation with
+  # what the source can produce (2026-08-24).
+  '12.9': 8.0 9.0 12.0+PTX
+  '13.0': 8.0 9.0 12.0+PTX
+  '13.2': 8.0 9.0 12.0+PTX

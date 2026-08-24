@@ -26,9 +26,9 @@ old_flags = '    CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "
 
 new_flags = """    import platform
     if platform.system() == "Windows":
-        CXX_FLAGS = ["/O2", "/Zi", "/openmp", "/std:c++17", "-DENABLE_BF16"]
+        CXX_FLAGS = ["/O2", "/Zi", "/openmp", "-DENABLE_BF16"]
     else:
-        CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]"""
+        CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-DENABLE_BF16"]"""
 
 if old_flags in content:
     content = content.replace(old_flags, new_flags)
@@ -73,3 +73,27 @@ else:
     print("WARNING: Could not find _qattn_sm90 compile_args - source may have changed")
 
 setup_file.write_text(content)
+
+
+# ── Let torch pick the C++ standard (review board 2026-08-24) ───────────
+# The block above used to inject /std:c++17 on Windows, which overrides
+# torch's own choice (cpp_extension only appends a standard when the caller
+# supplied none) and broke every torch >= 2.13 Windows cell: C7555 designated
+# initializers in c10/util/StringUtil.h, C7582 bit-field NSDMIs in
+# c10/core/AutogradState.h. Upstream setup.py also puts -std=c++17 in
+# NVCC_FLAGS; strip that too. Windows torch < 2.7 still gets /std:c++17 from
+# the CL env var (93e770d).
+import sys as _sys
+import pathlib as _pl
+_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require as _require, strip_std_flags as _strip
+
+_sp = Path("setup.py")
+_t = _sp.read_text()
+_t, _n = _strip(_t)
+_require(_n > 0,
+         "sageattention: no hardcoded C++-standard flag found in setup.py -- "
+         "upstream changed; refusing to build against an unverified flag set")
+_sp.write_text(_t)
+print(f"sageattention patch: dropped {_n} hardcoded std flag(s); "
+      f"torch's cpp_extension now selects the standard")
