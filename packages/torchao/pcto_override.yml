@@ -1,11 +1,12 @@
 # Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
 # for this package only.
-# 0.18.0's facade imports ScalingType from torch.nn.functional, which
-# exists only from torch 2.9 -- the 2.8-and-older cells cannot import.
-# 2.11: the farm ships torch 2.8 (x86) and 2.11 (ARM); torchao 0.18 can't
-# import below 2.9 anyway, and aligning the floor to the shipped ARM torch
-# keeps its only live cells honest (owner call 2026-08-22).
-min_pytorch: "2.11.0"
+# 0.18.0's facade imports ScalingType from torch.nn.functional. Verified
+# against upstream tags 2026-08-24: ABSENT in v2.9.1, present from v2.10.0 --
+# so the true import floor is 2.10.0, not the 2.9 the old comment claimed and
+# not the 2.11 it rounded up to. Lowering it recovers ~40 cells (the torch
+# 2.10 rows on cu12.6/12.8/12.9/13.0, both platforms) at no risk, per the
+# owner's standing rule against dropping combinations without cause.
+min_pytorch: "2.10.0"
 # No Windows: upstream setup.py gates every CUTLASS kernel (all the CUDA
 # sources that survive its own Windows source filters) behind
 # `use_cuda and not IS_WINDOWS` -- there is no cutlass include path on
