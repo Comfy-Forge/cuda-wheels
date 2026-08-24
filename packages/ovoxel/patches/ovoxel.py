@@ -104,17 +104,31 @@ print("Fixed size_t narrowing in svo.cpp")
 # Fix 4: Replace GCC-only CXX_FLAGS with MSVC equivalents on Windows
 setup_file = Path("o-voxel/setup.py")
 content = setup_file.read_text()
-old_cxx = """            extra_compile_args={
-                "cxx": ["-O3", "-std=c++17"],
-                "nvcc": ["-O3","-std=c++17"] + cc_flag,
-            }"""
-new_cxx = """            extra_compile_args={
-                "cxx": ["/O2", "/std:c++17"] if os.name == "nt" else ["-O3", "-std=c++17"],
-                "nvcc": ["-O3", "-std=c++17"] + cc_flag,
-            }"""
-if old_cxx in content:
-    content = content.replace(old_cxx, new_cxx)
-    setup_file.write_text(content)
-    print("Patched setup.py CXX_FLAGS for MSVC compatibility")
-else:
-    print("WARNING: Could not find CXX_FLAGS block in setup.py - source may have changed")
+# Let torch pick the C++ standard, and speak MSVC on Windows.
+# (Review board 2026-08-24.) The old exact-string rewrite pinned /std:c++17,
+# which OVERRIDES torch's own choice: cpp_extension only appends a standard
+# when the caller supplied none, so pinning c++17 broke every torch >= 2.13
+# cell (its headers need C++20: C7555 designated initializers, C7582
+# bit-field NSDMIs). On the vb fork the string never matched at all and the
+# patch silently no-opped, leaving GCC flags for cl.exe. Both failure modes
+# disappear once we stop having an opinion about the standard.
+import os as _os
+import sys as _sys
+import pathlib as _pl
+_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import strip_std_flags, translate_cxx_flags_for_msvc, require
+
+content, _n_std = strip_std_flags(content)
+_n_msvc = 0
+if _os.name == "nt":
+    content, _n_msvc = translate_cxx_flags_for_msvc(content)
+    require(_n_msvc > 0,
+            "no GCC cxx flags translated for MSVC in setup.py -- the "
+            "extra_compile_args block moved; refusing to build with flags "
+            "cl.exe would silently ignore")
+require(_n_std > 0,
+        "no hardcoded C++-standard flag found in setup.py -- upstream "
+        "changed; refusing to build against an unverified flag set")
+setup_file.write_text(content)
+print(f"Patched setup.py: dropped {_n_std} hardcoded std flag(s), "
+      f"translated {_n_msvc} flag(s) for MSVC")

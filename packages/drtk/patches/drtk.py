@@ -68,10 +68,28 @@ print(f"Patched {patched_cu} .cu files: #undef half/bfloat16 operator macros")
 # torch 2.13 headers use C++20 features; MSVC and nvcc hard-error below it.
 # Linux pins c++17; the win32 cxx block passes NO /std at all (cl defaults
 # too old). nvcc already gets -std=c++20 upstream.
-content = setup_file.read_text()
-c2 = content.replace('"-std=c++17"', '"-std=c++20"')
-if '"/std:c++20"' not in c2:
-    c2 = c2.replace('"/EHsc"', '"/EHsc", "/std:c++20"', 1)
-if c2 != content:
-    setup_file.write_text(c2)
-    print("drtk patch: C++20 std for linux cxx + win32 cxx")
+# GATED (review board 2026-08-24): this block used to run unconditionally
+# and silently UNDID the deliberate c++20 -> c++17 downgrade a few lines
+# above, so Windows torch <= 2.6 cells got C++20 anyway -- cu12.4 then died
+# with "You need C++17 to compile PyTorch" (nvcc drops the unsupported flag
+# under MSVC 14.29 and cl falls back to C++14) and cu12.6 with the torch 2.6
+# ivalue_inl.h misparse. torch >= 2.7's headers are C++20-clean, so that is
+# the correct threshold -- NOT 2.13, which would downgrade the currently
+# green 2.7-2.12 cells into a mixed-standard build.
+import os as _os
+import sys as _sys
+import pathlib as _pl
+_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import torch_mm as _torch_mm
+
+if _torch_mm() >= (2, 7):
+    content = setup_file.read_text()
+    c2 = content.replace('"-std=c++17"', '"-std=c++20"')
+    if '"/std:c++20"' not in c2:
+        c2 = c2.replace('"/EHsc"', '"/EHsc", "/std:c++20"', 1)
+    if c2 != content:
+        setup_file.write_text(c2)
+        print("drtk patch: C++20 std for linux cxx + win32 cxx (torch >= 2.7)")
+else:
+    print(f"drtk patch: keeping c++17 "
+          f"(torch {_os.environ.get('CUW_TORCH_VERSION', '?')} < 2.7)")

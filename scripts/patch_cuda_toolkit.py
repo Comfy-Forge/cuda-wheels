@@ -55,10 +55,13 @@ def main() -> int:
         try:
             note = fix(cuda_home)
         except OSError as exc:
-            # A read-only or partially installed toolkit must not fail the
-            # build here: the compile itself is the real gate.
-            print(f"patch_cuda_toolkit: {fix.__name__} could not apply: {exc}")
-            continue
+            # FAIL LOUD (review board 2026-08-24): swallowing this used to
+            # leave the known-bad header in place and the cell failed later
+            # with a confusing compiler error. If a fix matched but could not
+            # be written, that is a broken environment, not a soft warning.
+            print(f"::error::patch_cuda_toolkit: {fix.__name__} matched but "
+                  f"could not be applied: {exc}")
+            return 1
         if note:
             print(f"patch_cuda_toolkit: {note}")
             applied += 1

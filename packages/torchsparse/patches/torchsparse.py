@@ -71,6 +71,31 @@ if _os.name == "nt":
             "#define STL_NAMESPACE std\n"
             "#define _START_GOOGLE_NAMESPACE_ namespace google {\n"
             "#define _END_GOOGLE_NAMESPACE_ }\n")
+        # SPARSEHASH_COMPILE_ASSERT uses a GCC-ism:
+        #   __attribute__((unused)) typedef SparsehashCompileAssert<...> msg[...]
+        # inside the *template* read_bigendian_number. MSVC never parsed it
+        # while the build was C++17, but torch >= 2.12 raises the Windows
+        # standard to /std:c++20, which implies /permissive- and therefore
+        # two-phase lookup -- MSVC then parses uninstantiated template bodies
+        # and rejects the attribute (C2065 'unused', C3878). Rewrite the macro
+        # to a plain static_assert. Do NOT `#define __attribute__(x)` instead:
+        # that erases a keyword for every TU that reaches this header.
+        # (Review board 2026-08-24.)
+        _hc = _dst / "sparsehash" / "internal" / "hashtable-common.h"
+        if _hc.exists():
+            _h = _hc.read_text()
+            import re as _re_hc
+            _h2, _n_ca = _re_hc.subn(
+                r"#define SPARSEHASH_COMPILE_ASSERT\(expr, msg\)(?:[^\n]*\\\n)*[^\n]*",
+                "#define SPARSEHASH_COMPILE_ASSERT(expr, msg) "
+                "static_assert(bool(expr), #msg)",
+                _h)
+            if _n_ca:
+                _hc.write_text(_h2)
+                print(f"sparsehash: SPARSEHASH_COMPILE_ASSERT -> static_assert "
+                      f"({_n_ca} definition)")
+            else:
+                print("sparsehash: COMPILE_ASSERT macro not found (already fixed?)")
         _sh.rmtree("_sparsehash_src")
         _P("_sparsehash.tar.gz").unlink()
         print("vendored sparsehash 2.0.4 into third_party/sparsehash")

@@ -60,6 +60,10 @@ DEVICE_ERROR_PATTERNS = (
     r"CUDA driver initialization failed",
     r"CUDA_ERROR_STUB_LIBRARY",
     r"CUDA unknown error",
+    # triton 3.2/3.3 initialise their driver eagerly at import and raise this
+    # on a GPU-less runner; triton >= 3.4 made it lazy. Purely a CI artifact
+    # -- the wheel is fine on a real GPU (review board 2026-08-24).
+    r"0 active drivers",
 )
 GLIBC_CEILING = (2, 28)
 TORCH_NEEDED_RE = re.compile(r"^(libtorch|libc10|libcaffe2_nvrtc)")

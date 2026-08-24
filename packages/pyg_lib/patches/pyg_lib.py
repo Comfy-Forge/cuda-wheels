@@ -120,3 +120,41 @@ if torch_config_changed:
     print(f"Patched {torch_config}: dropped legacy LIBNVTOOLSEXT / NVTOOLEXT_HOME refs")
 else:
     print(f"No legacy nvToolsExt refs in {torch_config} (torch>=2.7?), skipping.")
+
+
+# ── C++20 for torch >= 2.13 (review board 2026-08-24) ───────────────────
+# pyg-lib is a CMake build: CMakeLists.txt hardcodes `set(CMAKE_CXX_STANDARD
+# 17)` and sets no CUDA standard, so torch's cpp_extension cannot choose for
+# it. torch 2.13's headers are C++20-only on MSVC (C7555 designated
+# initializers in c10/util/StringUtil.h, C7582 bit-field NSDMIs in
+# c10/core/AutogradState.h); GCC accepts both as extensions, which is why
+# only Windows failed. Both standards must move: bumping CXX alone still
+# leaves the .cu translation unit (cuda/hash_map.cu) failing in the nvcc
+# frontend with "data member initializer is not allowed".
+import os as _os
+import sys as _sys
+import pathlib as _pl
+
+_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require as _require, torch_mm as _torch_mm
+
+if _torch_mm() >= (2, 13):
+    _cml = _pl.Path("CMakeLists.txt")
+    _require(_cml.exists(), "pyg_lib: CMakeLists.txt not found at source root")
+    _c = _cml.read_text()
+    _c2 = _c.replace("set(CMAKE_CXX_STANDARD 17)", "set(CMAKE_CXX_STANDARD 20)")
+    _require(_c2 != _c,
+             "pyg_lib: 'set(CMAKE_CXX_STANDARD 17)' not found in CMakeLists.txt "
+             "-- upstream changed; torch 2.13 cells would fail to compile")
+    if "CMAKE_CUDA_STANDARD" not in _c2:
+        _c2 = _c2.replace(
+            "set(CMAKE_CXX_STANDARD 20)",
+            "set(CMAKE_CXX_STANDARD 20)\n"
+            "set(CMAKE_CUDA_STANDARD 20)\n"
+            "set(CMAKE_CUDA_STANDARD_REQUIRED ON)", 1)
+    _cml.write_text(_c2)
+    print("pyg_lib patch: CMAKE_CXX_STANDARD/CMAKE_CUDA_STANDARD -> 20 "
+          "(torch >= 2.13)")
+else:
+    print(f"pyg_lib patch: keeping CMAKE_CXX_STANDARD 17 "
+          f"(torch {_os.environ.get('CUW_TORCH_VERSION', '?')} < 2.13)")

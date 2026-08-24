@@ -77,3 +77,39 @@ else:
             f"may have restructured the layout — try a different tag."
         )
     print(f"gsplat_maskgaussian: GLM ready at {TARGET}")
+
+# ── Farm build-matrix fixes (review board 2026-08-24) ───────────────────
+# Shared with vanilla gsplat: same upstream, same two problems.
+#  1. setup.py appends "-std=c++17" to nvcc_flags AFTER torch's own -std and
+#     nvcc honours the last one, so torch >= 2.13's C++20-only headers were
+#     compiled as C++17 and failed. Drop the flag; torch chooses.
+#  2. cg::labeled_partition needs sm_70+. This package used to carry an
+#     arch_override.yml that simply DROPPED sm_50/sm_60 from cu12.4/12.6.
+#     That silently narrowed which GPUs the published wheels support, so the
+#     override is retired and the fast path is guarded instead.
+#  3. GCC-only -O3 in the cxx list is ignored by cl.exe (D9002) -- translate.
+import glob as _glob
+import os as _os
+import sys as _sys
+import pathlib as _pl
+
+_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import (guard_labeled_partition_in_files, require,
+                       strip_std_flags, translate_cxx_flags_for_msvc)
+
+_text = setup_py.read_text()
+if _os.name == "nt":
+    _text, _n_msvc = translate_cxx_flags_for_msvc(_text)
+    if _n_msvc:
+        print(f"gsplat_maskgaussian: translated {_n_msvc} cxx flag(s) for MSVC")
+_text, _n_std = strip_std_flags(_text)
+require(_n_std > 0,
+        "no hardcoded -std flag in gsplat_maskgaussian setup.py -- "
+        "upstream changed; refusing to build against an unverified flag set")
+setup_py.write_text(_text)
+print(f"gsplat_maskgaussian: dropped {_n_std} hardcoded std flag(s)")
+
+_n_lp = guard_labeled_partition_in_files(
+    sorted(_glob.glob(str(BUILD_SUBDIR / "gsplat/cuda/csrc/*.cu"))),
+    required=True)
+print(f"gsplat_maskgaussian: guarded {_n_lp} labeled_partition site(s) for sm<70")
