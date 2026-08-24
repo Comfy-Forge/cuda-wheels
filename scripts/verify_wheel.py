@@ -841,10 +841,19 @@ def main():
     # cross-check the arch list against the resolver (warn-only drift alarm)
     if args.arch_list and is_linux:
         try:
-            resolved = _GM.resolve_arch_list(
-                pkg, args.cuda, pytorch_version=args.torch,
-                default_arch_list=_GM.policy_arch_list(args.cuda, args.torch,
-                                                       platform=args.platform))
+            # The ARM lane has its own resolver and its own override fields;
+            # calling the x86 one made this alarm fire on EVERY aarch64 job
+            # ("--arch-list '8.0 9.0 12.0+PTX' differs from resolver output
+            # '8.0 8.6 8.9 9.0 12.0+PTX'"), so the one cross-check meant to
+            # catch real matrix/action drift was permanent noise on ARM.
+            if args.platform == "linux_aarch64":
+                resolved = _GM.resolve_aarch64_arch_list(
+                    pkg, args.cuda, args.torch)
+            else:
+                resolved = _GM.resolve_arch_list(
+                    pkg, args.cuda, pytorch_version=args.torch,
+                    default_arch_list=_GM.policy_arch_list(
+                        args.cuda, args.torch, platform=args.platform))
             if arch_list_to_sm(resolved) != arch_list_to_sm(args.arch_list):
                 annotate("warning",
                          f"--arch-list {args.arch_list!r} differs from resolver "

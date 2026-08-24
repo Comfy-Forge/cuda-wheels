@@ -328,8 +328,20 @@ def extract_archs(wheel_path: str) -> dict:
                             if 50 <= sm <= 130:
                                 sass.add(f"sm_{sm}")
                     pos = idx + 1
-                for m in re.findall(rb"\.target\s+sm_(\d+)", data):
-                    sm = int(m.decode())
+                # A bare `.target sm_NN` match is NOT proof of a PTX image:
+                # the same string lives in a cubin's DWARF string table, so
+                # this reported PTX for wheels that provably have none
+                # (sageattn3: cuobjdump --list-ptx says "No PTX file found to
+                # extract", the byte scan claimed sm_100a/sm_120a). Require
+                # the surrounding PTX header framing -- a real module carries
+                # `.version X.Y` before and `.address_size NN` after -- so the
+                # fallback stops inventing forward-compat coverage that is not
+                # there. Windows wheels take this path exclusively (cuobjdump
+                # cannot read PE .pyd), so the false positives were farm-wide.
+                for m in re.finditer(
+                        rb"\.version\s+[\d.]+\s+\.target\s+sm_(\d+)a?"
+                        rb"\s+\.address_size\s+\d+", data):
+                    sm = int(m.group(1).decode())
                     if 50 <= sm <= 130:
                         ptx.add(f"sm_{sm}")
                 for m in re.finditer(rb"THRUST_\d+_([\d_]+)_NS", data):

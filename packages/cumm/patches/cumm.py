@@ -258,6 +258,37 @@ else:
 # On Windows (no system CUDA, no triton), the function raises ValueError.
 # Add a fallback that uses the bundled libcudacxx_include dir which now
 # also contains CUDA runtime headers (cuda.h, cuda_fp16.h, etc.).
+# ── Restore Blackwell to cumm's accepted arch table ─────────────────────
+# cumm 0.7.11's get_cuda_arch_flags() whitelists arches up to 9.0 and raises
+# ValueError("Unknown CUDA arch") on anything else; 0.8.2 added "10.0" and
+# "12.0" and nothing else in that function changed. The farm pins 0.7.11
+# because 0.8.2's GEMM headers are uncompilable by spconv's harness -- but
+# that pin silently cost spconv its Blackwell SASS: the legacy farm (built on
+# 0.8.2) shipped sm_100 + sm_120 cubins and today's wheels ship none, so
+# spconv's arch_override was trimmed to fit and the trim was documented as
+# "inert for wheel content", which it is not.
+# Adding the two tokens back is the source-level fix -- coverage restored
+# without moving the pin. 11.0 (Thor) is added too: neither cumm version has
+# it, so the ARM cu13.x lane could never reach Thor.
+_arch_py = Path("cumm/common.py")
+_arch_t = _arch_py.read_text()
+_old_arches = """    supported_arches = [
+        '3.5', '3.7', '5.0', '5.2', '6.0', '6.1', '7.0', '7.2', '7.5', '8.0',
+        '8.6', '8.9', '9.0'
+    ]"""
+_new_arches = """    supported_arches = [
+        '3.5', '3.7', '5.0', '5.2', '6.0', '6.1', '7.0', '7.2', '7.5', '8.0',
+        '8.6', '8.9', '9.0', '10.0', '11.0', '12.0'
+    ]"""
+if _old_arches in _arch_t:
+    _arch_py.write_text(_arch_t.replace(_old_arches, _new_arches, 1))
+    print("Patched cumm/common.py: supported_arches += 10.0, 11.0, 12.0 "
+          "(Blackwell/Thor; matches cumm 0.8.2's table)")
+else:
+    _require("'10.0', '11.0', '12.0'" in _arch_t,
+             "cumm: supported_arches block not found in cumm/common.py -- "
+             "downstream spconv would silently lose Blackwell SASS again")
+
 _common_py = Path("cumm/common.py")
 _common_content = _common_py.read_text()
 _old_raise = '''    raise ValueError("can't find cudart include for nvrtc, you must either install cuda to your system "

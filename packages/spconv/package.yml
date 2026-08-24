@@ -33,11 +33,15 @@ verify:
   # registrations ("ExternalAllocator ... already defined") and poisons
   # the sibling phases. The facade imports are the assert.
   no_direct_import: ["*core_cc*"]
-  skip_arch: >-
-    runtime-JIT package: kernels are compiled at import/run time via the
-    vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
-    CUMM_DISABLE_JIT=1 -- true of every wheel the farm has ever shipped
-    (verified against legacy releases). See README.
+  # skip_arch REMOVED 2026-08-24: every clause of its justification was false.
+  # cuobjdump on the published aarch64 wheel finds 478 sm_80 + 478 sm_90 AOT
+  # cubins (plus 221 empty 872-byte sm_52 artifacts of nvcc's default-arch
+  # pass, which is what an earlier reviewer mistook for "no real SASS").
+  # There is no libnvrtc in any spconv wheel -- that is cumm's, and only on
+  # Linux. CUMM_DISABLE_JIT only suppresses cumm's editable-install rebuild
+  # and has nothing to do with AOT baking. The knob was hiding C7, whose job
+  # is exactly to notice that these wheels no longer carry the Blackwell SASS
+  # the legacy farm shipped.
 # Sharding via the nvcc-seat wrapper on the lanes it covers. Windows
 # stays unsharded (the CUDAExtension filter never fires for a pccm
 # build -- proven 2026-08-21: 6 shards each compiled the full source).

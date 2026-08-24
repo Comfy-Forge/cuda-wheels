@@ -1,10 +1,36 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-# cumm 0.7.11 (the build-time codegen stack upstream spconv 2.3.8 pins)
-# validates TORCH_CUDA_ARCH_LIST against a table that ends at 9.0 --
-# Blackwell tokens (10.0/12.0) crash setup with "Unknown CUDA arch".
-# The list only needs to PARSE: spconv bakes no AOT SASS at all
-# (runtime NVRTC JIT; verify.skip_arch documents this), so trimming to
-# cumm-known archs changes nothing about the shipped wheel.
-arch_list: "7.5;8.0;8.6;8.9;9.0+PTX"
-arch_list_aarch64: "8.0;9.0+PTX"
+#
+# CORRECTED 2026-08-24. This file previously trimmed the arch list to
+# "7.5;8.0;8.6;8.9;9.0+PTX" / "8.0;9.0+PTX" on the grounds that cumm 0.7.11
+# rejects Blackwell tokens and that "spconv bakes no AOT SASS at all ...
+# trimming changes nothing about the shipped wheel". Both halves were wrong:
+# cuobjdump finds 478 sm_80 + 478 sm_90 real cubins per wheel, and the
+# legacy farm -- which built against cumm 0.8.2 -- shipped sm_100 and sm_120
+# as well. So the trim was a silent Blackwell coverage regression, not a
+# no-op.
+#
+# The parse limitation was real but is now fixed at the source:
+# packages/cumm/patches/cumm.py restores '10.0'/'11.0'/'12.0' to cumm's
+# supported_arches (exactly what 0.8.2 carries), so the 0.7.11 pin -- which
+# exists because 0.8.2's GEMM headers are uncompilable by spconv's harness --
+# no longer costs coverage.
+#
+# ORDERING: spconv installs the farm's own cumm WHEEL at build time (see the
+# release-asset picker in pre_build.sh), so cumm must be rebuilt and
+# republished with the patched table BEFORE spconv can use these rows.
+# Until then a spconv build fails loudly with "Unknown CUDA arch (10.0)",
+# which is the correct failure -- never re-trim this file to make it green.
+arch_list_by_cuda:
+  "12.4": "7.5;8.0;8.6;8.9;9.0+PTX"
+  "12.6": "7.5;8.0;8.6;8.9;9.0+PTX"
+  "12.8": "7.5;8.0;8.6;9.0;10.0;12.0+PTX"
+  "12.9": "7.5;8.0;8.6;9.0;10.0;12.0+PTX"
+  "13.0": "7.5;8.0;8.6;9.0;10.0;12.0+PTX"
+  "13.2": "7.5;8.0;8.6;9.0;10.0;12.0+PTX"
+arch_list_by_cuda_aarch64:
+  "12.6": "8.0;9.0+PTX"
+  "12.8": "8.0;9.0;10.0;12.0+PTX"
+  "12.9": "8.0;9.0;10.0;12.0+PTX"
+  "13.0": "8.0;9.0;10.0;11.0;12.0+PTX"
+  "13.2": "8.0;9.0;10.0;11.0;12.0+PTX"
