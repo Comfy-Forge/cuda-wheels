@@ -155,6 +155,37 @@ if _torch_mm() >= (2, 13):
     _cml.write_text(_c2)
     print("pyg_lib patch: CMAKE_CXX_STANDARD/CMAKE_CUDA_STANDARD -> 20 "
           "(torch >= 2.13)")
+
+    # Bumping the CUDA standard to 20 is required (hash_map.cu needs it), but
+    # it makes nvcc emit a diagnostic it stays quiet about at C++17: the
+    # vendored CUTLASS pinned by pyg-lib 0.5.0 marks
+    # CudaHostAdapter::memsetDevice as CUTLASS_HOST_DEVICE while its only body
+    # calls the host-only pure-virtual memsetDeviceImpl. torch's cmake injects
+    # --Werror cross-execution-space-call, so it is fatal:
+    #   cuda_host_adapter.hpp(398): error: calling a __host__ function
+    #   ("memsetDeviceImpl") from a __host__ __device__ function
+    #   ("memsetDevice") is not allowed
+    # The function was never callable from device code anyway, so mark it
+    # host-only. Preferred over stripping torch's --Werror, which would
+    # disable a whole nvcc error class build-wide.
+    _cha = _pl.Path("third_party/cutlass/include/cutlass/cuda_host_adapter.hpp")
+    if _cha.exists():
+        _h = _cha.read_text()
+        _needle = "  CUTLASS_HOST_DEVICE\n  Status memsetDevice("
+        if _needle in _h:
+            _cha.write_text(_h.replace(
+                _needle, "  CUTLASS_HOST\n  Status memsetDevice(", 1))
+            print("pyg_lib patch: cutlass memsetDevice -> CUTLASS_HOST "
+                  "(cross-execution-space-call under -std=c++20)")
+        else:
+            _require("CUTLASS_HOST\n  Status memsetDevice(" in _h,
+                     "pyg_lib: cutlass cuda_host_adapter.hpp no longer has the "
+                     "expected memsetDevice declaration -- the submodule pin "
+                     "moved; torch 2.13 Windows cells will fail")
+    else:
+        _require(False,
+                 "pyg_lib: third_party/cutlass not on disk -- clone_recursive "
+                 "should have fetched it")
 else:
     print(f"pyg_lib patch: keeping CMAKE_CXX_STANDARD 17 "
           f"(torch {_os.environ.get('CUW_TORCH_VERSION', '?')} < 2.13)")
