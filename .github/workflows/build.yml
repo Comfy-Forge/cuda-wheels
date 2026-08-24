@@ -359,7 +359,14 @@ jobs:
     # generate-matrix is in needs because we reference its `matrix` output;
     # GH Actions only exposes outputs from direct needs.
     needs: [generate-matrix, build-linux]
-    if: ${{ needs.build-linux.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_link.include[0] != null }}
+    # always(): without it GitHub applies the implicit "all needs
+    # succeeded" rule, so ONE failed shard out of 60 marks the whole
+    # build matrix job failed, every link job is skipped, and the run
+    # publishes ZERO wheels for that CUDA line (llama cu12.6 lost 6
+    # cells to a single container-setup flake, 2026-08-24). The link
+    # job already asserts its shard artifacts are present, so a
+    # genuinely broken cell still fails loudly on its own.
+    if: ${{ always() && needs.build-linux.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_link.include[0] != null }}
     runs-on: ubuntu-latest
     container:
       image: quay.io/pypa/manylinux_2_28_x86_64
@@ -452,7 +459,14 @@ jobs:
     # generate-matrix is in needs because we reference its `matrix` output;
     # GH Actions only exposes outputs from direct needs.
     needs: [generate-matrix, build-linux-aarch64]
-    if: ${{ needs.build-linux-aarch64.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64_link.include[0] != null }}
+    # always(): without it GitHub applies the implicit "all needs
+    # succeeded" rule, so ONE failed shard out of 60 marks the whole
+    # build matrix job failed, every link job is skipped, and the run
+    # publishes ZERO wheels for that CUDA line (llama cu12.6 lost 6
+    # cells to a single container-setup flake, 2026-08-24). The link
+    # job already asserts its shard artifacts are present, so a
+    # genuinely broken cell still fails loudly on its own.
+    if: ${{ always() && needs.build-linux-aarch64.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64_link.include[0] != null }}
     runs-on: ubuntu-24.04-arm
     container:
       image: quay.io/pypa/manylinux_2_28_aarch64
@@ -681,7 +695,14 @@ jobs:
     name: Link ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }} (Windows)
     # Mirror of link-linux for sharded Windows packages.
     needs: [generate-matrix, build-windows]
-    if: ${{ needs.build-windows.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).windows_link.include[0] != null }}
+    # always(): without it GitHub applies the implicit "all needs
+    # succeeded" rule, so ONE failed shard out of 60 marks the whole
+    # build matrix job failed, every link job is skipped, and the run
+    # publishes ZERO wheels for that CUDA line (llama cu12.6 lost 6
+    # cells to a single container-setup flake, 2026-08-24). The link
+    # job already asserts its shard artifacts are present, so a
+    # genuinely broken cell still fails loudly on its own.
+    if: ${{ always() && needs.build-windows.result != 'cancelled' && fromJson(needs.generate-matrix.outputs.matrix).windows_link.include[0] != null }}
     runs-on: windows-2022
     strategy:
       fail-fast: false

@@ -38,9 +38,33 @@ def load_arch_policy() -> dict:
     return yaml.safe_load(ARCH_POLICY_FILE.read_text())
 
 
+# GitHub Actions REDACTS a job output that looks credential-bearing, and
+# generate_matrix embeds pre_build_script verbatim into the matrix output. A
+# package whose inline pre-build mentions a token therefore vanishes from its
+# own build: every job sees a null matrix, skips, and the run reports success
+# having produced nothing (spconv, 2026-08-24). Keep such scripts in a file.
+_CREDENTIAL_WORDS = ("Authorization", "Bearer", "GH_TOKEN", "GITHUB_TOKEN",
+                     "authorization", "api_key", "apikey", "password")
+
+
+def _check_pre_build_not_redactable(cfg: dict, pkg_dir: Path) -> None:
+    script = cfg.get("pre_build_script") or ""
+    if "\n" not in script.strip():
+        return  # a one-line `bash packages/x/pre_build.sh` is always fine
+    hits = sorted({w for w in _CREDENTIAL_WORDS if w in script})
+    if hits:
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}/package.yml: inline pre_build_script "
+            f"mentions {hits} -- GitHub will redact the matrix output and the "
+            f"package will silently build NOTHING. Move it to "
+            f"{pkg_dir.name}/pre_build.sh and use "
+            f"'pre_build_script: bash packages/{pkg_dir.name}/pre_build.sh'.")
+
+
 def load_package(pkg_dir: Path) -> dict:
     """One package's flat config dict, overrides merged in."""
     cfg = yaml.safe_load((pkg_dir / "package.yml").read_text()) or {}
+    _check_pre_build_not_redactable(cfg, pkg_dir)
     for extra in ("pcto_override.yml", "arch_override.yml"):
         p = pkg_dir / extra
         if p.exists():

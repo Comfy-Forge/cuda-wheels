@@ -6,11 +6,26 @@
 # CUDA >= 12.8). No sm_90/100: the INT4/FP4 kernels target consumer GPUs;
 # Hopper/B200 are not in upstream's ALL list. This override exists so the
 # verify gate's arch assert matches what the build actually produces.
+# Extended to every CUDA line 2026-08-24: only the 12.8 row existed, so all
+# other lines inherited the default policy and the arch_sass gate rejected
+# 263 otherwise-good wheels ("missing arch families sm_[5, 6, 9]"). cuobjdump
+# on the built wheels shows sm_75/80/86/89 (+120 from 12.9, +121 from 13.x),
+# i.e. exactly ALL-mode's set, regardless of what the policy asks for. This
+# changes only the gate's EXPECTATION -- the shipped SASS is byte-identical.
 arch_list_by_cuda:
+  "12.4": "7.5;8.0;8.6;8.9"
+  "12.6": "7.5;8.0;8.6;8.9"
   "12.8": "7.5;8.0;8.6;8.9;12.0"
+  "12.9": "7.5;8.0;8.6;8.9;12.0"
+  "13.0": "7.5;8.0;8.6;8.9;12.0"
+  "13.2": "7.5;8.0;8.6;8.9;12.0"
 # Same reality on the ARM lane: ALL-mode bakes the identical set there
 # (the gate found sm_75/80/86/89/120 in the aarch64 wheel), so the default
 # aarch64 policy row (80/90/100/120) can never match. Declared via the
 # dedicated aarch64 field because the ARM lane ignores x86 overrides.
 arch_list_by_cuda_aarch64:
+  "12.6": "7.5;8.0;8.6;8.9"
   "12.8": "7.5;8.0;8.6;8.9;12.0"
+  "12.9": "7.5;8.0;8.6;8.9;12.0"
+  "13.0": "7.5;8.0;8.6;8.9;12.0"
+  "13.2": "7.5;8.0;8.6;8.9;12.0"

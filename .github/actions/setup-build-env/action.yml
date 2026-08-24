@@ -76,7 +76,12 @@ runs:
       run: |
         python -m pip install uv
         uv pip install --system --reinstall torch==${{ inputs.pytorch-version }}+cu${{ inputs.cuda-short }} --index-url https://download.pytorch.org/whl/cu${{ inputs.cuda-short }}
-        uv pip install --system wheel setuptools ninja numpy packaging pyyaml $EXTRA_DEPS
+        # setuptools>=78: py3.10/3.11 toolcache Pythons ship 65.5.0 and uv leaves
+        # an already-present version alone, so Windows cells silently built
+        # against it -- 65.5.0 emits RELATIVE -I include dirs and nunchaku's
+        # ninja compile then fails with C1083 (2026-08-24). Latent for every
+        # Windows package, hence a farm-wide floor rather than extra_deps.
+        uv pip install --system wheel 'setuptools>=78' ninja numpy packaging pyyaml $EXTRA_DEPS
         # triton best-effort: some setup.pys import it at build time, but it
         # trails new pythons (no cp315 wheels while 3.15 is rc) -- a missing
         # triton must not kill every cell of a brand-new python line.
@@ -111,7 +116,12 @@ runs:
       run: |
         python -m pip install uv
         uv pip install --system --reinstall torch==${{ inputs.pytorch-version }}+cu${{ inputs.cuda-short }} --index-url https://download.pytorch.org/whl/cu${{ inputs.cuda-short }}
-        uv pip install --system wheel setuptools ninja numpy packaging pyyaml $EXTRA_DEPS
+        # setuptools>=78: py3.10/3.11 toolcache Pythons ship 65.5.0 and uv leaves
+        # an already-present version alone, so Windows cells silently built
+        # against it -- 65.5.0 emits RELATIVE -I include dirs and nunchaku's
+        # ninja compile then fails with C1083 (2026-08-24). Latent for every
+        # Windows package, hence a farm-wide floor rather than extra_deps.
+        uv pip install --system wheel 'setuptools>=78' ninja numpy packaging pyyaml $EXTRA_DEPS
 
     - name: Patch PyTorch header for Windows MSVC bug
       if: inputs.platform == 'windows'

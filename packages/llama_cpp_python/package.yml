@@ -31,7 +31,13 @@ clone_recursive: true          # vendors ggml-org/llama.cpp
 pre_build_script: |
   echo "CMAKE_ARGS=-DGGML_CUDA=on" >> $GITHUB_ENV
   echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
-  echo "CUDAARCHS=$(echo "$TORCH_CUDA_ARCH_LIST" | tr ';' ' ' | sed 's/+PTX//g; s/\.//g' | xargs | tr ' ' ';')" >> $GITHUB_ENV
+  # <N>-real per arch, plus <N>-virtual ONLY where the policy asked for +PTX.
+  # A BARE number makes cmake emit code=[compute_N,sm_N] -- PTX *and* SASS for
+  # every arch -- which pushed the cu12.4/12.6 wheels (7 archs = 14 code
+  # images) to 2.41GB, over GitHub's 2GiB release-asset limit (HTTP 422,
+  # 2026-08-24). Keeps every SASS target and the one PTX image actually
+  # requested, i.e. matches the arch policy instead of exceeding it.
+  echo "CUDAARCHS=$(python3 -c "import os; a=os.environ['TORCH_CUDA_ARCH_LIST'].replace(';',' ').split(); print(';'.join([x for p in a for x in ([p.replace('+PTX','').replace('.','')+'-real'] + ([p.replace('+PTX','').replace('.','')+'-virtual'] if p.endswith('+PTX') else []))]))")" >> $GITHUB_ENV
 extra_deps: scikit-build-core cmake ninja
 patch_script: packages/llama_cpp_python/patches/llama_cpp_python.py
 # GGML's CMake build never sees ninja -j from MAX_JOBS; the build action

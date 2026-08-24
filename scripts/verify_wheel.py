@@ -743,7 +743,15 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
         elif is_device and forgivable:
             forgiven.append(f"{ph['module']}: {err}")
         else:
-            failures.append(f"{ph['module']} [{ph['phase']}]: {err}")
+            # Surface the per-DLL probe in the failure text. It is computed in
+            # the child (see the WinError-126 probe) and stored on the phase,
+            # but the child's stdout is only echoed when it CRASHES -- so on a
+            # clean non-zero import the one diagnostic that names the missing
+            # DLL was being discarded, leaving WinError 126 unattributable
+            # (llama_cpp_python Windows, open since 2026-08-22).
+            probe = ph.get("dll_probe")
+            detail = f" [dll_probe: {probe}]" if probe else ""
+            failures.append(f"{ph['module']} [{ph['phase']}]: {err}{detail}")
     data = {"stub_lane": needs_driver, "facade": facade,
             "compiled": spec["compiled"], "forgiven": forgiven,
             "phases": result["phases"]}

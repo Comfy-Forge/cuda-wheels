@@ -76,3 +76,64 @@ print(
     "mmcv patch: applied MMCV_WITH_OPS=1 prologue + forced name='mmcv'; "
     f"name-conditional substitutions: {n_subs}"
 )
+
+
+# ── py3.13+ and setuptools>=81 compatibility (triage 2026-08-24) ────────
+# Two independent metadata-time failures that between them killed all 189
+# remaining cells before any compiler ran:
+#
+# 1. PEP 667 (python 3.13): `exec(...)` inside get_version() writes into a
+#    SNAPSHOT of locals(), so `return locals()['__version__']` raises
+#    KeyError. Killed every py3.13/3.14/3.15 cell (138).
+# 2. setuptools 81 removed pkg_resources, which setup.py imports at module
+#    scope. Killed the py<=3.12 cells that happened to resolve a new
+#    setuptools (51) -- the farm installs it unpinned, hence the scatter.
+import re as _re
+
+_sp = Path("setup.py")
+_t = _sp.read_text()
+
+_old_ver = """def get_version():
+    version_file = 'mmcv/version.py'
+    with open(version_file, encoding='utf-8') as f:
+        exec(compile(f.read(), version_file, 'exec'))
+    return locals()['__version__']"""
+_new_ver = """def get_version():
+    version_file = 'mmcv/version.py'
+    _ns = {}
+    with open(version_file, encoding='utf-8') as f:
+        exec(compile(f.read(), version_file, 'exec'), _ns)
+    return _ns['__version__']"""
+if _old_ver in _t:
+    _t = _t.replace(_old_ver, _new_ver)
+    print("mmcv patch: get_version() execs into an explicit namespace (PEP 667)")
+elif "_ns['__version__']" in _t:
+    print("mmcv patch: get_version() already namespaced")
+else:
+    raise SystemExit(
+        "PATCH FAILED: mmcv get_version() does not match the expected "
+        "1.7.2 text -- every py3.13+ cell would die at metadata generation "
+        "with KeyError: '__version__' (PEP 667)")
+
+_old_pr = ("from pkg_resources import DistributionNotFound, get_distribution, "
+           "parse_version")
+_new_pr = """try:  # setuptools >= 81 removed pkg_resources
+    from pkg_resources import DistributionNotFound, get_distribution, parse_version
+except ModuleNotFoundError:  # farm shim
+    from importlib.metadata import PackageNotFoundError as DistributionNotFound
+    from importlib.metadata import distribution as _distribution
+    from packaging.version import parse as parse_version
+
+    class _Dist:
+        def __init__(self, d):
+            self.version = d.version
+
+    def get_distribution(name):
+        return _Dist(_distribution(name))"""
+if _old_pr in _t:
+    _t = _t.replace(_old_pr, _new_pr)
+    print("mmcv patch: pkg_resources -> importlib.metadata shim")
+else:
+    print("mmcv patch: pkg_resources import not found (already shimmed?)")
+
+_sp.write_text(_t)
