@@ -6,6 +6,11 @@
 4. Reduce nvcc --threads from 8 to 4 to avoid OOM on CI runners.
 """
 from pathlib import Path
+import sys as _sys_early
+import pathlib as _pl_early
+_sys_early.path.insert(
+    0, str(_pl_early.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require as _require  # used at the first anchor check below
 
 setup_file = Path("setup.py")
 content = setup_file.read_text()
@@ -92,7 +97,7 @@ setup_file.write_text(content)
 import sys as _sys
 import pathlib as _pl
 _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import require as _require, strip_std_flags as _strip
+from patch_lib import strip_std_flags as _strip
 
 _sp = Path("setup.py")
 _t = _sp.read_text()
