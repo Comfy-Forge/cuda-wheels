@@ -236,6 +236,29 @@ def check_metadata(rep, wheel_path, parsed, pkg):
         # Curated Requires-Dist: when the config declares one, the wheel
         # must carry EXACTLY the expanded list -- a mismatch means the
         # patch step was skipped or upstream's format defeated it.
+        # Farm-wide: the torch family must never survive into a published
+        # wheel. The consumer pins torch by version AND index workspace-wide
+        # before a cuda-wheel is selected, and Requires-Dist is the one channel
+        # that bypasses that pin -- a surviving entry would let a solver pull a
+        # second, CPU-only torch from PyPI. Blocks inlining the wheels into
+        # pixi.lock, which has no --no-deps equivalent. See ADR-0004.
+        _torch_family = {"torch", "torchvision", "torchaudio"}
+
+        def _dist_name(requirement):
+            name = requirement.strip().split(";", 1)[0]
+            for sep in ("[", "(", "=", "<", ">", "!", "~", " "):
+                name = name.split(sep, 1)[0]
+            return name.strip().replace("_", "-").lower()
+
+        torchy = [r for r in (meta.get_all("Requires-Dist") or [])
+                  if _dist_name(r) in _torch_family]
+        if torchy:
+            rep.add("metadata", "fail",
+                    f"Requires-Dist still declares the torch family {torchy} "
+                    f"-- it is pinned workspace-wide by the consumer and must "
+                    f"be stripped (patch_wheel_version regression)")
+            return
+
         curated_template = pkg.get("requires_dist")
         if curated_template:
             local_tag = (f"cu{parsed['cuda_short']}"

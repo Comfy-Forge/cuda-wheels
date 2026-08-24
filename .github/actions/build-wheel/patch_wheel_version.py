@@ -90,6 +90,57 @@ def curate_requires_dist(content: str, curated: list[str]) -> str:
     return "\n".join(kept) + (sep + body if sep else "\n")
 
 
+# The torch family is pinned WORKSPACE-WIDE by the consumer (comfy-env pins
+# torch/torchvision/torchaudio by version AND index, because tensors cross the
+# process boundary over torch's private multiprocessing ABI, which has no
+# version handshake). A wheel's Requires-Dist is the one channel that bypasses
+# that pin, since it lives inside the artifact rather than in the generated
+# manifest. `Requires-Dist: torch>=2.4.0` therefore asks the solver for torch
+# from its DEFAULT source (PyPI) while the manifest pins the same name from the
+# CUDA index -- best case redundant, realistic case a second CPU-only torch or
+# an outright resolution failure. It can never be useful: the only torch that
+# will ever be present was pinned before the wheel was even selected, and the
+# wheel's local version (+cu128torch2.8) already records which torch it was
+# built against far more precisely than a floor does.
+#
+# Farm-wide rather than a per-package list: the reasoning holds for every wheel
+# here, and a list would silently miss packages built later.
+TORCH_FAMILY = ("torch", "torchvision", "torchaudio")
+
+
+def _dist_name(requirement: str) -> str:
+    """The bare distribution name from a PEP 508 requirement string."""
+    name = requirement.strip().split(";", 1)[0]
+    for sep in ("[", "(", "=", "<", ">", "!", "~", " "):
+        name = name.split(sep, 1)[0]
+    return name.strip().replace("_", "-").lower()
+
+
+def strip_torch_family(content: str) -> tuple[str, list[str]]:
+    """Drop Requires-Dist lines for torch/torchvision/torchaudio.
+
+    Returns (new_content, dropped). Folded continuation lines go with their
+    header. Everything else -- genuine runtime deps, sibling local-version
+    pins -- is untouched.
+    """
+    head, sep, body = content.partition("\n\n")
+    kept, dropped, dropping = [], [], False
+    for line in head.splitlines():
+        if line.startswith("Requires-Dist:"):
+            req = line[len("Requires-Dist:"):].strip()
+            if _dist_name(req) in TORCH_FAMILY:
+                dropped.append(req)
+                dropping = True
+                continue
+            dropping = False
+        elif dropping and line[:1] in (" ", "\t"):
+            continue
+        else:
+            dropping = False
+        kept.append(line)
+    return "\n".join(kept) + (sep + body if sep else "\n"), dropped
+
+
 def fix_wheel(wheel_path: Path, curated_template: list[str] | None = None) -> bool:
     """Fix METADATA (version + curated Requires-Dist) in-place.
     Returns True if modified."""
@@ -143,6 +194,13 @@ def fix_wheel(wheel_path: Path, curated_template: list[str] | None = None) -> bo
                 modified = True
             print(f"  {filename}: Requires-Dist curated "
                   f"({len(curated)} entries)")
+        # Always, curated or not: the torch family must not appear.
+        new_content, dropped = strip_torch_family(content)
+        if dropped:
+            content = new_content
+            modified = True
+            print(f"  {filename}: dropped torch-family Requires-Dist "
+                  f"{dropped} (pinned workspace-wide by the consumer)")
 
         if not modified:
             return False

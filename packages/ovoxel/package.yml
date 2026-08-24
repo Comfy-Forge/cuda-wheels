@@ -10,7 +10,11 @@ clone_recursive: false  # only submodule is gitlab eigen -> tarball in patch (40
 # which pip would resolve against PyPI, not the farm. Exact+local sibling
 # pins resolve from our index or fail loudly (PyPI forbids local versions).
 requires_dist:
-  - torch
+  # NOTE: torch is deliberately absent. The farm strips the torch
+  # family from every wheel's Requires-Dist (see ADR-0004): the
+  # consumer pins torch workspace-wide by version AND index before a
+  # cuda-wheel is ever selected, so declaring it here can only make a
+  # solver fetch a second, CPU-only torch from PyPI.
   - numpy
   - plyfile
   - trimesh

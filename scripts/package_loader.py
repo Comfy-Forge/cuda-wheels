@@ -61,10 +61,35 @@ def _check_pre_build_not_redactable(cfg: dict, pkg_dir: Path) -> None:
             f"'pre_build_script: bash packages/{pkg_dir.name}/pre_build.sh'.")
 
 
+_TORCH_FAMILY = {"torch", "torchvision", "torchaudio"}
+
+
+def _check_requires_dist_has_no_torch(cfg: dict, pkg_dir: Path) -> None:
+    """A curated Requires-Dist must never name the torch family.
+
+    The consumer pins torch workspace-wide (version AND index) before any
+    cuda-wheel is selected, and Requires-Dist is the one channel that bypasses
+    that pin. Declaring it can only cause a second CPU-only torch to be
+    resolved from PyPI, or an outright solver failure. The build step strips
+    the family from every wheel anyway, so a curated entry here would also
+    desync the C2 gate. See docs ADR-0004.
+    """
+    for req in cfg.get("requires_dist") or []:
+        name = str(req).strip().split(";", 1)[0]
+        for sep in ("[", "(", "=", "<", ">", "!", "~", " "):
+            name = name.split(sep, 1)[0]
+        if name.strip().replace("_", "-").lower() in _TORCH_FAMILY:
+            raise SystemExit(
+                f"ERROR: {pkg_dir.name}/package.yml: requires_dist declares "
+                f"{req!r}. The torch family is pinned workspace-wide by the "
+                f"consumer and is stripped from every wheel -- remove it.")
+
+
 def load_package(pkg_dir: Path) -> dict:
     """One package's flat config dict, overrides merged in."""
     cfg = yaml.safe_load((pkg_dir / "package.yml").read_text()) or {}
     _check_pre_build_not_redactable(cfg, pkg_dir)
+    _check_requires_dist_has_no_torch(cfg, pkg_dir)
     for extra in ("pcto_override.yml", "arch_override.yml"):
         p = pkg_dir / extra
         if p.exists():

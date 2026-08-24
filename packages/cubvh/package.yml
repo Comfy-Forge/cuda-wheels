@@ -7,7 +7,11 @@ patch_script: packages/cubvh/patches/cubvh.py
 # Curated Requires-Dist (CW-ADR-0004): this is an AOT-compiled wheel --
 # upstream's ninja/pybind11 are build-time leakage.
 requires_dist:
-  - torch
+  # NOTE: torch is deliberately absent. The farm strips the torch
+  # family from every wheel's Requires-Dist (see ADR-0004): the
+  # consumer pins torch workspace-wide by version AND index before a
+  # cuda-wheel is ever selected, so declaring it here can only make a
+  # solver fetch a second, CPU-only torch from PyPI.
   - numpy
   - trimesh
   - kiui

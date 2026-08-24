@@ -9,7 +9,11 @@ max_jobs: 2   # api.cu is a monster TU; upstream --threads 4 is neutralized by t
 # Curated Requires-Dist (CW-ADR-0004): AOT-compiled wheel -- upstream's
 # ninja is build-time leakage.
 requires_dist:
-  - torch
+  # NOTE: torch is deliberately absent. The farm strips the torch
+  # family from every wheel's Requires-Dist (see ADR-0004): the
+  # consumer pins torch workspace-wide by version AND index before a
+  # cuda-wheel is ever selected, so declaring it here can only make a
+  # solver fetch a second, CPU-only torch from PyPI.
   - einops
   - packaging
 verify:
