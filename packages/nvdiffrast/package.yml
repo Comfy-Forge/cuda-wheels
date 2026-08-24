@@ -3,11 +3,23 @@ links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pa
 source_repo: NVlabs/nvdiffrast
 source_tag: v0.4.0
 extra_deps: numpy
-# Curated Requires-Dist (CW-ADR-0004): the opposite fix -- upstream
-# under-declares. This wheel is JIT-only and genuinely needs ninja at
-# runtime to compile its plugins on first use.
+# Curated Requires-Dist (CW-ADR-0004).
+# CORRECTED 2026-08-24: this package was described as "JIT-only, ships no
+# binaries, needs ninja at runtime to compile its plugins on first use".
+# That was true of nvdiffrast v0.3.x; the pin is v0.4.0, which replaced
+# _get_plugin() with a real CUDAExtension. Verified against six published
+# wheels spanning cu124-cu132 and all three platforms: every one ships a
+# 58-66MB compiled _nvdiffrast_c extension, the wheel contains exactly three
+# .py files whose entire import set is
+# {importlib.metadata, numpy, torch, warnings, _nvdiffrast_c}, there is not
+# one reference to cpp_extension / load( / ninja / _get_plugin, and the .cu
+# sources a JIT path would need are not shipped. So the JIT path is not
+# merely unused, it is impossible, and ninja was pure surplus. torch is a
+# real dep but is stripped farm-wide by policy (pinned workspace-wide by the
+# consumer), leaving numpy as the only declarable one.
 requires_dist:
   - numpy
-  - ninja
-verify:
-  allow_pure_python: true   # JIT-only: compiles at first use, ships no binaries
+# allow_pure_python removed with the same correction: it was inert (C3 only
+# consults it when the wheel has NO extensions, and this one always does),
+# but it would have silently swallowed exactly the regression C3 exists to
+# catch -- a CUDA compile that quietly degraded to a pure-python wheel.
