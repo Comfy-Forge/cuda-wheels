@@ -329,6 +329,77 @@ def fix_triton_autotuner_super(path: str | Path) -> int:
     return n
 
 
+def fix_triton_autotuner_super_auto(root: str | Path = ".") -> int:
+    """Find the fork's autotuner.py wherever it lives and fix it.
+
+    Forks rename their package directory (flex_gemm -> flex_gemm_vb), and some
+    carry no Autotuner subclass at all, so a hardcoded path is wrong in both
+    directions. Absent file = nothing to fix (not an error). Present file with
+    an unrecognised super() forward = fail loud, because that is the shape we
+    rely on.
+    """
+    files = sorted(Path(root).glob("*/utils/autotuner.py"))
+    if not files:
+        print("patch_lib: no */utils/autotuner.py -- this fork does not "
+              "subclass triton's Autotuner; nothing to fix")
+        return 0
+    total = 0
+    for f in files:
+        n = fix_triton_autotuner_super(f)
+        if n:
+            total += n
+            continue
+        text = f.read_text(encoding="utf-8", errors="surrogateescape")
+        if "_flexgemm_supported" in text:
+            print(f"patch_lib: {f}: already signature-filtered")
+        elif re.search(r"super\(\)\.__init__\(\s*\n", text):
+            raise SystemExit(
+                f"PATCH FAILED: {f} forwards to super().__init__ in a shape "
+                f"this patch does not recognise -- the wheel would fail to "
+                f"import against triton 3.0/3.1")
+        else:
+            print(f"patch_lib: {f}: no positional super().__init__ forward; "
+                  f"nothing to fix")
+    return total
+
+
+# --------------------------------------------------------------------------
+# CUDA < 12.6's bundled CCCL/thrust reference `cuda::std` UNQUALIFIED (upstream
+# later qualified it to ::cuda::std, which is why 12.6+ toolkits are immune).
+# torch's headers bring `c10::cuda` into scope, and MSVC's /permissive- makes
+# the lookup strict enough that plain `cuda` becomes ambiguous:
+#   error C2872: 'cuda': ambiguous symbol
+# Strict conformance is a style choice, not a build requirement, so drop
+# /permissive- (and the /Zc:__cplusplus that only matters alongside it) on
+# those lanes. Second package to need this (cumesh, then cubvh) -> shared.
+# --------------------------------------------------------------------------
+
+_PERMISSIVE_RE = re.compile(
+    r'\s*(["\'])(?:-Xcompiler=)?/(?:permissive-|Zc:__cplusplus)\1\s*,?'
+)
+
+
+def strip_permissive_flags(text: str) -> tuple[str, int]:
+    """Remove /permissive- and /Zc:__cplusplus (all spellings)."""
+    return _PERMISSIVE_RE.subn("", text)
+
+
+def strip_permissive_for_old_cuda(path: str | Path) -> int:
+    """Drop /permissive- when building against CUDA < 12.6 on Windows."""
+    if os.name != "nt" or cuda_mm() >= (12, 6):
+        return 0
+    p = Path(path)
+    if not p.exists():
+        return 0
+    text = p.read_text(encoding="utf-8", errors="surrogateescape")
+    new, n = strip_permissive_flags(text)
+    if n:
+        p.write_text(new, encoding="utf-8", errors="surrogateescape")
+        print(f"patch_lib: {p}: dropped {n} /permissive- flag(s) for "
+              f"CUDA < 12.6 (C2872 'cuda' ambiguity in bundled CCCL)")
+    return n
+
+
 # --------------------------------------------------------------------------
 # Fail-loud helper. Several patch scripts used to print a WARNING and continue
 # when an exact-string replace missed, which silently produces a wheel built

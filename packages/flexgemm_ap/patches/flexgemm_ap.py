@@ -20,7 +20,7 @@ import sys as _sys
 import pathlib as _pl
 
 _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import (fix_triton_autotuner_super, require, strip_std_flags,
+from patch_lib import (fix_triton_autotuner_super_auto, require, strip_std_flags,
                        translate_cxx_flags_for_msvc)
 
 _setup = Path("setup.py")
@@ -32,9 +32,9 @@ require(_n_std > 0,
 _setup.write_text(_t)
 print(f"patch: dropped {_n_std} hardcoded std flag(s); torch now selects it")
 
-_n_at = fix_triton_autotuner_super(_pl.Path("flex_gemm/utils/autotuner.py"))
-require(_n_at > 0,
-        "triton Autotuner super().__init__ forward not found in "
-        "flex_gemm/utils/autotuner.py -- the wheel would fail to import "
-        "against triton 3.0/3.1")
-print("patch: triton Autotuner call is now signature-filtered")
+# Locate the autotuner wherever the fork put it: vb renames the package
+# directory before this runs, and the ap fork has no Autotuner subclass at
+# all. The helper fails loud only if a file exists with an unrecognised
+# super() forward.
+_n_at = fix_triton_autotuner_super_auto(".")
+print(f"patch: triton Autotuner handling done ({_n_at} file(s) rewritten)")

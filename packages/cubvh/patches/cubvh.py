@@ -11,7 +11,7 @@ import pathlib
 from pathlib import Path
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import torch_mm
+from patch_lib import strip_permissive_for_old_cuda, torch_mm
 
 setup_file = Path("setup.py")
 content = setup_file.read_text()
@@ -21,6 +21,12 @@ content = setup_file.read_text()
 # ivalue_inl.h at C++20 and misparses `std::move(ivalue).to<List<Elem>>()`;
 # under the pinned MSVC 14.29 (CUDA 12.4) nvcc rejects -std=c++20 outright
 # and cudafe++ dies with 0xC0000409. Only torch >= 2.13 actually needs C++20.
+# CUDA < 12.6 on Windows: cubvh's setup.py passes /permissive- (and
+# -Xcompiler=/permissive-), which makes plain `cuda` ambiguous between
+# libcu++'s ::cuda and torch's c10::cuda in the toolkit's own CCCL/thrust
+# headers (error C2872). Same class cumesh hit; now shared logic.
+strip_permissive_for_old_cuda(setup_file)
+
 if os.name == "nt" and torch_mm() < (2, 13):
     print(f"cubvh patch: keeping upstream cpp_standard=17 "
           f"(Windows, torch {os.environ.get('CUW_TORCH_VERSION', '?')} < 2.13)")
