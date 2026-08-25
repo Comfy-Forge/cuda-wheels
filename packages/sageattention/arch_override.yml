@@ -39,12 +39,18 @@
 #   * There is no compute_80/compute_86 PTX in any row below -- the +PTX tail
 #     sits on the highest arch only -- so there was never a JIT path to
 #     relieve. Without 8.6 an sm_86 device would have used the sm_80 cubin.
-#   * And sageattn() never reaches the sm_86 cubin anyway: core.py:146 routes
-#     arch == "sm86" to the Triton kernel (sageattn_qk_int8_pv_fp16_triton).
-#     The sm_86 cubin is reachable only by calling
-#     sageattn_qk_int8_pv_fp16_cuda() by hand.
-# 8.6 therefore earns its place as an exactness/perf hedge for direct callers,
-# not as a JIT-avoidance measure.
+#   * And the auto-dispatcher never reaches an sm_86 cubin at all: core.py:146
+#     routes arch == "sm86" to sageattn_qk_int8_pv_fp16_triton, whose
+#     quantization is also Triton (per_block_int8_triton), so an sm86 device
+#     going through sageattn() touches NO cubin this package ships.
+#     The sm_86 cubins in _qattn_sm80 and _fused are still reachable -- but
+#     only through the explicit public entry points sageattn_varlen() and
+#     sageattn_qk_int8_pv_fp16_cuda(), which route via quant.py's _fused
+#     kernels. (Earlier wording here said "only by calling
+#     sageattn_qk_int8_pv_fp16_cuda() by hand"; both are exported from
+#     sageattention/__init__.py, so "by hand" undersold it.)
+# 8.6 therefore earns its place as an exactness/perf hedge for those explicit
+# callers, not as a JIT-avoidance measure.
 # ---------------------------------------------------------------------------
 arch_list_by_cuda:
   '12.4': 8.0 8.6 8.9 9.0+PTX
