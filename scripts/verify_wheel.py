@@ -811,10 +811,20 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
             if _tl:
                 _declared = {l.strip() for l in
                              _zf.read(_tl[0]).decode().splitlines() if l.strip()}
-        declared_phantoms = {
-            d for d in _declared
-            if not any(n == f"{d}.py" or n.startswith(f"{d}/")
-                       or n.split("/")[-1].split(".")[0] == d for n in _names)}
+        def _provides_toplevel(d, names):
+            # A top_level entry means `import <d>` works, so the member must be
+            # at the ROOT of the wheel: d.py, d/..., or d<ext>.so. Matching by
+            # BASENAME anywhere in the tree is wrong -- cumm/core_cc*.so is
+            # importable as cumm.core_cc, NOT as core_cc, and a basename match
+            # would call that satisfied and miss the very defect this detects.
+            for n in names:
+                if "/" in n.rstrip("/"):
+                    continue                      # nested: cannot be top-level
+                if n == f"{d}.py" or n.split(".")[0] == d:
+                    return True
+            return any(n.startswith(f"{d}/") for n in names)
+        declared_phantoms = {d for d in _declared
+                             if not _provides_toplevel(d, _names)}
     except Exception:
         declared_phantoms = set()
     for ph in result["phases"]:
