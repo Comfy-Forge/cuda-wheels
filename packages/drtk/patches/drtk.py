@@ -1,53 +1,100 @@
-"""Patch DRTK for Windows MSVC compilation.
+"""Patch DRTK: MSVC-compatible CRT/RTTI flags, half-operator macros, and
+hand the choice of C++ standard back to torch.
 
-1. Remove /GR- flag — disables RTTI, but PyTorch headers require it
-   (dynamic_cast / dynamic_pointer_cast -> C2280 errors without RTTI).
-2. Replace /MT with /MD — DRTK uses static CRT (/MT) but nvcc compiles
-   .cu files with /MD (dynamic CRT), causing LNK2038 mismatch.
+1. Remove /GR- -- it disables RTTI, but PyTorch's headers need it
+   (dynamic_cast / dynamic_pointer_cast -> C2280 without RTTI).
+2. Replace /MT with /MD -- DRTK asks for the static CRT, nvcc compiles the
+   .cu TUs against the dynamic one, and the mix is LNK2038.
+3. Re-enable the half/bfloat16 operators torch's -D flags turn off.
+4. Delete DRTK's hardcoded C++-standard flags (see the long note below).
+
+Every mutation is asserted: an upstream edit that moves one of these strings
+must fail the build loudly rather than silently ship a differently-compiled
+wheel.
 """
+import pathlib
+import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import require, strip_std_flags
 
 setup_file = Path("setup.py")
 content = setup_file.read_text()
 
-# Remove /GR- from Windows compiler flags — PyTorch requires RTTI
-if '"/GR-"' in content:
-    content = content.replace('"/GR-", ', '')
-    print("Patched setup.py: removed /GR- (RTTI required by PyTorch)")
-elif "/GR-" in content:
-    content = content.replace("/GR-", "")
-    print("Patched setup.py: removed /GR- (RTTI required by PyTorch)")
-else:
-    print("WARNING: /GR- not found in setup.py — source may have changed")
+# Remove /GR- from the win32 flags -- PyTorch requires RTTI.
+content, n_gr = re.subn(r'"/GR-",\s*|,\s*"/GR-"', "", content)
+require(n_gr == 1,
+        f'expected exactly one "/GR-" element in drtk setup.py, found {n_gr} '
+        f'-- upstream changed the win32 cxx flag list; without the removal '
+        f'every Windows TU that touches a torch header dies with C2280')
+print("drtk patch: removed /GR- (RTTI required by PyTorch)")
 
-# Replace /MT (static CRT) with /MD (dynamic CRT) — nvcc uses /MD,
-# mixing /MT and /MD causes linker error LNK2038
-if '"/MT"' in content:
-    content = content.replace('"/MT"', '"/MD"')
-    print("Patched setup.py: replaced /MT with /MD (CRT must match nvcc's /MD)")
-elif "/MT" in content:
-    content = content.replace("/MT", "/MD")
-    print("Patched setup.py: replaced /MT with /MD (CRT must match nvcc's /MD)")
-else:
-    print("WARNING: /MT not found in setup.py — source may have changed")
+# /MT (static CRT) -> /MD (dynamic CRT). nvcc compiles the .cu files with
+# /MD; mixing the two CRTs is LNK2038 at link time.
+n_mt = content.count('"/MT"')
+require(n_mt == 1,
+        f'expected exactly one "/MT" element in drtk setup.py, found {n_mt} '
+        f'-- upstream changed the win32 cxx flag list; the CRT would no '
+        f'longer match nvcc\'s /MD and the link would fail with LNK2038')
+content = content.replace('"/MT"', '"/MD"')
+print("drtk patch: /MT -> /MD (CRT must match nvcc's /MD)")
 
-# Downgrade CUDA -std=c++20 to c++17 — nvcc's C++20 parser misparses
-# PyTorch template expressions like .to<List<Elem>>() in ivalue_inl.h
-if '"-std=c++20"' in content:
-    content = content.replace('"-std=c++20"', '"-std=c++17"')
-    print("Patched setup.py: -std=c++20 -> -std=c++17 (nvcc C++20 breaks PyTorch headers)")
-elif "-std=c++20" in content:
-    content = content.replace("-std=c++20", "-std=c++17")
-    print("Patched setup.py: -std=c++20 -> -std=c++17 (nvcc C++20 breaks PyTorch headers)")
-else:
-    print("INFO: -std=c++20 not found in setup.py (already c++17 or unset)")
-
+# --------------------------------------------------------------------------
+# The C++ standard: delete DRTK's opinion, let torch's cpp_extension decide.
+#
+# DRTK hardcodes two DIFFERENT standards in one setup.py:
+#     cxx_args["linux"] = ["-std=c++17", ...]      # host side
+#     nvcc_args.append("-std=c++20")               # device side
+# and passes nothing at all on win32 (upstream deleted its "/std:c++17"
+# in 69bf36c, "C++20 is the default now" -- a Meta-internal style decision,
+# not a language requirement).
+#
+# The nvcc c++20 carries an upstream comment pointing at
+# pytorch/pytorch#122169. That issue is `namespace "thrust" has no member
+# "swap"` while compiling ATen's OWN LinearAlgebra.cu with CUDA 12.4 against
+# torch 2.1.2/2.2.1 -- a torch-source build, on torch versions below this
+# farm's 2.4.1 floor. It says nothing about extensions, and DRTK's kernels
+# never include thrust (they use cub::WarpReduce and nothing else).
+#
+# DRTK's own sources do not need C++20: no designated initializers, no
+# concepts, no std::span, no three-way comparison, no bit-field NSDMIs
+# anywhere under src/ at the pinned source_tag. Checked, not assumed.
+#
+# The farm previously RAISED both to c++20 for torch >= 2.7, to satisfy
+# torch 2.13's MSVC headers (C7555 designated initializers in
+# c10/util/StringUtil.h, C7582 bit-field NSDMIs in c10/core/AutogradState.h).
+# That is a torch-side constraint and it is now handled where it belongs --
+# the torch-tracking MSVC /std floor in .github/actions/build-wheel/action.yml
+# (/std:c++17 below torch 2.12, /std:c++20 from 2.12). Keeping the bump here
+# as well made every torch 2.7-2.11 cell compile c10/ATen headers at C++20
+# while the libtorch it links against is built at C++17 (pytorch's
+# CMAKE_CXX_STANDARD is 17 through at least 2.11, and cpp_extension still
+# emits -std=c++17 there): one ODR-mismatched translation unit per extension,
+# for no gain.
+#
+# strip_std_flags removes the list literal AND the whole
+# `nvcc_args.append("-std=c++20")` statement (deleting only the literal would
+# leave `append()` -> TypeError at setup.py import).
+# --------------------------------------------------------------------------
+content, n_std = strip_std_flags(content)
+require(n_std == 2,
+        f"expected 2 hardcoded C++-standard flags in drtk setup.py "
+        f"(linux cxx -std=c++17 and nvcc_args.append('-std=c++20')), found "
+        f"{n_std} -- upstream changed; refusing to build against an "
+        f"unverified flag set")
 setup_file.write_text(content)
+print(f"drtk patch: dropped {n_std} hardcoded C++-standard flag(s); torch's "
+      f"cpp_extension now selects the standard for host and device")
 
-# Re-enable half/bfloat16 operators in all .cu files.
-# PyTorch adds -D__CUDA_NO_HALF_OPERATORS__ etc. on the command line, which
-# breaks CUB headers (dispatch_histogram.cuh, agent_sub_warp_merge_sort.cuh)
-# and disables native half-precision ops.  #undef at the top overrides the -D.
+# --------------------------------------------------------------------------
+# Re-enable half/bfloat16 operators in the .cu files.
+# torch's cpp_extension puts -D__CUDA_NO_HALF_OPERATORS__ (and friends) on
+# the nvcc command line, which breaks CUB headers (dispatch_histogram.cuh,
+# agent_sub_warp_merge_sort.cuh) and disables native half-precision ops.
+# An #undef at the top of the TU overrides the -D.
+# --------------------------------------------------------------------------
 UNDEF_BLOCK = (
     "// -- cuda-wheels patch: re-enable half/bfloat16 operators --\n"
     "#undef __CUDA_NO_HALF_OPERATORS__\n"
@@ -56,40 +103,19 @@ UNDEF_BLOCK = (
     "#undef __CUDA_NO_BFLOAT16_CONVERSIONS__\n"
     "// -- end patch --\n\n"
 )
+cu_files = sorted(Path("src").rglob("*.cu"))
+require(len(cu_files) > 0,
+        "no src/**/*.cu found in the drtk tree -- the source layout changed; "
+        "the half-operator #undef block would silently apply to nothing")
 patched_cu = 0
-for cu_file in Path("src").rglob("*.cu"):
+for cu_file in cu_files:
     cu_content = cu_file.read_text()
     if "__CUDA_NO_HALF_OPERATORS__" not in cu_content:
         cu_file.write_text(UNDEF_BLOCK + cu_content)
         patched_cu += 1
-print(f"Patched {patched_cu} .cu files: #undef half/bfloat16 operator macros")
-
-# --- torch 2.13 compatibility (same class as the cumesh fix) ---
-# torch 2.13 headers use C++20 features; MSVC and nvcc hard-error below it.
-# Linux pins c++17; the win32 cxx block passes NO /std at all (cl defaults
-# too old). nvcc already gets -std=c++20 upstream.
-# GATED (review board 2026-08-24): this block used to run unconditionally
-# and silently UNDID the deliberate c++20 -> c++17 downgrade a few lines
-# above, so Windows torch <= 2.6 cells got C++20 anyway -- cu12.4 then died
-# with "You need C++17 to compile PyTorch" (nvcc drops the unsupported flag
-# under MSVC 14.29 and cl falls back to C++14) and cu12.6 with the torch 2.6
-# ivalue_inl.h misparse. torch >= 2.7's headers are C++20-clean, so that is
-# the correct threshold -- NOT 2.13, which would downgrade the currently
-# green 2.7-2.12 cells into a mixed-standard build.
-import os as _os
-import sys as _sys
-import pathlib as _pl
-_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import torch_mm as _torch_mm
-
-if _torch_mm() >= (2, 7):
-    content = setup_file.read_text()
-    c2 = content.replace('"-std=c++17"', '"-std=c++20"')
-    if '"/std:c++20"' not in c2:
-        c2 = c2.replace('"/EHsc"', '"/EHsc", "/std:c++20"', 1)
-    if c2 != content:
-        setup_file.write_text(c2)
-        print("drtk patch: C++20 std for linux cxx + win32 cxx (torch >= 2.7)")
-else:
-    print(f"drtk patch: keeping c++17 "
-          f"(torch {_os.environ.get('CUW_TORCH_VERSION', '?')} < 2.7)")
+require(patched_cu == len(cu_files),
+        f"only {patched_cu}/{len(cu_files)} .cu files took the half/bfloat16 "
+        f"#undef block -- some already mention __CUDA_NO_HALF_OPERATORS__; "
+        f"check whether upstream now handles this itself")
+print(f"drtk patch: {patched_cu} .cu file(s) got the half/bfloat16 "
+      f"#undef block")
