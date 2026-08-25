@@ -17,8 +17,35 @@ clone_recursive: true
 patch_script: packages/cumm/patches/cumm.py
 extra_deps: pccm>=0.4.16 ccimport>=0.4.4
 verify:
-  skip_arch: >-
-    runtime-JIT package: kernels are compiled at import/run time via the
-    vendored NVRTC (99MB libnvrtc in the wheel); no AOT SASS is baked despite
-    CUMM_DISABLE_JIT=1 -- true of every wheel the farm has ever shipped
-    (verified against legacy releases). See README.
+  # PER-PLATFORM waiver (scoped 2026-08-25). This used to be a single string,
+  # which is a claim about every lane the farm builds -- and the claim it made
+  # was "the vendored NVRTC (99MB libnvrtc in the wheel)", which is true only
+  # on Linux. The Windows wheel bundles NOTHING (verified: one .pyd, zero
+  # DLLs, 1.3MB for cp312/cu130/torch2.13). So a Linux-only premise was
+  # switching the arch gate off farm-wide. verify_wheel.platform_knob() now
+  # resolves this per platform; a lane with no entry here is NOT waived.
+  skip_arch:
+    linux: >-
+      runtime-JIT package: kernels are compiled at import/run time via the
+      vendored NVRTC (cumm.libs/libnvrtc.so.13 ~109MB plus
+      libnvrtc-builtins.so.13 ~6MB, grafted by auditwheel); no AOT SASS is
+      baked despite CUMM_DISABLE_JIT=1 -- true of every wheel the farm has
+      ever shipped (verified against legacy releases). See README.
+    linux_aarch64: >-
+      same as linux: auditwheel on the ARM runner vendors libnvrtc +
+      libnvrtc-builtins into cumm.libs/, and no AOT SASS is baked. Written
+      out separately rather than inherited so the ARM claim is one someone
+      actually checked.
+    windows: >-
+      no AOT SASS on this lane either -- cuobjdump reports "does not contain
+      device code" for cumm/core_cc.cp*-win_amd64.pyd, and that is by design
+      (the GEMM/conv kernels are generated and NVRTC-compiled at run time),
+      so there is no arch content for the gate to measure. This waiver covers
+      arch content ONLY. It does NOT excuse the separate, real defect on this
+      lane: unlike Linux the Windows wheel vendors no DLL at all, while
+      core_cc carries a LOAD-TIME (not delay-loaded) PE import of
+      nvrtc64_130_0.dll -- verified with `objdump -p`, whose Delay Import
+      Directory is empty. Without a matching CUDA Toolkit on PATH the import
+      dies with "DLL load failed while importing core_cc", and spconv's
+      Windows wheel inherits it (its __init__ loads cumm first). That defect
+      needs DLL vendoring (delvewheel), not an arch waiver.

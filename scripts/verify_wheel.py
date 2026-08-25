@@ -132,6 +132,41 @@ def gate_error(msg):
     sys.exit(2)
 
 
+PLATFORM_KEYS = ("linux", "linux_aarch64", "windows")
+
+
+def platform_knob(vknobs, name, platform):
+    """Resolve a `verify.<name>` knob that may be per-platform.
+
+    Two accepted shapes:
+
+        skip_arch: "reason"                  # every platform
+        skip_arch: {linux: "reason a",       # this platform only
+                    windows: "reason b"}
+
+    A waiver written as ONE string is a claim about every lane the farm
+    builds, and that is how a platform-specific premise ends up switching a
+    check off farm-wide. cumm's `skip_arch` justified itself with "the
+    vendored NVRTC (99MB libnvrtc in the wheel)" -- true on Linux, where
+    auditwheel grafts libnvrtc.so.13 + libnvrtc-builtins into `cumm.libs/`,
+    and false on Windows, where the wheel bundles no DLL at all. The single
+    string still disabled the arch gate on both.
+
+    A mapping forces one written-down reason per lane, and a lane with NO
+    entry is NOT waived -- the omission fails closed, towards checking.
+    Unknown platform keys are a gate error: a typo must not read as a lane
+    that simply was not mentioned.
+    """
+    val = vknobs.get(name)
+    if not isinstance(val, dict):
+        return val
+    unknown = sorted(set(val) - set(PLATFORM_KEYS))
+    if unknown:
+        gate_error(f"verify.{name}: unknown platform key(s) {unknown}; "
+                   f"expected a subset of {list(PLATFORM_KEYS)}")
+    return val.get(platform)
+
+
 def load_pkg_config(package):
     want = package.replace("-", "_").lower()
     for _folder, cfg in iter_packages():
@@ -523,8 +558,12 @@ def _cuobjdump_archs(binary_path, cuobjdump, timeout):
 
 
 def check_arch_sass(rep, wheel_path, exts, args, vknobs):
-    if vknobs.get("skip_arch"):
-        rep.add("arch_sass", "skip", f"verify.skip_arch: {vknobs['skip_arch']}")
+    # Per-platform waiver: see platform_knob(). A lane the mapping does not
+    # mention is checked for real.
+    waiver = platform_knob(vknobs, "skip_arch", args.platform)
+    if waiver:
+        rep.add("arch_sass", "skip",
+                f"verify.skip_arch[{args.platform}]: {waiver}")
         return
     if not exts:
         rep.add("arch_sass", "skip", "no compiled members")
