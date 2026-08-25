@@ -91,6 +91,36 @@ else:
 
 
 # ── Emit PTX for the archs the farm declared with +PTX ──────────────────
+# THIS IS A BACKPORT, NOT AN INVENTION. Upstream added the identical line in
+# 7bdb426 (PR #1882, 2025-09-12) -- four weeks AFTER the v2.8.3 tag we pin:
+#     cc_flag += ["-gencode", f"arch=compute_{newest},code=compute_{newest}"]
+#     # PTX for newest requested arch (forward-compat)
+# Reviewed by an NVIDIA engineer 2026-08-25. The objection "flash-attention
+# has per-arch kernels so PTX is pointless" is true of FA3/FA4 -- but those
+# live in hopper/ and the CuTe-DSL path, and setup.py builds NEITHER. What we
+# compile (csrc/flash_attn/) is ONE CUTLASS-2.x Ampere kernel family built
+# four times unchanged: `grep -c '__CUDA_ARCH__ *<'` over that tree returns 0,
+# so a compute_120 image is not a stub. Verified by compiling it: 32 entries,
+# 15360 mma.sync, zero FLASH_UNSUPPORTED_ARCH stub strings, and byte-identical
+# entry names to compute_80. `.target sm_120` carries no a/f suffix, so it IS
+# forward-portable (an `a`-suffix target would NOT be -- see below).
+#
+# Where this actually earns its keep: PTX JITs FORWARD ONLY (measured --
+# compute_120 PTX on an sm_86 device gives cudaErrorNoKernelImageForDevice).
+# On cu13.0 it only guards a future major. On the cu12.4/cu12.6 cells
+# (8.0 9.0+PTX) it is load-bearing TODAY: those toolkits cannot emit any
+# Blackwell cubin, so without compute_90 PTX those wheels are dead on every
+# RTX 50-series / B200 / GB10 in existence.
+#
+# Cost, measured: +1.4% compile, but +25% wheel size (244MB -> ~304MB) --
+# nvcc stores PTX pre-compressed so it is ~incompressible in the zip while
+# cubins compress ~3.9:1. Budget it deliberately.
+#
+# DO NOT copy this pattern to packages that compile `a`-suffix targets
+# (sageattention compute_90a, natten 90a/100a-real, torchao _C_cutlass_90a,
+# sageattn3 sm_100a/120a). `compute_90a` PTX loads ONLY on sm_90 -- emitting
+# it would ship dead bytes and a false forward-compat promise. Those packages
+# should drop +PTX from their arch_override instead.
 # Upstream (setup.py:179-191) appends ONLY `code=sm_X` gencodes, so the
 # built wheel carries cubins and no PTX whatsoever. verify_wheel's arch_sass
 # check could not see this until it was made PTX-aware (2026-08-25); the
