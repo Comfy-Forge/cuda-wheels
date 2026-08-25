@@ -2,6 +2,9 @@
 1. Fetch missing Eigen submodule (cubvh committed directly, not as git submodule)
 2. Rename package from cumesh to cumesh_vb to avoid conflicts
 3. Fix GCC-only CXX_FLAGS for Windows MSVC builds
+4. Port the CCCL-3.x in-place ExclusiveSum fix (CUDA 13.2)
+5. Make every pybind11 py::class_ registration module_local() so this fork
+   can be imported alongside plain `cumesh` in one interpreter
 """
 import os
 import subprocess
@@ -93,7 +96,8 @@ import sys as _sys
 import pathlib as _pl
 _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
 from patch_lib import (strip_std_flags, translate_cxx_flags_for_msvc,
-                       require, fix_inplace_exclusive_sum_in_files)
+                       require, fix_inplace_exclusive_sum_in_files,
+                       add_pybind_module_local)
 
 content = setup_file.read_text()
 content, _n_std = strip_std_flags(content)
@@ -115,3 +119,55 @@ _n_cub = fix_inplace_exclusive_sum_in_files(
      "src/clean_up.cu", "src/remesh/svox2vert.cu"],
     required=True)
 print(f"cumesh_vb patch: {_n_cub} CCCL-3.x call site(s) fixed")
+
+
+# --- 3. Make every pybind11 class registration module-local ---------------
+# `cumesh` and `cumesh_vb` cannot be imported into the same interpreter:
+#
+#     ImportError: generic_type: type "CuMesh" is already registered!
+#
+# Both orders fail, and all three of this fork's extensions are affected.
+# The Python-level rename above (cumesh -> cumesh_vb) does nothing about it:
+# the C++ types keep their upstream identity in both builds, and the two .so
+# sets carry the IDENTICAL pybind11 internals ID -- verified on the shipped
+# cu130/torch2.11 wheels, where `strings` reports
+# `__pybind11_internals_v11_system_libstdcpp_gxx_abi_1xxx_use_cxx11_abi_1__`
+# in cumesh/_C and cumesh_vb/_C alike -- so they share ONE global type
+# registry and both call py::class_<...>(m, "<same name>").
+#
+# The collision set at the pinned tag (d10e54c) is seven registrations:
+#   src/ext.cpp                        CuMesh
+#   third_party/cubvh/src/bindings.cpp cuBVH, cuHashTable, HashTable
+#   third_party/xatlas/binding.cpp     ChartOptions, PackOptions, Atlas
+# (the cubvh three also collide with the standalone `cubvh` package, which
+# this fixes for free on the fork's side.)
+#
+# Fixed HERE, in the fork's patch, not in plain `cumesh`: this is exactly the
+# "two node packs on different forks" case the fork exists to serve, and the
+# upstream package should keep its types global so nothing else that depends
+# on plain cumesh changes behaviour.
+#
+# module_local() over a distinct PYBIND11_INTERNALS_ID: see the long rationale
+# on add_pybind_module_local() in scripts/patch_lib.py. Short form -- the
+# internals route is a process-wide ABI split (severing the fork from torch's
+# own pybind11 internals) to solve a seven-name clash, pybind11 v3 hard-errors
+# below INTERNALS_VERSION 11 so the only free numbers are ones pybind11 will
+# itself claim later, and it must be defined in every TU of all three
+# extensions or it degrades silently. module_local() is confined to the
+# registration sites and is what pybind11 documents for this case.
+#
+# It is free here because no bound signature crosses extension boundaries:
+# bvh.py talks only to _cubvh, xatlas.py only to _xatlas, cumesh.py only to
+# _C, and every class_ is constructed and consumed inside the module that
+# registers it (checked at d10e54c).
+_ml = add_pybind_module_local({
+    "src/ext.cpp": 1,
+    "third_party/cubvh/src/bindings.cpp": 3,
+    "third_party/xatlas/binding.cpp": 3,
+})
+require(sum(_ml.values()) == 7,
+        "cumesh_vb: expected 7 module-local pybind11 class registrations, "
+        f"got {sum(_ml.values())} {_ml} -- an unlocalized py::class_ is a "
+        "live ImportError for anyone with both cumesh and cumesh_vb installed")
+print(f"cumesh_vb patch: {sum(_ml.values())} py::class_ registration(s) "
+      f"are now module_local -- coexists with plain cumesh")

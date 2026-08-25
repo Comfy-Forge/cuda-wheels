@@ -438,3 +438,103 @@ def strip_permissive_for_old_cuda(path: str | Path) -> int:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SystemExit(f"PATCH FAILED: {message}")
+
+
+# --------------------------------------------------------------------------
+# pybind11 module-local class registrations.
+#
+# Two builds of the SAME library in one process collide. `cumesh` (JeffreyXiang)
+# and `cumesh_vb` (visualbruno) are renamed at the Python level by the fork's
+# patch script, but the C++ types keep their upstream identity -- both bind
+# `cumesh::CuMesh` as "CuMesh", both bind `cuBVH`/`cuHashTable`/`HashTable`,
+# both bind xatlas's `ChartOptions`/`PackOptions`/`XAtlasWrapper`. And the two
+# .so sets carry the IDENTICAL pybind11 internals ID (verified on the shipped
+# cu130/torch2.11 wheels:
+# `__pybind11_internals_v11_system_libstdcpp_gxx_abi_1xxx_use_cxx11_abi_1__`
+# in both `_C`), so they share one global type registry. Whichever imports
+# second dies with:
+#     ImportError: generic_type: type "CuMesh" is already registered!
+#
+# The fix is pybind11's own remedy for exactly this case. In
+# pybind11 v3.0.1 include/pybind11/pybind11.h:1612 the duplicate guard reads
+#
+#     if ((rec.module_local ? get_local_type_info(*rec.type)
+#                           : get_global_type_info(*rec.type)) != nullptr)
+#         pybind11_fail("generic_type: type \"...\" is already registered!");
+#
+# so a `module_local()` registration consults the per-DSO local registry
+# (`get_local_internals()`, which lives inside the hidden-visibility `pybind11`
+# namespace and is therefore private to each extension module) and cannot see
+# -- or collide with -- the other fork's global entry.
+#
+# WHY NOT a distinct PYBIND11_INTERNALS_ID / PYBIND11_INTERNALS_VERSION:
+#   * It is a whole-process ABI statement, not a per-type one. It would split
+#     the fork off from the internals it shares with torch and with every
+#     other pybind11 module in the interpreter -- exception translators,
+#     loader_life_support, the shared type registry -- to solve a name clash
+#     in seven classes.
+#   * pybind11 v3 hard-#errors on `PYBIND11_INTERNALS_VERSION < 11`
+#     (detail/internals.h:45), so the only direction available is *upward*,
+#     into the numbers pybind11 reserves for its own future ABI bumps. A
+#     future pybind11 that lands on the same number would silently re-merge
+#     the registries and the bug returns.
+#   * It must be defined identically in EVERY TU of EVERY extension. These
+#     forks have three extensions with three separate `extra_compile_args`
+#     lists plus vendored third_party sources; one missed TU yields two
+#     internals inside a single .so and fails in a far stranger way.
+# `module_local()` is local to the registration sites, needs no build-flag
+# surgery, and degrades to a no-op if the other fork is never imported.
+#
+# COST: a module-local type is not shared across modules. That is free here --
+# each of the fork's three extensions registers and consumes its own types
+# only (the Python layer is the sole glue: bvh.py talks to `_cubvh`, xatlas.py
+# to `_xatlas`, cumesh.py to `_C`, and no bound signature names a class
+# registered by a different extension). Re-check that before reusing this on
+# a package where types DO cross extension boundaries.
+# --------------------------------------------------------------------------
+
+# `py::class_<T>(m, "Name")` / `pybind11::class_<T>(scope, "Name")`.
+# Non-greedy over the template arguments so `class_<A, B<C>>(m, "X")` still
+# terminates at the right `>`. An already-patched site does not re-match: the
+# closing paren no longer follows the name string.
+_PYBIND_CLASS_RE = re.compile(
+    r'((py|pybind11)::class_\s*<.+?>\s*\(\s*[A-Za-z_]\w*\s*,\s*"[^"]+")\s*\)',
+    re.S,
+)
+
+
+def add_pybind_module_local(expected: dict[str, int]) -> dict[str, int]:
+    """Append `module_local()` to every py::class_ registration in each file.
+
+    `expected` maps a source path to the number of registrations that file
+    MUST contain. An exact count is the point: a file that grows a new
+    `py::class_` upstream has grown a new collision, and this must fail the
+    build rather than localize six of seven types and ship the seventh.
+
+    Returns the per-file counts. Idempotent.
+    """
+    counts: dict[str, int] = {}
+    for rel, want in expected.items():
+        p = Path(rel)
+        if not p.exists():
+            raise SystemExit(
+                f"PATCH FAILED: {rel}: pybind11 binding file not found -- "
+                "upstream layout changed; the two forks would collide again "
+                'with \'generic_type: type "..." is already registered!\'')
+        text = p.read_text(encoding="utf-8", errors="surrogateescape")
+        already = len(re.findall(r"module_local\s*\(\s*\)", text))
+        new, n = _PYBIND_CLASS_RE.subn(r"\1, \2::module_local())", text)
+        got = n + already
+        if got != want:
+            raise SystemExit(
+                f"PATCH FAILED: {rel}: expected {want} py::class_ "
+                f"registration(s) to make module-local, found {got} "
+                f"({n} rewritten, {already} already local) -- upstream "
+                "changed; an unlocalized class_ is a live ImportError when "
+                "both forks are installed")
+        if n:
+            p.write_text(new, encoding="utf-8", errors="surrogateescape")
+        counts[rel] = got
+        print(f"patch_lib: {rel}: {n} py::class_ registration(s) "
+              f"-> module_local() ({already} already were)")
+    return counts
