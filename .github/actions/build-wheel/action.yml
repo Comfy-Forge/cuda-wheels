@@ -354,8 +354,16 @@ runs:
                     # Witness file: the link step asserts this fired. Without it
                     # a shadowed patch is indistinguishable from a working one.
                     if _CUW_NOOP_COUNTER:
+                        # print(file=) rather than write('...\\n'): this whole
+                        # block lives inside a non-raw triple-quoted literal, so
+                        # a backslash escape here is interpreted when the prelude
+                        # string is PARSED, not when it is written. That turned
+                        # the newline into a real line break, left `')` at column
+                        # 0, and textwrap.dedent then stripped nothing -- the
+                        # injected setup.py died with IndentationError before any
+                        # of this ran. No escapes, no recurrence.
                         with open(_CUW_NOOP_COUNTER, 'a') as _fh:
-                            _fh.write(f'{type(self).__name__}\t{len(objs)}\n')
+                            print(type(self).__name__, len(objs), file=_fh)
                     return objs
                 return _cuw_noop_compile
 
