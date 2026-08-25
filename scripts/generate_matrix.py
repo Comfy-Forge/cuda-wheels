@@ -350,6 +350,37 @@ def _validate_filters(package_filter, platform_filter,
     if python_filter not in ("all", "") and python_filter not in pythons:
         fail("python version", python_filter, pythons)
 
+    # A --pytorch filter against a links_torch:false package matches NOTHING.
+    # Such a package has no torch axis at all (CW-ADR-0011): it is built once
+    # per (cuda, python, platform), and the torch shown in its tag is just the
+    # environment the build happened in. So `--package cumm --pytorch 2.11`
+    # yields zero cells, every build job skips, `release` finds no artifacts
+    # and exits 0 -- green, having built nothing. That is exactly what happened
+    # on 2026-08-25: cumm reported success with an empty matrix, and spconv
+    # would then have failed all 125 cells in pick_cumm because the sibling
+    # wheels it fetches never existed.
+    torch_free = sorted(cfg["name"] for _d, cfg in _iter_packages()
+                        if cfg.get("links_torch") is False and cfg.get("name"))
+    if pytorch_filter not in ("all", ""):
+        if package_filter in torch_free:
+            raise SystemExit(
+                f"ERROR: --pytorch {pytorch_filter!r} was given for "
+                f"{package_filter!r}, which declares links_torch: false.\n"
+                f"  That package has no torch axis -- it is built once per "
+                f"(cuda, python, platform) -- so this filter matches zero "
+                f"cells.\n"
+                f"  Use --pytorch all (optionally with --cuda) instead.\n"
+                "Refusing to continue -- an unmatched filter builds nothing "
+                "and reports success.")
+        if package_filter == "all" and torch_free:
+            # Not an error: "build everything for torch X" legitimately has
+            # nothing to say about torch-free packages. But it must not be
+            # silent, or their absence reads as success.
+            print(f"NOTE: --pytorch {pytorch_filter} excludes torch-free "
+                  f"package(s) {', '.join(torch_free)} (links_torch: false, "
+                  f"no torch axis). Dispatch them separately with "
+                  f"--pytorch all.")
+
 
 def generate_matrix(package_filter: str, overwrite: bool = False,
                     platform_filter: str = "all", cuda_filter: str = "all",
@@ -669,6 +700,15 @@ def main():
     with open(args.output, "w") as f:
         # No indent - GitHub Actions needs single-line JSON for GITHUB_OUTPUT
         json.dump(output, f, separators=(',', ':'))
+
+    if not matrix and args.package != "all":
+        raise SystemExit(
+            f"ERROR: {args.package!r} produced ZERO build jobs under "
+            f"platform={args.platform} cuda={args.cuda} "
+            f"pytorch={args.pytorch} python={args.python}.\n"
+            "Refusing to emit an empty matrix -- every build job would skip, "
+            "release would find no artifacts, and the run would report "
+            "success having built nothing.")
 
     print(f"Generated {len(matrix)} build jobs "
           f"({len(linux_jobs)} Linux, {len(aarch64_jobs)} aarch64, "
