@@ -61,35 +61,32 @@ def _check_pre_build_not_redactable(cfg: dict, pkg_dir: Path) -> None:
             f"'pre_build_script: bash packages/{pkg_dir.name}/pre_build.sh'.")
 
 
-_TORCH_FAMILY = {"torch", "torchvision", "torchaudio"}
+def _check_no_requires_dist(cfg: dict, pkg_dir: Path) -> None:
+    """`requires_dist` is retired -- declaring it is a hard error.
 
-
-def _check_requires_dist_has_no_torch(cfg: dict, pkg_dir: Path) -> None:
-    """A curated Requires-Dist must never name the torch family.
-
-    The consumer pins torch workspace-wide (version AND index) before any
-    cuda-wheel is selected, and Requires-Dist is the one channel that bypasses
-    that pin. Declaring it can only cause a second CPU-only torch to be
-    resolved from PyPI, or an outright solver failure. The build step strips
-    the family from every wheel anyway, so a curated entry here would also
-    desync the C2 gate. See docs ADR-0004.
+    The farm publishes wheels with NO dependency metadata at all (owner
+    decision 2026-08-25): every Requires-Dist and Provides-Extra header is
+    stripped from every wheel by patch_wheel_version.strip_all_requires_dist,
+    unconditionally. A leftover `requires_dist:` block would therefore be
+    silently ignored, which is worse than an error -- it would read as though
+    the farm still curated metadata. Runtime dependencies are declared by the
+    consuming node pack's comfy-env.toml and enforced by `comfy-test run
+    --cuda` (install + node instantiation on real hardware).
     """
-    for req in cfg.get("requires_dist") or []:
-        name = str(req).strip().split(";", 1)[0]
-        for sep in ("[", "(", "=", "<", ">", "!", "~", " "):
-            name = name.split(sep, 1)[0]
-        if name.strip().replace("_", "-").lower() in _TORCH_FAMILY:
-            raise SystemExit(
-                f"ERROR: {pkg_dir.name}/package.yml: requires_dist declares "
-                f"{req!r}. The torch family is pinned workspace-wide by the "
-                f"consumer and is stripped from every wheel -- remove it.")
+    if "requires_dist" in cfg:
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}/package.yml declares requires_dist. That "
+            f"key is retired -- the farm strips ALL dependency metadata from "
+            f"every wheel, so this list would do nothing. Delete it, and "
+            f"declare the dependency in the consuming node pack's "
+            f"comfy-env.toml instead.")
 
 
 def load_package(pkg_dir: Path) -> dict:
     """One package's flat config dict, overrides merged in."""
     cfg = yaml.safe_load((pkg_dir / "package.yml").read_text()) or {}
     _check_pre_build_not_redactable(cfg, pkg_dir)
-    _check_requires_dist_has_no_torch(cfg, pkg_dir)
+    _check_no_requires_dist(cfg, pkg_dir)
     for extra in ("pcto_override.yml", "arch_override.yml"):
         p = pkg_dir / extra
         if p.exists():
@@ -117,14 +114,6 @@ def load_package(pkg_dir: Path) -> dict:
             f"ERROR: {pkg_dir.name}: no links_torch declared -- state it "
             f"explicitly (true: wheel per (cuda x torch); false: torch-free, "
             f"one wheel per cuda, CW-ADR-0011).")
-    rd = cfg.get("requires_dist")
-    if rd is not None and (
-            not isinstance(rd, list) or not rd
-            or not all(isinstance(e, str) and e.strip() for e in rd)):
-        raise SystemExit(
-            f"ERROR: {pkg_dir.name}: requires_dist must be a non-empty "
-            f"list of PEP 508 strings (it REPLACES the wheel's upstream "
-            f"Requires-Dist wholesale).")
     return cfg
 
 

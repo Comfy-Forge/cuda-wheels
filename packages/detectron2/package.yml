@@ -6,19 +6,3 @@ version: '0.6'
 # Curated Requires-Dist (CW-ADR-0004): upstream v0.6 minus black==21.4b2
 # (a code formatter exact-pinned to a 2021 beta, accidentally a runtime
 # dep) and minus the obsolete dataclasses backport; extras dropped.
-requires_dist:
-  - Pillow>=7.1
-  - matplotlib
-  - pycocotools>=2.0.2
-  - termcolor>=1.1
-  - yacs>=0.1.8
-  - tabulate
-  - cloudpickle
-  - tqdm>4.29.0
-  - tensorboard
-  - fvcore<0.1.6,>=0.1.5
-  - iopath<0.1.10,>=0.1.7
-  - future
-  - pydot
-  - omegaconf>=2.1
-  - hydra-core>=1.1

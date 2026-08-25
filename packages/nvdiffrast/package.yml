@@ -17,8 +17,6 @@ extra_deps: numpy
 # merely unused, it is impossible, and ninja was pure surplus. torch is a
 # real dep but is stripped farm-wide by policy (pinned workspace-wide by the
 # consumer), leaving numpy as the only declarable one.
-requires_dist:
-  - numpy
 # allow_pure_python removed with the same correction: it was inert (C3 only
 # consults it when the wheel has NO extensions, and this one always does),
 # but it would have silently swallowed exactly the regression C3 exists to

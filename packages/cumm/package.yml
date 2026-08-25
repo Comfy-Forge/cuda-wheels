@@ -14,9 +14,6 @@ version: 0.7.11   # also read by sibling {VER:cumm} pins (spconv)
 clone_recursive: true
 # Curated Requires-Dist (CW-ADR-0004): upstream leaks its build stack
 # (pccm/pybind11) and its CLI helper (fire) as runtime deps.
-requires_dist:
-  - numpy
-  - sympy
 patch_script: packages/cumm/patches/cumm.py
 extra_deps: pccm>=0.4.16 ccimport>=0.4.4
 verify:

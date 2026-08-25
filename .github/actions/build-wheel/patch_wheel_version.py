@@ -6,11 +6,10 @@ Two fixes, one repack:
 1. Version: the filename carries the local tag (+cu130torch29) but the
    internal METADATA still has the base version -- sync them so pip/uv
    see consistent versions.
-2. Requires-Dist curation: when the package's config declares a
-   `requires_dist` list, it REPLACES the upstream Requires-Dist (and
-   Provides-Extra) wholesale -- upstream lists leak build tools and
-   mis-pin siblings (CW-ADR-0004). Placeholders {LOCAL}/{VER:<folder>}
-   expand via package_loader.expand_requires_dist.
+2. Dependency strip: EVERY Requires-Dist and Provides-Extra header is
+   removed, from every wheel, unconditionally. The farm publishes wheels
+   that declare no dependencies -- see strip_all_requires_dist() for why.
+   `--package` is accepted for call-site compatibility and ignored.
 
 Usage:
     python patch_wheel_version.py [--package <name>] <wheel_or_directory> [...]
@@ -73,83 +72,53 @@ def rebuild_record(tmpdir: Path, dist_info_name: str) -> None:
     record_path.write_text(buf.getvalue(), encoding="utf-8")
 
 
-def curate_requires_dist(content: str, curated: list[str]) -> str:
-    """Replace every Requires-Dist/Provides-Extra header with the curated
-    list. Folded continuation lines of dropped headers are dropped too."""
+def strip_all_requires_dist(content: str) -> tuple[str, int]:
+    """Remove EVERY Requires-Dist and Provides-Extra header.
+
+    The farm publishes wheels with NO declared dependencies. This is not
+    neglect, it is the contract (owner decision 2026-08-25):
+
+      * comfy-env, the consumer these wheels exist for, installs them by
+        direct URL. Today that is `uv pip install --no-deps`; the single-phase
+        successor inlines them as pixi `[pypi-dependencies]` with `{url=...}`.
+        Either way the resolver must not chase a wheel's own dependency list --
+        pixi has no `--no-deps`, so an EMPTY Requires-Dist is how that is
+        expressed. Zero declared deps means zero resolver surface, which also
+        means the farm index never has to be registered and therefore never
+        shadows PyPI for the 17 names it shares with it.
+      * The field was never load-bearing anyway. Nothing has ever read it
+        (--no-deps), and it was measurably wrong: 22 of 39 published wheels
+        failed a bare `import <pkg>` from their own metadata, ~17 of those
+        because upstream itself never declared the dep.
+      * Runtime deps are declared by the consuming node pack's comfy-env.toml
+        and enforced by `comfy-test run --cuda` (install + node instantiation
+        on real GPUs), which is a test that actually executes the code, rather
+        than a static list nobody validates.
+
+    Folded continuation lines go with their header. Returns (new, n_removed).
+    """
     head, sep, body = content.partition("\n\n")
-    kept, dropping = [], False
+    kept, removed, dropping = [], 0, False
     for line in head.splitlines():
         if line.startswith(("Requires-Dist:", "Provides-Extra:")):
+            removed += 1
             dropping = True
             continue
         if dropping and line[:1] in (" ", "\t"):
             continue
         dropping = False
         kept.append(line)
-    kept += [f"Requires-Dist: {req}" for req in curated]
-    return "\n".join(kept) + (sep + body if sep else "\n")
+    return "\n".join(kept) + (sep + body if sep else "\n"), removed
 
 
-# The torch family is pinned WORKSPACE-WIDE by the consumer (comfy-env pins
-# torch/torchvision/torchaudio by version AND index, because tensors cross the
-# process boundary over torch's private multiprocessing ABI, which has no
-# version handshake). A wheel's Requires-Dist is the one channel that bypasses
-# that pin, since it lives inside the artifact rather than in the generated
-# manifest. `Requires-Dist: torch>=2.4.0` therefore asks the solver for torch
-# from its DEFAULT source (PyPI) while the manifest pins the same name from the
-# CUDA index -- best case redundant, realistic case a second CPU-only torch or
-# an outright resolution failure. It can never be useful: the only torch that
-# will ever be present was pinned before the wheel was even selected, and the
-# wheel's local version (+cu128torch2.8) already records which torch it was
-# built against far more precisely than a floor does.
-#
-# Farm-wide rather than a per-package list: the reasoning holds for every wheel
-# here, and a list would silently miss packages built later.
-TORCH_FAMILY = ("torch", "torchvision", "torchaudio")
-
-
-def _dist_name(requirement: str) -> str:
-    """The bare distribution name from a PEP 508 requirement string."""
-    name = requirement.strip().split(";", 1)[0]
-    for sep in ("[", "(", "=", "<", ">", "!", "~", " "):
-        name = name.split(sep, 1)[0]
-    return name.strip().replace("_", "-").lower()
-
-
-def strip_torch_family(content: str) -> tuple[str, list[str]]:
-    """Drop Requires-Dist lines for torch/torchvision/torchaudio.
-
-    Returns (new_content, dropped). Folded continuation lines go with their
-    header. Everything else -- genuine runtime deps, sibling local-version
-    pins -- is untouched.
-    """
-    head, sep, body = content.partition("\n\n")
-    kept, dropped, dropping = [], [], False
-    for line in head.splitlines():
-        if line.startswith("Requires-Dist:"):
-            req = line[len("Requires-Dist:"):].strip()
-            if _dist_name(req) in TORCH_FAMILY:
-                dropped.append(req)
-                dropping = True
-                continue
-            dropping = False
-        elif dropping and line[:1] in (" ", "\t"):
-            continue
-        else:
-            dropping = False
-        kept.append(line)
-    return "\n".join(kept) + (sep + body if sep else "\n"), dropped
-
-
-def fix_wheel(wheel_path: Path, curated_template: list[str] | None = None) -> bool:
-    """Fix METADATA (version + curated Requires-Dist) in-place.
+def fix_wheel(wheel_path: Path) -> bool:
+    """Fix METADATA (version) and strip all dependency headers, in-place.
     Returns True if modified."""
     filename = wheel_path.name
     pkg_name, version = extract_version_from_filename(filename)
 
     if "+" not in version:
         return False
-    local_tag = version.split("+", 1)[1]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -185,22 +154,13 @@ def fix_wheel(wheel_path: Path, curated_template: list[str] | None = None) -> bo
             )
             modified = True
 
-        if curated_template is not None:
-            from package_loader import expand_requires_dist
-            curated = expand_requires_dist(curated_template, local_tag)
-            new_content = curate_requires_dist(content, curated)
-            if new_content != content:
-                content = new_content
-                modified = True
-            print(f"  {filename}: Requires-Dist curated "
-                  f"({len(curated)} entries)")
-        # Always, curated or not: the torch family must not appear.
-        new_content, dropped = strip_torch_family(content)
-        if dropped:
+        # Unconditional, every wheel, every package: ship no dependencies.
+        new_content, removed = strip_all_requires_dist(content)
+        if new_content != content:
             content = new_content
             modified = True
-            print(f"  {filename}: dropped torch-family Requires-Dist "
-                  f"{dropped} (pinned workspace-wide by the consumer)")
+        print(f"  {filename}: stripped {removed} Requires-Dist/Provides-Extra "
+              f"header(s) -- the farm declares no dependencies")
 
         if not modified:
             return False
@@ -226,20 +186,6 @@ def fix_wheel(wheel_path: Path, curated_template: list[str] | None = None) -> bo
     return True
 
 
-def load_curated_template(package: str) -> list[str] | None:
-    """The package's curated requires_dist from packages/<folder>/, or None.
-    The action runs from the farm repo checkout, so the config is three
-    levels up from this co-located script."""
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-    from package_loader import iter_packages
-    want = package.replace("-", "_").lower()
-    for _folder, cfg in iter_packages():
-        if cfg["name"].replace("-", "_").lower() == want:
-            return cfg.get("requires_dist")
-    raise SystemExit(f"patch_wheel_version: no package named {package!r} "
-                     f"in packages/")
-
-
 def main():
     argv = sys.argv[1:]
     package = None
@@ -251,7 +197,6 @@ def main():
         print("Usage: python patch_wheel_version.py [--package <name>] "
               "<wheel_or_directory> [...]")
         sys.exit(1)
-    curated = load_curated_template(package) if package else None
 
     paths = [Path(p) for p in argv]
     fixed = 0
@@ -266,7 +211,7 @@ def main():
             continue
 
         for whl in wheels:
-            if fix_wheel(whl, curated):
+            if fix_wheel(whl):
                 fixed += 1
 
     print(f"Fixed {fixed} wheel(s)")

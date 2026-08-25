@@ -45,7 +45,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from audit import parse_wheel, extract_archs, arch_list_to_sm, _SKIP_LIBS  # noqa: E402
 import generate_matrix as _GM  # noqa: E402
-from package_loader import iter_packages, expand_requires_dist  # noqa: E402
+from package_loader import iter_packages  # noqa: E402
 
 def _arch_major(sm):
     """sm_90 -> 9; sm_90a -> 9; robust to arch-variant suffixes."""
@@ -233,47 +233,33 @@ def check_metadata(rep, wheel_path, parsed, pkg):
                     f"METADATA Version {got_version!r} != filename {want_version!r} "
                     f"(patch_wheel_version regression)")
             return
-        # Curated Requires-Dist: when the config declares one, the wheel
-        # must carry EXACTLY the expanded list -- a mismatch means the
-        # patch step was skipped or upstream's format defeated it.
-        # Farm-wide: the torch family must never survive into a published
-        # wheel. The consumer pins torch by version AND index workspace-wide
-        # before a cuda-wheel is selected, and Requires-Dist is the one channel
-        # that bypasses that pin -- a surviving entry would let a solver pull a
-        # second, CPU-only torch from PyPI. Blocks inlining the wheels into
-        # pixi.lock, which has no --no-deps equivalent. See ADR-0004.
-        _torch_family = {"torch", "torchvision", "torchaudio"}
-
-        def _dist_name(requirement):
-            name = requirement.strip().split(";", 1)[0]
-            for sep in ("[", "(", "=", "<", ">", "!", "~", " "):
-                name = name.split(sep, 1)[0]
-            return name.strip().replace("_", "-").lower()
-
-        torchy = [r for r in (meta.get_all("Requires-Dist") or [])
-                  if _dist_name(r) in _torch_family]
-        if torchy:
+        # The farm publishes wheels that declare NO dependencies. Every
+        # Requires-Dist and Provides-Extra header is stripped from every wheel
+        # by patch_wheel_version.strip_all_requires_dist (owner decision
+        # 2026-08-25). A survivor means the patch step was skipped or upstream's
+        # header format defeated it.
+        #
+        # Why empty rather than curated: comfy-env installs these by direct URL
+        # and must not have the resolver chase a wheel's own dependency list --
+        # pixi has no `--no-deps`, so empty metadata is how that is expressed.
+        # It also keeps the farm index from ever needing to be registered, and
+        # therefore from shadowing PyPI for the 17 names it shares with it.
+        # Runtime deps are declared by the consuming node pack's comfy-env.toml
+        # and enforced by `comfy-test run --cuda`.
+        #
+        # This replaced a check that asserted the wheel matched the config's
+        # curated list -- a tautology that proved the patch step ran, never
+        # that the list was true. "No dependencies" is falsifiable by the
+        # artifact alone.
+        leftover_reqs = meta.get_all("Requires-Dist") or []
+        leftover_extras = meta.get_all("Provides-Extra") or []
+        if leftover_reqs or leftover_extras:
             rep.add("metadata", "fail",
-                    f"Requires-Dist still declares the torch family {torchy} "
-                    f"-- it is pinned workspace-wide by the consumer and must "
-                    f"be stripped (patch_wheel_version regression)")
+                    f"wheel still declares dependencies: "
+                    f"Requires-Dist={leftover_reqs} "
+                    f"Provides-Extra={leftover_extras} -- the farm ships no "
+                    f"dependency metadata (patch_wheel_version regression)")
             return
-
-        curated_template = pkg.get("requires_dist")
-        if curated_template:
-            local_tag = (f"cu{parsed['cuda_short']}"
-                         f"torch{parsed['torch_short']}") if parsed else ""
-            want_reqs = sorted(expand_requires_dist(curated_template, local_tag))
-            got_reqs = sorted(meta.get_all("Requires-Dist") or [])
-            extras = meta.get_all("Provides-Extra") or []
-            if got_reqs != want_reqs or extras:
-                missing = [r for r in want_reqs if r not in got_reqs]
-                surplus = [r for r in got_reqs if r not in want_reqs]
-                rep.add("metadata", "fail",
-                        f"Requires-Dist not curated: missing={missing} "
-                        f"surplus={surplus} leftover_extras={extras} "
-                        f"(requires_dist curation regression)")
-                return
         # RECORD re-verify
         rec_name = meta_name.rsplit("/", 1)[0] + "/RECORD"
         if rec_name not in names:

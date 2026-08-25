@@ -23,9 +23,6 @@ pre_build_script: bash "$GITHUB_WORKSPACE/packages/spconv/pre_build.sh"
 # is exact+local so it resolves from our index or fails loudly -- and
 # since the build now uses the same farm wheel, the pairing is proven by
 # the gate on every build.
-requires_dist:
-  - numpy
-  - "cumm=={VER:cumm}+{LOCAL}"
 verify:
   extra_imports: [spconv.pytorch]
   # core_cc is loaded by spconv's own __init__ (which registers cumm's

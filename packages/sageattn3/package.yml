@@ -8,14 +8,6 @@ patch_script: packages/sageattn3/patches/sageattn3.py
 max_jobs: 2   # api.cu is a monster TU; upstream --threads 4 is neutralized by the trailing farm --threads=1
 # Curated Requires-Dist (CW-ADR-0004): AOT-compiled wheel -- upstream's
 # ninja is build-time leakage.
-requires_dist:
-  # NOTE: torch is deliberately absent. The farm strips the torch
-  # family from every wheel's Requires-Dist (see ADR-0004): the
-  # consumer pins torch workspace-wide by version AND index before a
-  # cuda-wheel is ever selected, so declaring it here can only make a
-  # solver fetch a second, CPU-only torch from PyPI.
-  - einops
-  - packaging
 verify:
   expect_device_error: true
   needs_driver: true   # TMA kernels link the Driver API (stub lane on Linux, import SKIP on Windows)
