@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Generate PEP 503 compliant package index from GitHub releases."""
 import os
+import datetime as _dt
 import json
 import re
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -117,6 +119,28 @@ def expand_torch_free_aliases(packages: dict, torch_free: set, grid: dict) -> in
     return aliased
 
 
+def published_branch_exists(repo: str, branch: str, token: str = None) -> bool:
+    """Does `branch` exist on `repo`? Raises if the answer cannot be determined.
+
+    Used to tell "nothing was ever published" apart from "the baseline checkout
+    failed". Never returns a guess: an inconclusive probe propagates, because
+    the whole point is that the shrinkage guard must not be skipped on an
+    ambiguity.
+    """
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{repo}/branches/{branch}", headers=headers)
+    try:
+        with urllib.request.urlopen(req) as response:
+            return response.status == 200
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise
+
+
 def get_releases(repo: str, token: str = None) -> list:
     """Fetch ALL releases from a GitHub repository.
 
@@ -142,6 +166,16 @@ def get_releases(repo: str, token: str = None) -> list:
         if pages > 50:  # 5000 releases; a runaway Link chain is a bug, not a repo
             raise RuntimeError("release pagination did not terminate")
     print(f"Fetched {len(releases)} releases across {pages} page(s)")
+    # A 200 returning [] is indistinguishable from a total auth failure, and
+    # there is no legitimate reason to publish a zero-package index. Fail
+    # rather than deploy one -- an empty index is worse than a stale one,
+    # because pip hard-fails on a 404 instead of falling through.
+    if not releases:
+        raise SystemExit(
+            "ERROR: the releases API returned ZERO releases. That is either an "
+            "auth failure or a repo with nothing published; either way, refusing "
+            "to deploy an empty index. To publish an empty index deliberately, "
+            "delete the gh-pages branch by hand.")
     return releases
 
 
@@ -152,9 +186,10 @@ def main():
                     help="Directory to write the generated site into (never committed; "
                          "deployed wholesale to gh-pages)")
     ap.add_argument("--previous", default="previous-site",
-                    help="Checkout of the CURRENT gh-pages branch, used by the "
-                         "never-publish-a-shorter-index guard. Missing dir = guard "
-                         "skipped with a loud warning (first deploy only).")
+                    help="Checkout of the CURRENT gh-pages branch. Its "
+                         "packages.json is the baseline for the shrinkage guard. "
+                         "A missing baseline is NOT a bypass: it is an error "
+                         "whenever the gh-pages branch exists.")
     args = ap.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN")
@@ -194,39 +229,104 @@ def main():
         print(f"torch-independent packages: {', '.join(sorted(torch_free))}")
         print(f"  emitted {n_aliases} alias listing(s) (0 extra wheels built or stored)")
 
-    # Guard: never publish an index shorter than the last one. A truncated
-    # fetch, an auth failure, or an API hiccup must fail the run rather than
-    # quietly dropping packages -- losing them produces no error anywhere
-    # downstream, and the per-package pages keep serving stale wheel lists.
+    # ── Shrinkage guard ────────────────────────────────────────────────
+    # The old guard diffed DIRECTORY NAMES in the previous gh-pages checkout
+    # and refused to publish if any were missing. Three things were wrong with
+    # it, and all three fired in the same week:
+    #
+    #  * It measured names, ~20x coarser than the content. A package whose
+    #    every link had gone 404 still "passed" as long as its directory
+    #    existed -- which is exactly the state the live index is in now.
+    #  * Its baseline was the live gh-pages content, which the deploy itself
+    #    overwrites under force_orphan. One bad deploy anchored the guard to
+    #    the bad state permanently, with no history to revert to.
+    #  * It was UNFALSIFIABLE after a wipe. Its remedy text says "delete its
+    #    release and re-run" -- but the releases being gone is precisely why
+    #    the packages are missing. There was no action that satisfied it.
+    #
+    # The replacement discriminates by CAUSE rather than by magnitude, which
+    # needs no flag (a bare --force becomes muscle memory and the guard stops
+    # existing) and no hand-maintained list:
+    #
+    #    a truncated fetch / bad prune loses ASSETS under releases that STILL
+    #    EXIST.  an operator deleting a package loses the RELEASE OBJECT.
+    #
+    # So: lost package whose release tag is still live -> HARD FAIL.
+    #     lost package whose release tag is gone       -> loud WARN, proceed.
+    #
+    # A full farm wipe (which has happened twice this week and will happen
+    # again) therefore self-clears in one run, while the truncation case the
+    # guard was actually written for still stops the deploy.
+    live_tags = {r.get("tag_name", "") for r in releases}
+
+    def _tag_alive(pkg_name):
+        # Release tags are "<pkg>-latest"; index names are normalised
+        # (lowercase, "_" -> "-"), so compare normalised on both sides.
+        for t in live_tags:
+            base = t[:-len("-latest")] if t.endswith("-latest") else t
+            if base.lower().replace("_", "-") == pkg_name:
+                return True
+        return False
+
     prev_root = Path(args.previous)
-    v2_dir = prev_root / "v2"   # transition: pre-single-index deploys kept /v2/
-    if v2_dir.is_dir():
-        previous = {d.name for d in v2_dir.iterdir() if d.is_dir()}
-    elif prev_root.is_dir():
-        # Root-level package dirs; skip the non-package families (combo
-        # channels cuXXX/, matrix/, dashboard/).
-        previous = {d.name for d in prev_root.iterdir() if d.is_dir()
-                    and d.name not in ("matrix", "dashboard", "v2", "find", "archs")
-                    # Combo channels are cu128/, cu13.2/ etc. A prefix test
-                    # also exempted REAL packages whose names start with "cu"
-                    # (cubvh, cumesh, cumesh-vb, cumm, custom-rasterizer-hy3d2)
-                    # -- they could vanish from the index unnoticed under
-                    # force_orphan. Match the channel shape exactly.
-                    and not re.fullmatch(r"cu\d+(\.\d+)?", d.name)
-                    and not d.name.startswith(".")}
+    baseline = None
+    manifest_path = prev_root / "packages.json"
+    if manifest_path.is_file():
+        # Baseline from the machine-readable manifest this script already
+        # writes, NOT from a directory listing. That also deletes the
+        # hand-maintained exclusion list ("matrix", "dashboard", "find", the
+        # cu\d+ channel regex...) which had already broken once.
+        try:
+            _prev = json.loads(manifest_path.read_text())
+            if int(_prev.get("schema", 0)) >= 1:
+                baseline = set(_prev.get("packages", {}))
+        except Exception as exc:
+            print(f"WARNING: could not parse {manifest_path}: {exc}")
+    if baseline is None:
+        # An absent baseline is ambiguous in exactly the same shape as an
+        # absent package, so discriminate it the same way -- by cause, not by
+        # shrugging. Either nothing was ever published (genuine first deploy)
+        # or something ate the checkout: a network blip on the gh-pages
+        # checkout step, which `continue-on-error: true` in the workflow turns
+        # into a silent skip, or `--previous` aimed at a path that does not
+        # exist. Skipping on ambiguity is fail-OPEN, and fail-open is how the
+        # index came to be 58% dead links in the first place.
+        if published_branch_exists(repo, "gh-pages", token):
+            raise SystemExit(
+                f"ERROR: no usable baseline manifest at {manifest_path}, but the "
+                f"gh-pages branch EXISTS on {repo}. The baseline was lost, not "
+                f"absent -- most likely the gh-pages checkout step failed (it "
+                f"runs with continue-on-error) or --previous points somewhere "
+                f"wrong. Refusing to publish with the shrinkage guard disabled; "
+                f"fix the checkout and re-run. There is deliberately no flag to "
+                f"bypass this.")
+        print(f"WARNING: no usable baseline manifest at {manifest_path} and no "
+              f"gh-pages branch on {repo} -- nothing has ever been published, so "
+              f"the shrinkage guard has nothing to compare against and is "
+              f"SKIPPED. Expected on the very first deploy only.")
+        lost_gone, lost_live = [], []
     else:
-        previous = set()
-        print(f"WARNING: no previous index at {prev_root} -- the shorter-index "
-              f"guard is SKIPPED. Expected only on the very first deploy.")
-    lost = previous - set(packages)
-    if lost:
-        print(f"ERROR: {len(lost)} package(s) in the previous index are absent now:")
-        for name in sorted(lost):
-            print(f"  - {name}")
-        print("Refusing to publish a shorter index. If a package was removed")
-        print("deliberately, delete its release and re-run -- the guard compares")
-        print("against the live gh-pages content, not a committed copy.")
+        lost = sorted(baseline - set(packages))
+        lost_live = [p for p in lost if _tag_alive(p)]
+        lost_gone = [p for p in lost if not _tag_alive(p)]
+
+    if lost_live:
+        print(f"ERROR: {len(lost_live)} package(s) vanished from the index while "
+              f"their release still exists:")
+        for name in lost_live:
+            print(f"  - {name}  (release tag is LIVE -- assets went missing)")
+        print("That is the signature of a truncated fetch, a partial API page, "
+              "or a prune running against this repo mid-generation -- NOT of a "
+              "deliberate removal. Refusing to publish. Re-run; if it persists, "
+              "the release genuinely lost its assets and needs a rebuild.")
         raise SystemExit(1)
+
+    if lost_gone:
+        print(f"NOTE: {len(lost_gone)} package(s) are absent because their "
+              f"release was deleted -- publishing without them:")
+        for name in lost_gone:
+            print(f"  - {name}")
+
     print(f"{len(packages)} packages, {sum(len(v) for v in packages.values())} wheels")
 
     # Create docs directory
@@ -329,7 +429,18 @@ def main():
     import sys as _s2
     _s2.path.insert(0, str(Path(__file__).resolve().parent))
     from audit import parse_wheel as _parse_wheel
-    manifest = {"schema": 1, "repo": repo, "packages": {}}
+    manifest = {
+        "schema": 1, "repo": repo,
+        # Provenance: makes "how stale is the live index" answerable with a
+        # single curl, and lets a future concurrency check detect another
+        # writer landing on gh-pages underneath this run.
+        "generated_at": _dt.datetime.now(_dt.timezone.utc)
+                            .replace(microsecond=0).isoformat(),
+        "source_commit": os.environ.get("GITHUB_SHA", ""),
+        "release_count": len(releases),
+        "asset_count": sum(len(v) for v in packages.values()),
+        "removed_since_previous": lost_gone,
+        "packages": {}}
     for pkg, wheels in packages.items():
         entries = []
         for w in wheels:

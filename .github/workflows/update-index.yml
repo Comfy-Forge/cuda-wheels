@@ -20,9 +20,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # The previous index is the LIVE gh-pages branch, not a committed copy
-      # in main: check it out so the never-publish-a-shorter-index guard
-      # compares against reality. Absent on the very first deploy.
-      - name: Checkout current gh-pages (for the shorter-index guard)
+      # in main: check it out so the shrinkage guard compares against reality.
+      # continue-on-error is safe here ONLY because it is no longer load-bearing:
+      # generate_index.py asks the API whether gh-pages exists, and a missing
+      # baseline with a live branch is a hard error there. A failed checkout
+      # therefore surfaces as a readable diagnosis in the Python step instead of
+      # silently disabling the guard. Do not move that decision back into YAML.
+      - name: Checkout current gh-pages (baseline for the shrinkage guard)
         id: prev
         continue-on-error: true
         uses: actions/checkout@v4
