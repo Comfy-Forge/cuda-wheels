@@ -9,3 +9,12 @@ patch_script: packages/sageattention/patches/sageattention.py
 max_jobs: 2
 verify:
   expect_device_error: true  # __init__ probes the GPU; device errors expected on CI
+  # 10 Linux binaries DT_NEEDED libcuda.so.1 (the driver, never shippable).
+  # The gate noticed and warned on every single build -- "links libcuda.so.1
+  # but package.yml lacks verify.needs_driver" -- and the warning was being
+  # accepted rather than acted on, which is how config drift accumulates.
+  # Declared 2026-08-25 after an NVIDIA linkage review. Consequence for a
+  # user on a driverless box (CPU-only container, no nvidia runtime):
+  # `import sageattention` fails with "libcuda.so.1: cannot open shared
+  # object file" rather than degrading gracefully.
+  needs_driver: true

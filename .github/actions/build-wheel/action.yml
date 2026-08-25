@@ -853,10 +853,16 @@ runs:
           # auditwheel vendor it. verify_wheel's TORCH_PROVIDED check enforces
           # the same split from the other side.
           CUDART_EXCLUDE="--exclude libcudart.so*"
+          # libgomp rides the same links_torch split as libcudart: torch ships
+          # torch/lib/libgomp.so.1 and loads it at `import torch`, so excluding
+          # it is right for torch-linked packages and wrong for torch-free ones
+          # (it is in no manylinux lib_whitelist, so nothing else guarantees it).
+          GOMP_EXCLUDE="--exclude libgomp.so.1"
           LT=$(python -c 'import sys,os; sys.path.insert(0, os.environ["GITHUB_WORKSPACE"]+"/scripts"); from package_loader import iter_packages; print(next(("false" for _f,c in iter_packages() if c.get("name")==sys.argv[1] and c.get("links_torch") is False), "true"))' "${{ inputs.package }}" 2>/dev/null || echo "")
           if [ "$LT" = "false" ]; then
             CUDART_EXCLUDE=""
-            echo "torch-free package: NOT excluding libcudart -- auditwheel will vendor it"
+            GOMP_EXCLUDE=""
+            echo "torch-free package: NOT excluding libcudart/libgomp -- auditwheel will vendor them"
           elif [ -z "$LT" ]; then
             echo "::warning::could not resolve links_torch for ${{ inputs.package }}; keeping the libcudart exclude"
           fi
@@ -879,7 +885,7 @@ runs:
             --exclude 'libggml*.so*' \
             --exclude 'libllama*.so*' \
             --exclude 'libmtmd*.so*' \
-            --exclude libgomp.so.1; then
+            $GOMP_EXCLUDE; then
             rm "$whl"
           else
             echo "::error::auditwheel repair failed for $whl"

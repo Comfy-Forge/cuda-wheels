@@ -73,7 +73,7 @@ GLIBC_FAMILY = ("libc.so", "libm.so", "libdl.so", "libpthread.so", "librt.so",
                 "ld-linux", "libutil.so", "libresolv.so")
 # libcuda.so.1 is the DRIVER -- always present on a machine with a GPU, never
 # shippable. libstdc++/libgcc_s/libgomp come from the platform toolchain.
-ALLOWED_NEEDED_PREFIXES = ("libstdc++", "libgcc_s", "libgomp", "libcuda.so.1")
+ALLOWED_NEEDED_PREFIXES = ("libstdc++", "libgcc_s", "libcuda.so.1")
 # cublas-class libs are OK only if the wheel vendors them or torch provides
 # them at runtime (torch-linked packages ride torch's copies; a torch-FREE
 # package linking these unvendored ships a wheel that cannot load).
@@ -90,7 +90,15 @@ ALLOWED_NEEDED_PREFIXES = ("libstdc++", "libgcc_s", "libgomp", "libcuda.so.1")
 # the distinction this tuple encodes.
 TORCH_PROVIDED = ("libcublas", "libcusparse", "libcufft", "libcurand",
                   "libcusolver", "libcudnn", "libnccl", "libnvrtc",
-                  "libnvJitLink", "libcudart")
+                  "libnvJitLink", "libcudart", "libgomp")
+# libgomp ADDED 2026-08-25, same class as libcudart one library over. It was
+# in ALLOWED_NEEDED_PREFIXES (unconditional pass) AND excluded from auditwheel
+# vendoring unconditionally AND is in no manylinux lib_whitelist at any policy
+# level -- so a torch-FREE package linking OpenMP would ship broken and green.
+# torch ships torch/lib/libgomp.so.1 with an unmangled SONAME and loads it at
+# `import torch`, so torch-linked packages are genuinely covered; torch-free
+# ones are not. Currently latent (no wheel in the corpus needs it) -- fixed as
+# a class rather than waiting for an instance.
 
 
 def log(msg):
