@@ -962,18 +962,33 @@ runs:
       shell: bash
       run: |
         SA="$(cd "$GITHUB_WORKSPACE/shard-artifacts" 2>/dev/null && pwd || true)"
-        mkdir -p "$RUNNER_TEMP/sccache"
+        # RUNNER_TEMP is a WINDOWS path (D:\a\_temp). Handing it to Git-bash
+        # tar verbatim makes tar read the drive colon as a remote host:
+        #   tar: D\:\a\\_temp/sccache: Cannot open: No such file or directory
+        # ...and the loop then extracts nothing, so the link job died with
+        # "no shard sccache artifacts found" and blamed the shard jobs, which
+        # had all succeeded (natten Windows, 2026-08-25 -- 20/20 shards green).
+        # The objects-restore step already resolves to a POSIX path first and
+        # the sccache PACKAGE step already passes --force-local; this step did
+        # neither. Do both.
+        SC="$(cd "$RUNNER_TEMP" && pwd)/sccache"
+        mkdir -p "$SC"
         found=0
         for tarball in "$SA"/*/sccache.tar.gz; do
           [ -f "$tarball" ] || continue
           found=$((found+1))
-          tar -xzf "$tarball" -C "$RUNNER_TEMP/sccache"
+          tar --force-local -xzf "$tarball" -C "$SC"
         done
         if [ "$found" = "0" ]; then
           echo "::error::no shard sccache artifacts found -- did the shard jobs succeed?"
           exit 1
         fi
-        echo "merged $found sccache shard(s): $(du -sh "$RUNNER_TEMP/sccache" | cut -f1)"
+        ENTRIES=$(find "$SC" -type f | wc -l)
+        echo "merged $found sccache shard(s), $ENTRIES cache entries: $(du -sh "$SC" | cut -f1)"
+        if [ "$ENTRIES" -eq 0 ]; then
+          echo "::error::sccache tarballs extracted to ZERO entries -- the merge silently produced nothing (path mangling?). The link job would recompile everything."
+          exit 1
+        fi
 
     - name: Setup MSVC (Windows)
       # Host-compiler pairing, Windows edition (mirror of the Linux
@@ -1233,13 +1248,19 @@ runs:
       run: |
         sccache --stop-server >/dev/null 2>&1 || true
         mkdir -p $GITHUB_WORKSPACE/shard-out
-        ENTRIES=$(find "$RUNNER_TEMP/sccache" -type f | wc -l)
+        # Same POSIX normalisation as the restore step: RUNNER_TEMP is a
+        # Windows path and bash tools read the drive colon as a host separator.
+        # This step happened to work (sccache itself created the dir via the
+        # Windows-path SCCACHE_DIR), but relying on that is the same latent bug
+        # that broke the restore side.
+        SC="$(cd "$RUNNER_TEMP" && pwd)/sccache"
+        ENTRIES=$(find "$SC" -type f | wc -l)
         echo "sccache entries this shard: $ENTRIES"
         if [ "$ENTRIES" = "0" ]; then
           echo "::error::empty sccache after compile -- launcher not engaged?"
           exit 1
         fi
-        tar --force-local -czf $GITHUB_WORKSPACE/shard-out/sccache.tar.gz -C "$RUNNER_TEMP/sccache" .
+        tar --force-local -czf $GITHUB_WORKSPACE/shard-out/sccache.tar.gz -C "$SC" .
 
     - name: Upload shard artifact (compile-shard mode)
       if: inputs.shard-count != '0' && inputs.link-only != 'true'
