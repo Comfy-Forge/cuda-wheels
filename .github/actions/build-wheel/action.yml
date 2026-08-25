@@ -1107,6 +1107,32 @@ runs:
           $w = Get-Content $env:CUW_NOOP_COUNTER
           Write-Host "[link-only] compile no-op fired $($w.Count) time(s): $($w -join '; ')"
         }
+    - name: Assert sccache hit rate (Windows source-filter link)
+      # The Windows sccache lane (natten, shard_filter: source) had NO hit-rate
+      # assert at all -- the Linux one below is gated `platform == 'linux'`. So
+      # the exact failure the Linux assert exists to catch, a link job silently
+      # recompiling everything and dying at the runner cap looking "slow", was
+      # undetectable on the one platform where it is most expensive. Same class
+      # of blind spot as the compile no-op that never fired here (2026-08-25).
+      if: inputs.platform == 'windows' && inputs.link-only == 'true' && inputs.shard-filter == 'source'
+      shell: bash
+      run: |
+        sccache --show-stats || true
+        STATS=$(sccache --show-stats 2>/dev/null || true)
+        HITS=$(echo "$STATS" | awk -F'[[:space:]][[:space:]]+' '/^Cache hits/ {gsub(/[^0-9]/,"",$2); print $2; exit}')
+        MISS=$(echo "$STATS" | awk -F'[[:space:]][[:space:]]+' '/^Cache misses/ {gsub(/[^0-9]/,"",$2); print $2; exit}')
+        HITS=${HITS:-0}; MISS=${MISS:-0}
+        TOTAL=$((HITS+MISS))
+        echo "sccache: $HITS hits / $MISS misses"
+        if [ "$TOTAL" -eq 0 ]; then
+          echo "::error::link-job saw ZERO sccache lookups -- the shard cache handoff did not happen at all. This job did not link shards."
+          exit 1
+        fi
+        if [ "$MISS" -gt 0 ]; then
+          echo "::error::link-job had $MISS sccache miss(es) of $TOTAL. Every miss is a full TU recompile; the shard caches did not transfer cleanly."
+          exit 1
+        fi
+
     - name: Assert cache hit rate (Linux link-only mode)
       # The failure mode of compiler caches is cliff-edged: one bad flag and
       # the hit rate silently drops to 0, the link job recompiles everything
