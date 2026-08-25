@@ -1,12 +1,52 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
+#
+# ---------------------------------------------------------------------------
+# 8.9 (Ada / RTX 40-series) is MANDATORY on EVERY lane, x86 and ARM alike.
+#
+# setup.py v2.2.0 builds the `_qattn_sm89` extension whenever
+# HAS_SM89 || HAS_SM90 || HAS_SM120 -- so on an arch list that carries 9.0 or
+# 12.0 but NOT 8.9, the module still lands in the wheel, just without an
+# sm_89 cubin. On an Ada device the loader then takes the sm_80 cubin by
+# minor-version compatibility, and sageattn() routes it straight there:
+# core.py:148 dispatches arch == "sm89" to sageattn_qk_int8_pv_fp8_cuda(),
+# i.e. into _qattn_sm89.
+#
+# What that sm_80 cubin actually contains (NVIDIA disassembly review of the
+# shipped ARM wheel, 2026-08-25). This CORRECTS the wording this file used to
+# carry -- "those gated paths compile to stubs and cudaErrorLaunchFailure
+# surfaces at runtime". Right conclusion, wrong mechanism, and the wrong
+# mechanism is what a future reader would act on:
+#   * csrc/mma.cuh gates the FP8 tensor-core wrappers on __CUDA_ARCH__ >= 890
+#     (MMA_F8F8F32_M16N8K16_ENABLED at mma.cuh:44, MMA_F8F8F16_M16N8K16_ENABLED
+#     at mma.cuh:50). With the gate closed the #else branch is
+#     RUNTIME_ASSERT(...), which on the device pass expands to __brkpt()
+#     (mma.cuh:55-57) -- a real instruction, not a stub.
+#   * Everything else in the kernel compiles normally, including the INT8 QK
+#     matmul (mma.sync .s32.s8.s8.s32 is enabled from __CUDA_ARCH__ >= 800).
+#   * Measured: the sm_80 cubins are FULL SIZE (median 43,968 B, against
+#     53,248 B for sm_89) and hold 26,880 BPT.TRAP and ZERO QMMA ops, where
+#     the sm_89 cubin holds 23,040 QMMA.16832.F32.E4M3.E4M3.
+# So an Ada user gets neither a fallback nor a slow path. The kernel launches,
+# completes the QK matmul, and then executes the trap:
+# "CUDA error: an illegal instruction was encountered" -- context destroyed,
+# process unrecoverable.
+#
+# 8.6 is KEPT (removing an arch is a narrowing, and this file does not narrow),
+# but its original justification was false and is written down here so it is
+# not repeated: it claimed 8.6 was added "so Ampere consumer cards get a native
+# cubin instead of relying on JIT".
+#   * There is no compute_80/compute_86 PTX in any row below -- the +PTX tail
+#     sits on the highest arch only -- so there was never a JIT path to
+#     relieve. Without 8.6 an sm_86 device would have used the sm_80 cubin.
+#   * And sageattn() never reaches the sm_86 cubin anyway: core.py:146 routes
+#     arch == "sm86" to the Triton kernel (sageattn_qk_int8_pv_fp16_triton).
+#     The sm_86 cubin is reachable only by calling
+#     sageattn_qk_int8_pv_fp16_cuda() by hand.
+# 8.6 therefore earns its place as an exactness/perf hedge for direct callers,
+# not as a JIT-avoidance measure.
+# ---------------------------------------------------------------------------
 arch_list_by_cuda:
-  # Must include 8.9 (Ada / RTX 40-series) — sage 2.x's _qattn_sm89 extension
-  # contains Ada-only FP8 mma instructions gated on __CUDA_ARCH__ >= 890. Without
-  # an sm_89 cubin the loader falls back to sm_80 binary (forward-compatible
-  # Ampere → Ada), where those gated paths compile to stubs and `cudaErrorLaunchFailure`
-  # surfaces at runtime on real Ada hardware. 8.6 added too so Ampere consumer
-  # cards (3090/3080/3070/3060) get a native cubin instead of relying on JIT.
   '12.4': 8.0 8.6 8.9 9.0+PTX
   '12.6': 8.0 8.6 8.9 9.0+PTX
   '12.8': 8.0 8.6 8.9 9.0  12.0+PTX
@@ -15,18 +55,30 @@ arch_list_by_cuda:
   '13.2': 8.0 8.6 8.9 9.0  12.0+PTX
 # NOTE: no 10.0 anywhere -- SageAttention 2.2 ships no sm_100 kernel
 # (Blackwell datacenter unsupported; consumer sm_120 via the FP8 path is).
+# setup.py's SUPPORTED_ARCHS is exactly {8.0, 8.6, 8.9, 9.0, 12.0} and its
+# gencode loop silently `continue`s on anything else.
 # The gate proved the built wheels contain 80/86/89/90/120 exactly.
 # The kernel gap is platform-independent, so the aarch64 lane needs the
 # same 10.0 removal (the gate caught the ARM build missing sm_100 against
 # the default aarch64 policy row):
 arch_list_by_cuda_aarch64:
-  '12.8': 8.0 9.0 12.0+PTX
+  # 8.9 ADDED 2026-08-25 -- a WIDENING, nothing removed. These rows shipped
+  # 8.0/9.0/12.0 only, which put five ARM wheels (cu12.8/12.9/13.0/13.2) into
+  # exactly the trap described above on any Ada-class device: an L4/L40S or
+  # RTX 40-series board in a Grace/Altra host, or a GB10-class dev board.
+  # The trap is a property of the CUBIN, not of the host ISA, so the ARM lane
+  # was never exempt -- the x86 rows have carried 8.9 from the start.
+  # nvcc >= 12.4 is required for 8.9 (setup.py raises below that); every ARM
+  # row here is 12.8+, so the floor is satisfied on all four.
+  '12.8': 8.0 8.9 9.0 12.0+PTX
   # Same kernel gap on every newer ARM line: the default aarch64 policy rows
   # carry 10.0 (and 11.0 on 13.x), which SageAttention 2.2 cannot emit, so the
   # arch_sass gate rejected all 67 cu12.9/13.0/13.2 ARM wheels ("missing arch
   # families sm_[10]"). cuobjdump proves the built wheels contain 80/90/120
   # only, so this drops NO real coverage -- it aligns the expectation with
   # what the source can produce (2026-08-24).
-  '12.9': 8.0 9.0 12.0+PTX
-  '13.0': 8.0 9.0 12.0+PTX
-  '13.2': 8.0 9.0 12.0+PTX
+  '12.9': 8.0 8.9 9.0 12.0+PTX
+  '13.0': 8.0 8.9 9.0 12.0+PTX
+  '13.2': 8.0 8.9 9.0 12.0+PTX
+# 8.6 is deliberately NOT mirrored onto the ARM rows: no Ampere consumer part
+# exists on SBSA, and sageattn() routes sm86 to Triton regardless (core.py:146).
