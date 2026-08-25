@@ -60,7 +60,23 @@ new_func = '''def cuda_archs() -> str:
         # token membership ('"90" in cuda_archs()'), so "90+PTX" would
         # silently drop that arch from the build.
         return [a.split("+")[0].replace(".", "") for a in torch_archs.split()]
-    return ["80", "90", "100", "120"]'''
+    return ["80", "90", "100", "120"]
+
+
+def cuda_ptx_archs() -> list:
+    """Archs the farm asked for PTX on, e.g. ["120"] for "12.0+PTX".
+
+    cuda_archs() has to drop the +PTX marker (see above), and upstream only
+    ever emits `code=sm_X` -- never `code=compute_X` -- so flash_attn shipped
+    NO PTX at all for any arch. That makes the wheel dead on any GPU newer
+    than its newest cubin: there is no JIT path. The farm declares +PTX in
+    arch_policy precisely to promise that path, so emit it.
+    """
+    out = []
+    for a in os.getenv("TORCH_CUDA_ARCH_LIST", "").split():
+        if "+PTX" in a.upper():
+            out.append(a.split("+")[0].replace(".", ""))
+    return out'''
 
 if old_func in content:
     content = content.replace(old_func, new_func)
@@ -72,6 +88,28 @@ else:
              "flash_attn: cuda_archs() not found in setup.py -- the wheel "
              "would be built for upstream's hardcoded arch list, not the "
              "farm's policy")
+
+
+# ── Emit PTX for the archs the farm declared with +PTX ──────────────────
+# Upstream (setup.py:179-191) appends ONLY `code=sm_X` gencodes, so the
+# built wheel carries cubins and no PTX whatsoever. verify_wheel's arch_sass
+# check could not see this until it was made PTX-aware (2026-08-25); the
+# first Windows wheel this farm ever produced failed it:
+#   declared +PTX for ['sm_120'] but shipped NO PTX -- no JIT path onto newer GPUs
+# Append a compute_X,code=compute_X gencode for each +PTX arch.
+_ptx_anchor = '''        if bare_metal_version >= Version("12.8") and "120" in cuda_archs():
+            cc_flag.append("-gencode")
+            cc_flag.append("arch=compute_120,code=sm_120")'''
+_ptx_add = _ptx_anchor + '''
+
+    for _cuw_ptx in cuda_ptx_archs():
+        cc_flag.append("-gencode")
+        cc_flag.append(f"arch=compute_{_cuw_ptx},code=compute_{_cuw_ptx}")'''
+_require(_ptx_anchor in content,
+         "flash_attn: gencode block not found -- cannot emit the +PTX the "
+         "arch policy promises. Upstream changed setup.py; update the anchor.")
+content = content.replace(_ptx_anchor, _ptx_add, 1)
+print("Injected PTX gencode emission for +PTX archs")
 
 # Fix MAX_JOBS auto-detect: use arch count instead of hardcoded /9
 # Upstream assumes 2 archs (9GB/job). With 4 archs (cu128+), it's ~18GB/job.

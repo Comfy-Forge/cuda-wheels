@@ -13,4 +13,11 @@ nvcc_flags: -diag-suppress=221
 # the farm's 4-arch list computes 18GB/job and lands on jobs=1 (serial).
 # With nvcc_threads=1 the real per-job peak is ~one cicc, so 2 fits.
 max_jobs: 1
-sharding: 20  # ~90 .cu TUs -> ~4-5 per shard; owner order 2026-08-22
+sharding: 40  # ~73 .cu TUs -> ~2 per shard; owner order 2026-08-25
+# Was 20 (owner order 2026-08-22). Raised now that the Windows link path
+# actually works: the link job went from >108min (never completing --
+# the compile no-op was shadowed and it recompiled all 73 TUs serially)
+# to 79 SECONDS. With the link no longer the bottleneck, more shards is
+# a straight wall-clock win: same total runner-hours, half the critical
+# path. Measured per-shard artifact cost is ~0.55s of link-job time, so
+# the round-trip does not become binding at this scale.
