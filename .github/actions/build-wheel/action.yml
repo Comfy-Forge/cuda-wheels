@@ -661,7 +661,48 @@ runs:
           echo "[diag] sample .o mtime (should be newer than source mtime):"
           find build -name '*.o' | head -1 | xargs -I{} stat -c '%y %n' {} || true
         fi
-        python -m pip wheel . --no-build-isolation --no-deps -v -w dist
+        if [ "${{ inputs.shard-count }}" != "0" ] \
+           && [ "${{ inputs.link-only }}" != "true" ] \
+           && [ "${{ inputs.shard-filter }}" = "source" ]; then
+          # A source-partition shard DELETES every autogen TU outside its slice.
+          # Any dispatcher TU that is NOT autogen survives in all N shards and is
+          # left calling kernels this shard never built, so the final link
+          # CANNOT succeed inside a shard -- natten's src/fmha.cu against the
+          # autogen fmha_* kernels, "undefined reference to
+          # natten::cuda::fmha::fmha_32x128x32_sm70_float32", every ARM/Linux
+          # cell, 2026-08-25. It does not need to succeed: the shard's
+          # deliverable is build/**/*.o, which the link-only job gathers from
+          # all N shards and links once. (`seat` shards never hit this -- every
+          # TU still emits an object, an empty one when out-of-slice.)
+          #
+          # Tolerating the link failure must NOT tolerate a compile failure, so
+          # the exit is gated: the log must show undefined references and must
+          # NOT show a compiler diagnostic on a source file.
+          set +e
+          python -m pip wheel . --no-build-isolation --no-deps -v -w dist 2>&1 \
+            | tee "$RUNNER_TEMP/shard_build.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          NOBJ=$(find build -name '*.o' -size +1c 2>/dev/null | wc -l)
+          echo "shard ${{ inputs.shard-index }}/${{ inputs.shard-count }}: pip wheel exit=$rc, $NOBJ non-empty object(s)"
+          if [ "$rc" -ne 0 ]; then
+            if [ "$NOBJ" -eq 0 ]; then
+              echo "::error::compile-shard produced no objects -- a real compile failure, not the expected shard link failure"
+              exit 1
+            fi
+            if ! grep -q "undefined reference to" "$RUNNER_TEMP/shard_build.log"; then
+              echo "::error::compile-shard failed without undefined references -- not the expected shard link failure"
+              exit 1
+            fi
+            if grep -qE '\.(cu|cpp|cc|cuh|h|hpp)[:(][0-9]+[):].*\b(error|fatal error)\b' "$RUNNER_TEMP/shard_build.log"; then
+              echo "::error::compile-shard hit a compiler diagnostic -- refusing to pass it off as the expected link failure"
+              exit 1
+            fi
+            echo "::notice::shard ${{ inputs.shard-index }}/${{ inputs.shard-count }} link failed as designed (shard_filter=source); $NOBJ objects captured for the link job"
+          fi
+        else
+          python -m pip wheel . --no-build-isolation --no-deps -v -w dist
+        fi
 
 
     - name: Swap usage signal (Linux)
@@ -930,9 +971,22 @@ runs:
         # nothing, and torch 2.8 was ALSO found not to for the PyG packages
         # (C2429 "nested-namespace-definition requires /std:c++17" on
         # torch_cluster/scatter/spline_conv cu12.8 Windows, 2026-08-24).
-        # torch >= 2.12 puts /std:c++20 on the command line and overrides it.
-        $env:CL = "/std:c++17 $($env:CL)".Trim()
-        Write-Host "MSVC C++ floor: CL=$($env:CL)"
+        # The floor must TRACK torch, never sit below what torch's own headers
+        # require. torch 2.12 flipped cpp_extension's MSVC default to
+        # /std:c++20 and torch 2.13's headers HARD-REQUIRE it -- C7555
+        # (designated initializers, c10/util/StringUtil.h:169) and C7582
+        # (bit-field NSDMIs, c10/core/AutogradState.h:89). A fixed c++17 floor
+        # was assumed harmless because "torch >= 2.12 puts /std:c++20 on the
+        # command line and overrides it" -- but that is not universally true:
+        # mmcv cu12.6 torch2.13.0 Windows died on exactly those two errors with
+        # the c++17 floor in place (2026-08-25), because not every TU in its
+        # build goes through cpp_extension's flag path.
+        # Still a FLOOR: CL is prepended, so a package that puts its own /std:
+        # on the command line continues to win either way.
+        $torchMM = [version]("${{ inputs.pytorch-version }}".Split('.')[0..1] -join '.')
+        $stdFloor = if ($torchMM -ge [version]"2.12") { "/std:c++20" } else { "/std:c++17" }
+        $env:CL = "$stdFloor $($env:CL)".Trim()
+        Write-Host "MSVC C++ floor: torch $torchMM -> $stdFloor (CL=$($env:CL))"
         # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
         $env:FORCE_CUDA = "1"
         # For cumm/spconv: set CUDA version for prebuilt mode

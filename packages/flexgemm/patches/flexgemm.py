@@ -28,6 +28,17 @@ print("Patched pyproject.toml for triton-windows compatibility")
 # at sparse_neighbor_map.cu:327). `.template member<T>()` is the
 # conforming spelling and is valid on every compiler, so it is applied
 # unconditionally. Idempotent: already-patched calls are skipped.
+#
+# WIDENED 2026-08-25: the old pattern only matched `<T>`/`<K>`, so it fixed
+# 114/128/327/341 and left 309/313/326/342 -- which spell CONCRETE types
+# (`<int64_t>`, `<int32_t>`) -- untouched. Those failed identically on
+# Windows torch2.12.1 cu12.6/cu13.0 (10 cells). What makes a call dependent
+# is the OBJECT, not the template argument: `expanded_size`/`expanded_start`/
+# `out_coords` are `auto` variables deduced from dependent expressions, so
+# they need `.template` no matter how the argument is spelled. Match any
+# single type-name argument. Harmless where the object turns out to be
+# non-dependent: `data_ptr`/`item` are member templates of Tensor, so
+# `.template` is well-formed on every compiler either way.
 import re as _re
 from pathlib import Path as _P
 
@@ -35,8 +46,9 @@ _fixed = 0
 for _f in [_P("flex_gemm/kernels/cuda/hash/hash.cu"),
            _P("flex_gemm/kernels/cuda/spconv/sparse_neighbor_map.cu")]:
     _s = _f.read_text()
-    _new, _n = _re.subn(r"(?<!template )\.(?!template )(data_ptr|item)<([TK])>",
-                        r".template \1<\2>", _s)
+    _new, _n = _re.subn(
+        r"(?<!template )\.(?!template )(data_ptr|item)<([A-Za-z_][\w:]*)>",
+        r".template \1<\2>", _s)
     if _n:
         _f.write_text(_new)
         print(f"  {_f}: {_n} dependent member call(s) got `.template`")
