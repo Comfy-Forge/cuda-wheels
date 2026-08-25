@@ -802,6 +802,21 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
     forgivable = bool(ede)
     failures, forgiven = [], []
     undeclared = set()
+    # top_level.txt entries that resolve to no shipped path at all.
+    try:
+        with zipfile.ZipFile(wheel_path) as _zf:
+            _names = _zf.namelist()
+            _tl = [n for n in _names if n.endswith(".dist-info/top_level.txt")]
+            _declared = set()
+            if _tl:
+                _declared = {l.strip() for l in
+                             _zf.read(_tl[0]).decode().splitlines() if l.strip()}
+        declared_phantoms = {
+            d for d in _declared
+            if not any(n == f"{d}.py" or n.startswith(f"{d}/")
+                       or n.split("/")[-1].split(".")[0] == d for n in _names)}
+    except Exception:
+        declared_phantoms = set()
     for ph in result["phases"]:
         if ph["ok"] or ph["phase"] == "torch":
             continue
@@ -824,8 +839,20 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
             # by this check and reported as pass (2026-08-25). Name the module
             # so the undeclared-dependency surface is a published fact rather
             # than a green tick.
-            undeclared.add(mnfe.group(1))
-            forgiven.append(f"{ph['module']}: missing runtime dep ({err})")
+            # A top_level.txt entry that matches NO shipped path is a wheel
+            # defect, not a missing dependency -- but both surface as the same
+            # ModuleNotFoundError, so this branch was filing the former as the
+            # latter. cumm declares top_level `core_cc` while the real module
+            # is `cumm.core_cc`, and it was being published as "cumm has an
+            # undeclared third-party dependency named core_cc". It does not.
+            if mnfe.group(1) in declared_phantoms:
+                failures.append(
+                    f"{ph['module']}: top_level.txt declares {mnfe.group(1)!r} "
+                    f"but no member of the wheel provides it -- phantom "
+                    f"top-level entry, not a missing dependency")
+            else:
+                undeclared.add(mnfe.group(1))
+                forgiven.append(f"{ph['module']}: missing runtime dep ({err})")
         elif is_device and forgivable:
             forgiven.append(f"{ph['module']}: {err}")
         else:
