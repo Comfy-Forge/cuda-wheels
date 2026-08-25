@@ -11,20 +11,47 @@ from pathlib import Path
 # visualbruno committed third_party/cubvh directly into the tree rather than
 # as a git submodule. The cubvh directory has its own .gitmodules pointing to
 # eigen, but since cubvh isn't a submodule, --recursive doesn't fetch it.
+#
+# EIGEN_PIN: the exact commit JeffreyXiang/cubvh @ ce92267 pins as its own
+# `third_party/eigen` submodule. Plain `cumesh` gets this for free (its cubvh
+# IS a submodule, so --recursive walks in and fetches it); the fork gets
+# nothing, so we reproduce the pin by hand. Keeping the two identical is the
+# whole point -- same cubvh sources compiled against the same Eigen.
+#
+# Do NOT "simplify" this to --branch 3.4.0. Eigen 3.4.0's arg_default_impl
+# reaches `arg` through EIGEN_USING_STD, which expands to `using ::arg;` on the
+# nvcc device pass -- and MSVC has no global ::arg. That is the C7555-adjacent
+# break that killed all 30 Windows x torch>=2.12 cells. Eigen fixed it after
+# 3.4.0 by hardcoding `using std::arg;` on the MSVC>=1920 branch
+# (MathFunctions.h, "There is no official ::arg on device in CUDA/HIP").
+#
+# Do NOT track master either: current master hard-#errors below sm_70, which
+# previously took out all 96 cu12.4/12.6 cells. e63d9f6 is 2024-03-29 and has
+# no such floor.
+EIGEN_PIN = "e63d9f6ccb7f6f29f31241b87c542f3f0ab3112b"
+
 eigen_dir = Path("third_party/cubvh/third_party/eigen")
 if not eigen_dir.exists() or not any(eigen_dir.iterdir()):
     eigen_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["git", "clone", "--depth", "1", "--branch", "3.4.0",
-         "https://gitlab.com/libeigen/eigen.git", str(eigen_dir)],
-        check=True,
+    for cmd in (
+        ["git", "init", "-q"],
+        ["git", "remote", "add", "origin", "https://gitlab.com/libeigen/eigen.git"],
+        ["git", "fetch", "-q", "--depth", "1", "origin", EIGEN_PIN],
+        ["git", "checkout", "-q", "FETCH_HEAD"],
+    ):
+        subprocess.run(cmd, cwd=eigen_dir, check=True)
+    print(f"Fetched Eigen {EIGEN_PIN[:10]} (cubvh's own pin) into {eigen_dir}")
+
+# Belt and braces: prove we got the fixed tree, not a 3.4.0 fallback.
+_mf = eigen_dir / "Eigen/src/Core/MathFunctions.h"
+if _mf.exists() and "There is no official ::arg on device" not in _mf.read_text(
+    encoding="utf-8", errors="replace"
+):
+    raise SystemExit(
+        f"{_mf}: Eigen is missing the MSVC device-side `arg` fix. "
+        f"Expected the tree at {EIGEN_PIN}; got something older (3.4.0?). "
+        "Windows x torch>=2.12 will fail with 'the global scope has no \"arg\"'."
     )
-    print(f"Cloned Eigen 3.4.0 into {eigen_dir}")
-    # PINNED (review board 2026-08-24): the clone tracked master,
-    # so every build got that day's Eigen -- unreproducible, and
-    # current master hard-#errors below sm_70, which took out all
-    # 96 cu12.4/12.6 cells. 3.4.0 has no such floor (plain cumesh
-    # ships those cells today with the pinned tarball).
 
 # --- 1. Rename package to cumesh_vb ---
 
