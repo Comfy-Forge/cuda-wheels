@@ -275,6 +275,32 @@ def arch_list_to_sm(arch_list: str) -> set:
     return out
 
 
+def arch_list_to_sm_ptx(arch_list: str) -> tuple:
+    """(expected_sass, expected_ptx) -- the `+PTX` marker is MEANINGFUL.
+
+    `9.0+PTX` asks nvcc for BOTH sm_90 cubins and compute_90 PTX. The PTX is
+    the forward-compatibility path: it is what lets the wheel JIT onto a GPU
+    newer than any cubin it ships. arch_list_to_sm() throws the marker away
+    (`a.split("+")[0]`), so a wheel that declared `9.0+PTX` and shipped SASS
+    with NO PTX compared equal to one that shipped both -- i.e. the check
+    could not see a wheel that is dead on the next GPU generation.
+    """
+    sass, ptx = set(), set()
+    for a in arch_list.replace(";", " ").split():
+        a = a.strip()
+        if not a:
+            continue
+        want_ptx = "+PTX" in a.upper()
+        base = a.split("+")[0].strip()
+        if not base:
+            continue
+        major, minor = base.split(".")
+        sass.add(f"sm_{major}{minor}")
+        if want_ptx:
+            ptx.add(f"sm_{major}{minor}")
+    return sass, ptx
+
+
 def expected_archs(pkg: dict, cuda: str, pytorch: str) -> set:
     """Resolved exactly as the build resolves it (same code path)."""
     build = pkg.get("build_matrix") or {}

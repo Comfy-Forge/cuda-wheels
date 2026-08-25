@@ -43,7 +43,8 @@ from email.parser import Parser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from audit import parse_wheel, extract_archs, arch_list_to_sm, _SKIP_LIBS  # noqa: E402
+from audit import (parse_wheel, extract_archs, arch_list_to_sm,  # noqa: E402
+                   arch_list_to_sm_ptx, _SKIP_LIBS)
 import generate_matrix as _GM  # noqa: E402
 from package_loader import iter_packages  # noqa: E402
 
@@ -70,14 +71,26 @@ TORCH_NEEDED_RE = re.compile(r"^(libtorch|libc10|libcaffe2_nvrtc)")
 TORCH_SYM_PREFIXES = ("_ZN2at", "_ZN3c10", "_ZN5torch", "THP")
 GLIBC_FAMILY = ("libc.so", "libm.so", "libdl.so", "libpthread.so", "librt.so",
                 "ld-linux", "libutil.so", "libresolv.so")
-ALLOWED_NEEDED_PREFIXES = ("libstdc++", "libgcc_s", "libcudart.so", "libgomp",
-                           "libcuda.so.1")
+# libcuda.so.1 is the DRIVER -- always present on a machine with a GPU, never
+# shippable. libstdc++/libgcc_s/libgomp come from the platform toolchain.
+ALLOWED_NEEDED_PREFIXES = ("libstdc++", "libgcc_s", "libgomp", "libcuda.so.1")
 # cublas-class libs are OK only if the wheel vendors them or torch provides
 # them at runtime (torch-linked packages ride torch's copies; a torch-FREE
 # package linking these unvendored ships a wheel that cannot load).
+#
+# libcudart MOVED HERE 2026-08-25. It was in ALLOWED_NEEDED_PREFIXES, i.e.
+# unconditionally waved through -- which defeated this rule for precisely the
+# package it was written for. cumm declares links_torch: false, DT_NEEDEDs
+# libcudart.so.13, vendors only nvrtc, and nothing else in the env preloads
+# cudart because it never imports torch. On a box without a system CUDA
+# toolkit that wheel cannot dlopen:
+#   libcudart.so.13: cannot open shared object file
+# Torch-linked packages are unaffected: `import torch` loads cudart from
+# site-packages/nvidia/ before their extension is imported, which is exactly
+# the distinction this tuple encodes.
 TORCH_PROVIDED = ("libcublas", "libcusparse", "libcufft", "libcurand",
                   "libcusolver", "libcudnn", "libnccl", "libnvrtc",
-                  "libnvJitLink")
+                  "libnvJitLink", "libcudart")
 
 
 def log(msg):
@@ -545,7 +558,24 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
                 "UNVERIFIED: no SASS/PTX visible to any scanner (compressed "
                 "fatbin without cuobjdump?) -- confirm by hand", data)
         return
+    # cuobjdump reports arch-VARIANT names: Hopper cubins come back as `sm_90a`
+    # (arch-specific features), Blackwell can be `sm_100f`. The arch list spells
+    # them `9.0`/`10.0`. Fold the suffix before comparing, or every Hopper wheel
+    # reads as "missing sm_90" the moment this check fails instead of warns.
+    def _norm(a):
+        m = re.match(r"^(sm_\d+)[a-z]*$", a)
+        return m.group(1) if m else a
+    sass = {_norm(a) for a in sass}
+    ptx = {_norm(a) for a in ptx}
     actual = sass | ptx
+    data["sass"], data["ptx"] = sorted(sass), sorted(ptx)
+    exp_sass, exp_ptx = arch_list_to_sm_ptx(args.arch_list)
+    # Documented upstream gaps only. A package whose UPSTREAM has no kernel for
+    # an arch declares it here with a reason; anything else is a defect.
+    waived = set(vknobs.get("allow_missing_archs") or [])
+    data["expected_ptx"] = sorted(exp_ptx)
+    data["waived"] = sorted(waived)
+
     missing_majors = {_arch_major(a) for a in expected} - {_arch_major(a) for a in actual}
     if missing_majors:
         rep.add("arch_sass", "fail",
@@ -553,18 +583,40 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
                 f"expected {sorted(expected)}, found {sorted(actual)} "
                 f"[{source}]", data)
         return
-    missing_exact = expected - actual
-    extra = actual - expected
-    notes = []
+
+    problems = []
+    # (1) Exact archs. Was a WARN, which meant you could drop every consumer
+    # Ampere and Ada cubin and still exit 0 as long as one sm_80 survived --
+    # the family check compares majors, so {8} == {8}. Promoted to fail.
+    missing_exact = expected - actual - waived
     if missing_exact:
-        notes.append(f"sub-arch diff: missing exact {sorted(missing_exact)}")
+        problems.append(
+            f"missing cubin/PTX for {sorted(missing_exact)} -- the wheel has no "
+            f"code path on those GPUs")
+    # (2) PTX. The `+PTX` marker was discarded before comparison, so a wheel
+    # that declared forward-compat and shipped none looked identical to one
+    # that shipped it. A cubin-only wheel is dead on every future arch.
+    missing_ptx = exp_ptx - ptx - waived
+    if missing_ptx:
+        problems.append(
+            f"declared +PTX for {sorted(missing_ptx)} but shipped NO PTX for them "
+            f"(have PTX: {sorted(ptx) or 'none'}) -- no JIT path onto newer GPUs")
+    if problems:
+        rep.add("arch_sass", "fail", "; ".join(problems) + f" [{source}]", data)
+        return
+
+    notes = []
+    if waived & (expected - actual):
+        notes.append(f"waived (documented upstream gap): {sorted(waived & (expected - actual))}")
+    extra = actual - expected
     if extra:
         notes.append(f"extra archs {sorted(extra)}")
     if notes:
         rep.add("arch_sass", "warn", "; ".join(notes) + f" [{source}]", data)
     else:
         rep.add("arch_sass", "pass",
-                f"all {len(expected)} expected archs present [{source}]", data)
+                f"all {len(expected)} expected archs + {len(exp_ptx)} PTX present "
+                f"[{source}]", data)
 
 
 # ── C8 ─────────────────────────────────────────────────────────────────────
@@ -681,6 +733,12 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
             return
         env = dict(os.environ)
         env["CUDA_VISIBLE_DEVICES"] = ""
+        # Force eager symbol binding. CPython already dlopens extensions with
+        # RTLD_NOW, but that is an implicit guarantee: one upstream
+        # setdlopenflags change, or one package setting verify.skip_import, and
+        # a wheel whose kernels failed to link would import clean. Belt and
+        # braces, and it makes the failure name the symbol.
+        env["LD_BIND_NOW"] = "1"
         env.pop("TORCH_CUDA_ARCH_LIST", None)
         env["PYTHONPATH"] = str(target)
         if needs_driver and args.platform != "windows":
@@ -735,6 +793,7 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
         dev_patterns.append(ede)
     forgivable = bool(ede)
     failures, forgiven = [], []
+    undeclared = set()
     for ph in result["phases"]:
         if ph["ok"] or ph["phase"] == "torch":
             continue
@@ -746,8 +805,18 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
         if ph["phase"] == "compiled" and is_load and not missing_foreign:
             failures.append(f"{ph['module']}: {err}")        # dlopen never forgiven
         elif missing_foreign:
-            # runtime dep absent because we install --no-deps; the build env
-            # only has build deps. Not a wheel defect -- record loudly.
+            # The farm ships NO Requires-Dist by design -- runtime deps are
+            # declared by the consuming node pack's comfy-env.toml. So this is
+            # not a wheel defect and must not fail the gate.
+            #
+            # But it was being swallowed into a generic "forgiven" bucket, and
+            # once the metadata strip landed that turned this branch into the
+            # thing hiding the blast radius: an adversarial audit found 137 of
+            # 362 published wheels fail a bare `import`, every one of them seen
+            # by this check and reported as pass (2026-08-25). Name the module
+            # so the undeclared-dependency surface is a published fact rather
+            # than a green tick.
+            undeclared.add(mnfe.group(1))
             forgiven.append(f"{ph['module']}: missing runtime dep ({err})")
         elif is_device and forgivable:
             forgiven.append(f"{ph['module']}: {err}")
@@ -763,7 +832,16 @@ def check_import(rep, wheel_path, parsed, exts, args, vknobs, driver_linked):
             failures.append(f"{ph['module']} [{ph['phase']}]: {err}{detail}")
     data = {"stub_lane": needs_driver, "facade": facade,
             "compiled": spec["compiled"], "forgiven": forgiven,
+            "undeclared_deps": sorted(undeclared),
             "phases": result["phases"]}
+    if undeclared:
+        # Machine-readable and loud. This is the list a node pack's
+        # comfy-env.toml must carry for the wheel to actually import.
+        annotate("warning",
+                 f"{Path(wheel_path).name}: imports {len(undeclared)} module(s) "
+                 f"it does not declare and nothing else provides: "
+                 f"{', '.join(sorted(undeclared))} -- the consuming "
+                 f"comfy-env.toml must declare these or `import` will fail")
     if failures:
         rep.add("import", "fail", "; ".join(failures[:4]), data)
     elif forgiven:

@@ -20,16 +20,30 @@ print("Initialized csrc/cutlass submodule")
 setup_file = Path("setup.py")
 content = setup_file.read_text()
 
-# Remove submodule init calls from setup.py (cutlass already done, composable_kernel not needed)
-content = content.replace(
-    'subprocess.run(["git", "submodule", "update", "--init", "csrc/composable_kernel"])',
-    "# skipped composable_kernel submodule (ROCm only)",
-)
-content = content.replace(
-    'subprocess.run(["git", "submodule", "update", "--init", "csrc/cutlass"])',
-    "# skipped cutlass submodule (already initialized)",
-)
-print("Patched out submodule init calls from setup.py")
+# Remove submodule init calls from setup.py (cutlass already fetched by
+# clone_recursive; composable_kernel is ROCm-only and never used here).
+#
+# REGEX, not str.replace: upstream v2.8.3 spells these WITH `, check=True`
+# (setup.py:150-151), so the old literal replacements matched nothing --
+# and the success print below fired regardless. The ROCm composable_kernel
+# clone therefore ran in every single job: normally 6-9s, but 348s in one
+# observed ARM link job (57% of that job's wall time). Same bug class as
+# the rest of this farm's silent no-ops, so it is asserted now.
+import re as _re
+_n_sub = 0
+for _mod, _why in (("composable_kernel", "ROCm only, unused"),
+                   ("cutlass", "already fetched by clone_recursive")):
+    content, _k = _re.subn(
+        r'subprocess\.run\(\s*\[\s*"git"\s*,\s*"submodule"\s*,\s*"update"\s*,'
+        r'\s*"--init"\s*,\s*"csrc/' + _mod + r'"\s*\][^)]*\)',
+        f"None  # cuda-wheels: skipped {_mod} submodule ({_why})",
+        content)
+    _require(_k > 0,
+             f"flash_attn: found no `git submodule update --init csrc/{_mod}` "
+             f"call to patch out -- upstream changed its spelling. Fix the "
+             f"pattern; do NOT let this silently no-op.")
+    _n_sub += _k
+print(f"Patched out {_n_sub} submodule init call(s) from setup.py")
 
 # Replace cuda_archs() to also read TORCH_CUDA_ARCH_LIST
 old_func = '''def cuda_archs() -> str:

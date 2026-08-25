@@ -562,7 +562,12 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.package }}-linux-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
+          # linux_aarch64, NOT linux: this job and link-linux (:465) otherwise
+          # upload the FINISHED WHEEL under one name. upload-artifact@v4 has
+          # overwrite:false, so the loser 409s after an hour of work and one
+          # architecture never reaches `release`. The unsharded aarch64 job
+          # (:364) already gets this right; only the link lane drifted.
+          name: ${{ matrix.package }}-linux_aarch64-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
           path: dist/*.whl
 
   build-windows:

@@ -304,9 +304,38 @@ runs:
                 print('[cuda-wheels link-only] BuildExtension wrapped with use_ninja=False')
             except ImportError:
                 pass
+            # Patch `compile` on the CONCRETE compiler classes, not just the
+            # base. MSVCCompiler OVERRIDES compile(); UnixCCompiler does not.
+            # Patching only distutils.ccompiler.CCompiler therefore reached
+            # Linux and was silently shadowed on Windows -- so the no-op has
+            # never fired on the one platform that needed it, and every
+            # Windows link job recompiled all N TUs serially (use_ninja=False)
+            # until it hit the runner cap. That is why no sharded package has
+            # ever published a wheel. Verified on setuptools 68.1.2 and 81.0.0:
+            #   MSVCCompiler defines its own .compile : True
+            #   UnixCCompiler defines its own .compile: False
+            _cuw_targets = []
             try:
                 from distutils import ccompiler as _cuw_dccc
-                _cuw_orig_compile = _cuw_dccc.CCompiler.compile
+                _cuw_targets.append(_cuw_dccc.CCompiler)
+            except ImportError:
+                _cuw_dccc = None
+            for _cuw_mod, _cuw_attr in (
+                    ('distutils.compilers.C.msvc', 'Compiler'),
+                    ('distutils.compilers.C.unix', 'Compiler'),
+                    ('distutils._msvccompiler', 'MSVCCompiler'),
+                    ('distutils.unixccompiler', 'UnixCCompiler')):
+                try:
+                    _cuw_m = __import__(_cuw_mod, fromlist=[_cuw_attr])
+                    _cuw_c = getattr(_cuw_m, _cuw_attr, None)
+                    if _cuw_c is not None and _cuw_c not in _cuw_targets:
+                        _cuw_targets.append(_cuw_c)
+                except ImportError:
+                    pass
+
+            _CUW_NOOP_COUNTER = _cuw_os.environ.get('CUW_NOOP_COUNTER', '')
+
+            def _cuw_make_noop(_orig):
                 def _cuw_noop_compile(self, sources, output_dir=None, macros=None,
                                       include_dirs=None, debug=0, extra_preargs=None,
                                       extra_postargs=None, depends=None):
@@ -316,18 +345,26 @@ runs:
                     if missing:
                         print(f'[cuda-wheels link-only] {len(missing)}/{len(objs)} .o files missing; '
                               f'falling back to real compile. First missing: {missing[0]!r}')
-                        return _cuw_orig_compile(self, sources, output_dir=output_dir,
-                                                 macros=macros, include_dirs=include_dirs,
-                                                 debug=debug, extra_preargs=extra_preargs,
-                                                 extra_postargs=extra_postargs, depends=depends)
-                    print(f'[cuda-wheels link-only] CCompiler.compile no-op: all {len(objs)} .o files present, skipping compile')
-                    for o in objs:
-                        print(f'    {o} ({_cuw_os.path.getsize(o)} bytes)')
+                        return _orig(self, sources, output_dir=output_dir,
+                                     macros=macros, include_dirs=include_dirs,
+                                     debug=debug, extra_preargs=extra_preargs,
+                                     extra_postargs=extra_postargs, depends=depends)
+                    print(f'[cuda-wheels link-only] {type(self).__name__}.compile no-op: '
+                          f'all {len(objs)} object(s) present, skipping compile')
+                    # Witness file: the link step asserts this fired. Without it
+                    # a shadowed patch is indistinguishable from a working one.
+                    if _CUW_NOOP_COUNTER:
+                        with open(_CUW_NOOP_COUNTER, 'a') as _fh:
+                            _fh.write(f'{type(self).__name__}\t{len(objs)}\n')
                     return objs
-                _cuw_dccc.CCompiler.compile = _cuw_noop_compile
-                print('[cuda-wheels link-only] CCompiler.compile patched to no-op when objects exist')
-            except ImportError:
-                pass
+                return _cuw_noop_compile
+
+            for _cuw_T in _cuw_targets:
+                _cuw_own = _cuw_T.__dict__.get('compile')
+                _cuw_T.compile = _cuw_make_noop(
+                    _cuw_own if _cuw_own is not None else _cuw_dccc.CCompiler.compile)
+            print('[cuda-wheels link-only] compile() patched on: '
+                  + ', '.join(t.__name__ for t in _cuw_targets))
             # --- end cuda-wheels link-only patches ---
             """)
         content = open(setup_path).read()
@@ -343,12 +380,14 @@ runs:
       uses: actions/download-artifact@v4
       with:
         # Glob pattern matching every shard artifact for this (package, platform,
-        # python, cuda, torch) tuple. Each shard uploaded its tarball under a
-        # distinct name `shard-<pkg>-<platform>-py<py>-cu<cuda>-torch<torch>-<shard_index>-of-<shard_count>`.
+        # CPU arch, python, cuda, torch) tuple. Each shard uploaded its tarball
+        # as `shard-<pkg>-<platform>-<arch>-py<py>-cu<cuda>-torch<torch>-<i>-of-<n>`.
+        # runner.arch MUST stay in lockstep with the upload step's name below --
+        # without it x86_64 and aarch64 shards collide (see that comment).
         # Workspace-relative: an absolute /tmp diverges on Windows (Node
         # resolves it to <drive>:\tmp while Git-bash mounts its own /tmp) --
         # natten's link job found zero artifacts that way.
-        pattern: shard-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-*-of-${{ inputs.shard-count }}
+        pattern: shard-${{ inputs.package }}-${{ inputs.platform }}-${{ runner.arch }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-*-of-${{ inputs.shard-count }}
         path: shard-artifacts
 
     - name: Restore shard objects (link-only mode)
@@ -647,8 +686,16 @@ runs:
         # regenerated build.ninja produced subtly different command strings
         # than what the shards recorded.
         if [ "${{ inputs.link-only }}" = "true" ]; then
+          # USE_NINJA is NOT read by torch's BuildExtension (cpp_extension
+          # reads the kwarg, not the env) -- the prelude's use_ninja=False
+          # kwarg is what actually disables ninja. Kept only because some
+          # setup.py files check it themselves. The old comment here claimed
+          # a "distutils mtime-based skip" that does not exist: modern
+          # distutils does no mtime skipping at all, which is precisely why
+          # the compile no-op has to exist.
           export USE_NINJA=0
-          echo "[link-only] USE_NINJA=0 (distutils mtime-based skip)"
+          export CUW_NOOP_COUNTER="$RUNNER_TEMP/cuw_noop_witness"
+          rm -f "$CUW_NOOP_COUNTER"
           # Diagnostic: show the merged .ninja_log + build/temp tree before
           # the build runs, so if pip still rebuilds we can see what state
           # it started from.
@@ -788,12 +835,29 @@ runs:
           # can't resolve intra-wheel non-standard dirs ("required library
           # libggml-base.so.0 could not be located") and grafting would
           # duplicate them.
+          # libcudart is excluded ONLY for torch-linked packages. `import torch`
+          # loads cudart from site-packages/nvidia/ before any of our extensions
+          # are imported, so DT_NEEDED resolves against the already-loaded
+          # SONAME and vendoring would duplicate it. A torch-FREE package has no
+          # such preloader: cumm (links_torch: false) shipped DT_NEEDED
+          # libcudart.so.13 with nothing providing it, and could not dlopen on
+          # any box without a system CUDA toolkit (2026-08-25). For those, let
+          # auditwheel vendor it. verify_wheel's TORCH_PROVIDED check enforces
+          # the same split from the other side.
+          CUDART_EXCLUDE="--exclude libcudart.so*"
+          LT=$(python -c 'import sys,os; sys.path.insert(0, os.environ["GITHUB_WORKSPACE"]+"/scripts"); from package_loader import iter_packages; print(next(("false" for _f,c in iter_packages() if c.get("name")==sys.argv[1] and c.get("links_torch") is False), "true"))' "${{ inputs.package }}" 2>/dev/null || echo "")
+          if [ "$LT" = "false" ]; then
+            CUDART_EXCLUDE=""
+            echo "torch-free package: NOT excluding libcudart -- auditwheel will vendor it"
+          elif [ -z "$LT" ]; then
+            echo "::warning::could not resolve links_torch for ${{ inputs.package }}; keeping the libcudart exclude"
+          fi
           if auditwheel repair "$whl" \
             --plat "$AUDITWHEEL_PLAT" \
             -w repaired/ \
             --exclude libcuda.so \
             --exclude libcuda.so.1 \
-            --exclude 'libcudart.so*' \
+            $CUDART_EXCLUDE \
             --exclude libtorch.so \
             --exclude libtorch_cpu.so \
             --exclude libtorch_cuda.so \
@@ -1018,9 +1082,23 @@ runs:
         # but defensively set this too in case some code path checks env).
         if ("${{ inputs.link-only }}" -eq "true" -and "${{ inputs.shard-filter }}" -ne "source") {
           $env:USE_NINJA = "0"
-          Write-Host "[link-only] USE_NINJA=0"
+          $env:CUW_NOOP_COUNTER = "$env:RUNNER_TEMP\cuw_noop_witness"
+          Remove-Item -Force $env:CUW_NOOP_COUNTER -ErrorAction SilentlyContinue
+          Write-Host "[link-only] noop witness -> $($env:CUW_NOOP_COUNTER)"
         }
         python -m pip wheel . --no-build-isolation --no-deps -v -w dist
+        # The compile no-op MUST have fired. Until 2026-08-25 it never did on
+        # Windows -- the patch landed on CCompiler.compile, which MSVCCompiler
+        # overrides -- so every "link" job silently recompiled all N TUs
+        # serially and died at the runner cap. Never let that be silent again.
+        if ("${{ inputs.link-only }}" -eq "true" -and "${{ inputs.shard-filter }}" -ne "source") {
+          if (-not (Test-Path $env:CUW_NOOP_COUNTER)) {
+            Write-Host "::error::link-only: the compile no-op NEVER FIRED. The monkeypatch is not reaching this platform's compiler class -- this job recompiled instead of linking."
+            exit 1
+          }
+          $w = Get-Content $env:CUW_NOOP_COUNTER
+          Write-Host "[link-only] compile no-op fired $($w.Count) time(s): $($w -join '; ')"
+        }
     - name: Assert cache hit rate (Linux link-only mode)
       # The failure mode of compiler caches is cliff-edged: one bad flag and
       # the hit rate silently drops to 0, the link job recompiles everything
@@ -1035,9 +1113,26 @@ runs:
         MISSES=$(echo "$STATS" | awk -F'\t' '$1 == "cache_miss" {n+=$2} END{print n+0}')
         TOTAL=$((HITS+MISSES))
         echo "cache: $HITS hits / $MISSES misses"
-        if [ "$TOTAL" -gt 0 ] && [ $((HITS * 100 / TOTAL)) -lt 90 ]; then
-          echo "::error::link-job cache hit rate $((HITS * 100 / TOTAL))% (< 90%) -- shard caches did not transfer (flag mismatch, path mismatch, or nondeterministic codegen). The build 'worked' only by recompiling, which defeats sharding."
+        # ZERO tolerance, not 90%. A single miss is a full TU recompile -- on
+        # flash_attn ARM that is ~470s -- so a "94.4% hit rate" passed this
+        # gate while costing 31 minutes and hiding an arch-collision bug
+        # (2026-08-25). A ratio threshold cannot distinguish "one nondeterministic
+        # TU" from "four shards arrived from the wrong architecture"; a count can.
+        # TOTAL==0 is NOT a pass: it means ccache was never consulted, i.e. the
+        # handoff did not happen at all. The old check was vacuous there.
+        if [ "$TOTAL" -eq 0 ]; then
+          echo "::error::link-job saw ZERO ccache lookups -- the shard cache handoff did not happen at all (nothing was restored, or ccache is not on PATH). This job did not link shards."
           exit 1
+        fi
+        if [ "$MISSES" -gt 0 ]; then
+          echo "::error::link-job had $MISSES ccache miss(es) out of $TOTAL. Every miss is a full TU recompile. Shard caches did not transfer cleanly -- flag mismatch, path mismatch, wrong-architecture artifacts, or nondeterministic codegen."
+          ccache --print-stats 2>/dev/null | grep -iE "miss|hit" || true
+          exit 1
+        fi
+        # Same witness the Windows step asserts: prove the compile no-op fired
+        # rather than inferring it from timing.
+        if [ -n "${CUW_NOOP_COUNTER:-}" ] && [ -s "$CUW_NOOP_COUNTER" ]; then
+          echo "[link-only] compile no-op fired $(wc -l < "$CUW_NOOP_COUNTER") time(s)"
         fi
 
     - name: Package shard cache (Linux compile-shard mode)
@@ -1111,9 +1206,20 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         # Naming key must include every dimension that produces different .o
-        # output (package, platform, python, cuda, torch). The link job
+        # output (package, CPU arch, python, cuda, torch). The link job
         # downloads with a `*-of-<shard_count>` glob to gather all shards.
-        name: shard-${{ inputs.package }}-${{ inputs.platform }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-${{ inputs.shard-index }}-of-${{ inputs.shard-count }}
+        #
+        # runner.arch, NOT inputs.platform: every aarch64 job passes
+        # `platform: linux` (it IS a Linux container -- the input drives shell
+        # and toolchain paths, not the CPU). So x86_64 and aarch64 shards
+        # uploaded under BYTE-IDENTICAL names, and the link job's glob matched
+        # all 40 of them. download-artifact then deduplicated by name and took
+        # one of each pair ARBITRARILY, so an aarch64 link could receive x86_64
+        # objects. Observed 2026-08-25 on flash_attn: 200 "linux" artifacts
+        # where 100 were expected, zero linux_aarch64, and ARM link jobs
+        # finishing in 7-13min vs 27-29min purely on which half they drew.
+        # runner.arch is X64/ARM64 and is exactly the axis that changes the .o.
+        name: shard-${{ inputs.package }}-${{ inputs.platform }}-${{ runner.arch }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-${{ inputs.shard-index }}-of-${{ inputs.shard-count }}
         path: shard-out/*.tar.gz
         retention-days: 1
 
