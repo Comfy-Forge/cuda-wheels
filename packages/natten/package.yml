@@ -37,7 +37,20 @@ nvcc_flags: --threads=1
 # cmake is required by NATTEN's setup.py (checks for the executable at build
 # time). Ninja generator is used.
 extra_deps: cmake ninja
-sharding: 40  # owner order 2026-08-26; was 20 (2026-08-22)
+sharding: 20  # owner order 2026-08-26 -- reverted from a brief 40
+# 40 does NOT work for natten and the reason is structural, not tunable:
+# the shard filter partitions the ~144 autogen .cu files by GLOBAL sorted
+# index (i %% shard_count), while the Hopper family has only ~22 of them.
+# Simulated over the real category sizes: at 20 shards, 0/20 shards receive
+# zero Hopper files; at 40, 18/40 do -- and this patch builds natten_hopper
+# as a separate OBJECT library (CUDA_ARCHITECTURES 90a-real), so an empty
+# source list is a hard cmake CONFIGURE error:
+#   CMake Error at CMakeLists.txt:234 (add_library):
+#     No SOURCES given to target: natten_hopper
+# The empty-target guard added to patches/natten.py makes >20 SURVIVABLE,
+# but raising this past ~22 still silently stops sharding the Hopper family
+# (most shards skip it), so the wall-clock win does not materialise there.
+# If this needs to go higher, partition PER-CATEGORY first.
 # Raised alongside flash_attn's 20->40. natten autogens ~144 CUTLASS TUs
 # at the cu13.0 arch list (grep_c '__CUDA_ARCH__ *<' over csrc/ is 0, so
 # none are stubs), and max_jobs is pinned to 1 because two simultaneous

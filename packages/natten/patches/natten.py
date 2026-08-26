@@ -145,7 +145,17 @@ new_add_lib = '''# --- cuda-wheels arch-specific OBJECT libraries (injected) ---
 # Both OBJECT libs need torch/cutlass/natten includes propagated --
 # NATTEN's target_include_directories(natten ...) call later in the
 # file is target-scoped to `natten` and doesn't reach OBJECT libs.
-if(${NATTEN_WITH_BLACKWELL_FNA})
+# A compile-shard may legitimately receive ZERO files of this family: the
+# shard filter partitions the ~144 autogen .cu files by GLOBAL sorted index
+# (i %% shard_count), and the Hopper family has only ~22 of them -- so at
+# sharding: 40 most shards get none, and add_library() with an empty source
+# list is a hard cmake CONFIGURE error:
+#   CMake Error at CMakeLists.txt:234 (add_library):
+#     No SOURCES given to target: natten_hopper
+# Skipping the target in that shard is correct -- another shard compiles
+# those TUs, and the link job (shard_index 0, no deletion) builds the full
+# target with every source as a cache hit. An empty CMake list is false.
+if(${NATTEN_WITH_BLACKWELL_FNA} AND (AUTOGEN_BLACKWELL_FNA OR AUTOGEN_BLACKWELL_FMHA))
     list(REMOVE_ITEM ALL_SOURCES ${AUTOGEN_BLACKWELL_FNA} ${AUTOGEN_BLACKWELL_FMHA})
     add_library(natten_blackwell OBJECT
         ${AUTOGEN_BLACKWELL_FNA} ${AUTOGEN_BLACKWELL_FMHA})
@@ -169,7 +179,17 @@ if(${NATTEN_WITH_BLACKWELL_FNA})
         message(STATUS "  ${_cuw_pd}/${_cuw_bn}")
     endforeach()
 endif()
-if(${NATTEN_WITH_HOPPER_FNA})
+# A compile-shard may legitimately receive ZERO files of this family: the
+# shard filter partitions the ~144 autogen .cu files by GLOBAL sorted index
+# (i %% shard_count), and the Hopper family has only ~22 of them -- so at
+# sharding: 40 most shards get none, and add_library() with an empty source
+# list is a hard cmake CONFIGURE error:
+#   CMake Error at CMakeLists.txt:234 (add_library):
+#     No SOURCES given to target: natten_hopper
+# Skipping the target in that shard is correct -- another shard compiles
+# those TUs, and the link job (shard_index 0, no deletion) builds the full
+# target with every source as a cache hit. An empty CMake list is false.
+if(${NATTEN_WITH_HOPPER_FNA} AND (AUTOGEN_HOPPER_FNA OR AUTOGEN_HOPPER_FMHA))
     list(REMOVE_ITEM ALL_SOURCES ${AUTOGEN_HOPPER_FNA} ${AUTOGEN_HOPPER_FMHA})
     add_library(natten_hopper OBJECT
         ${AUTOGEN_HOPPER_FNA} ${AUTOGEN_HOPPER_FMHA})
