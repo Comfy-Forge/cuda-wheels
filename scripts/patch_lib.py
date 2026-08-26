@@ -568,7 +568,22 @@ def prune_glm_docs(glm_root: str | Path) -> int:
     Returns the number of files removed. Raises if the header tree did not
     survive -- silently shipping a glm without headers is worse than the bloat.
     """
-    import shutil
+    import shutil, stat, sys
+    # Windows marks git's pack files read-only, so a plain rmtree of a CLONED
+    # glm dies on .git/objects/pack/*.idx with
+    #   PermissionError: [WinError 5] Access is denied
+    # (measured 2026-08-26, gsplat_maskgaussian windows). Vanilla gsplat never
+    # hit it because its glm arrives inside upstream's tree with no .git at all;
+    # only the fork, which clones glm itself, has one to delete. Clear the
+    # read-only bit and retry -- the standard Windows workaround.
+    def _force_rm(func, path, _exc):
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except OSError:
+            pass          # best effort: leftover metadata is bloat, not breakage
+    _rm_kw = ({"onexc": _force_rm} if sys.version_info >= (3, 12)
+              else {"onerror": _force_rm})
     root = Path(glm_root)
     if not root.exists():
         print(f"prune_glm_docs: {root} absent -- nothing to prune")
@@ -578,7 +593,7 @@ def prune_glm_docs(glm_root: str | Path) -> int:
         d = root / sub
         if d.is_dir():
             removed += sum(1 for _ in d.rglob("*") if _.is_file())
-            shutil.rmtree(d)
+            shutil.rmtree(d, **_rm_kw)
     sentinel = root / "glm" / "gtc" / "type_ptr.hpp"
     require(sentinel.exists(),
             f"prune_glm_docs: {sentinel} is gone after pruning -- the header "
