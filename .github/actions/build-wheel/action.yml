@@ -874,9 +874,34 @@ runs:
           elif [ -z "$LT" ]; then
             echo "::warning::could not resolve links_torch for ${{ inputs.package }}; keeping the libcudart exclude"
           fi
+          # --strip: `strip -s` over the vendored libs AND our own extensions
+          # (auditwheel/repair.py:133-136). Safe because .nv_fatbin is
+          # SHF_ALLOC and strip only discards non-allocated sections -- verified
+          # rather than assumed, on the real pytorch3d _C.so: 188MB -> 37MB with
+          # SASS {75,80,86,90,100,120} and PTX {90,120} unchanged and the
+          # .nv_fatbin section byte-identical (same sha256).
+          #
+          # The gate is likewise strip-invariant by construction: C4 reads
+          # DT_NEEDED/RPATH from .dynamic, C5 proves torch linkage from .dynsym
+          # undefined symbols (which MUST be dynamic or the loader could not
+          # resolve them), C6 reads .gnu.version_r, C7 reads .nv_fatbin. All
+          # allocated. Checked across all 88 binaries in the 24 local wheels:
+          # zero differences in any C4/C5/C6/C7 input.
+          #
+          # Saves 741MB of 1360MB uncompressed (54.5%) and ~55% compressed --
+          # DWARF is verbose AND deflate-hostile, so download savings track the
+          # on-disk ones. Note it is ~99% a DWARF removal: .symtab+.strtab are
+          # only 9.5MB of 1360MB, and .dynsym survives, so a segfault backtrace
+          # still resolves exported frames.
+          #
+          # It buys nothing on the vendored side -- NVIDIA ships libcublas,
+          # libcufft, libnvrtc and libcudart pre-stripped (dwarf=0 symtab=0).
+          # Every byte saved is our own extensions, where the DWARF is an
+          # unintended consequence of setuptools defaulting to -g.
           if auditwheel repair "$whl" \
             --plat "$AUDITWHEEL_PLAT" \
             -w repaired/ \
+            --strip \
             --exclude libcuda.so \
             --exclude libcuda.so.1 \
             $CUDART_EXCLUDE \

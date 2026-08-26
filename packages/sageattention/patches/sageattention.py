@@ -42,7 +42,11 @@ new_flags = """    import platform
     if platform.system() == "Windows":
         CXX_FLAGS = ["/O2", "/Zi", "/openmp", "-DENABLE_BF16"]
     else:
-        CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-DENABLE_BF16"]"""
+        # -g dropped 2026-08-26: it is upstream's, it produces debug info
+        # nothing here consumes, and auditwheel now runs --strip so it would be
+        # generated at full cost and then thrown away. (sageattention's own
+        # extensions carried some of the largest .debug_info in the farm.)
+        CXX_FLAGS = ["-O3", "-fopenmp", "-lgomp", "-DENABLE_BF16"]"""
 
 if old_flags in content:
     content = content.replace(old_flags, new_flags)
