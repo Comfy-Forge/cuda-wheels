@@ -217,14 +217,46 @@ _require(_ptx_anchor in content,
 content = content.replace(_ptx_anchor, _ptx_add, 1)
 print("Injected PTX gencode emission for +PTX archs")
 
-# The MAX_JOBS auto-detect rewrite that used to live here is GONE. It changed
-# upstream's `free_memory_gb / 9` into `free_memory_gb / (4.5 * num_archs)`,
-# which is better arithmetic -- and completely dead. Upstream only consults the
-# estimator when MAX_JOBS is unset, and this package sets it: package.yml:15 is
-# `max_jobs: 1`, and the comment three lines above it says so in as many words
-# ("explicit max_jobs bypasses upstream's free-RAM estimator"). So the improved
-# formula has never run on a single cell, while looking like live tuning to
-# anyone reading the patch. Parallelism is set with the max_jobs knob.
+# The MAX_JOBS auto-detect rewrite that used to live here is GONE -- it was dead
+# code (upstream consults its estimator only when MAX_JOBS is unset, and this
+# package sets jobs: 1). Removing it was right; removing it the way it was done
+# was not.
+#
+# RESTORED 2026-08-26. Commit f3d89a9 cut that block and took
+# `setup_file.write_text(content)` with it, because the write sat inside the
+# region being removed. Every edit above then evaporated: `content` is read at
+# line 21 and modified for the submodule skips, cuda_archs(),
+# cuda_extra_archs() and the PTX backport -- and was simply discarded. The
+# prints still announced success, so nothing looked wrong.
+#
+# What that would have shipped, had a build run against it:
+#   * cuda_archs() reverts to upstream's hardcoded "80;90;100;120" emitting
+#     code=sm_X only and NO PTX, against arch rows that all declare +PTX and
+#     ARM rows expecting sm_87/sm_110 -- C7 fails every one of 375 cells;
+#   * FORCE_BUILD stays FALSE, so setup.py DOWNLOADS Dao-AILab's prebuilt wheel
+#     rather than compiling, and on a cu13.0 cell that means silently
+#     publishing a cu12-built binary.
+#
+# The lesson worth keeping: every require() in this file asserts that a
+# SUBSTITUTION matched. Not one of them asserts the result was written. A patch
+# that only prints on success cannot tell you it did nothing.
+setup_file.write_text(content)
+
+
+# ── force a real compile: never adopt upstream's prebuilt wheel ──────────
+# FA's setup.py looks for a matching wheel on Dao-AILab's GitHub releases
+# and DOWNLOADS it instead of compiling (that is what the os.rename below
+# moves into place). On linux x86 + cu12 + released torch versions a match
+# exists, so the farm would silently ship upstream's binary -- wrong arch
+# list, wrong toolchain, no ccache for the shard link job. Flip the
+# FORCE_BUILD default to TRUE so the farm always compiles from source.
+_force_old = 'FORCE_BUILD = os.getenv("FLASH_ATTENTION_FORCE_BUILD", "FALSE") == "TRUE"'
+_force_new = 'FORCE_BUILD = os.getenv("FLASH_ATTENTION_FORCE_BUILD", "TRUE") == "TRUE"'
+_s = Path("setup.py").read_text()
+if _force_old not in _s:
+    raise SystemExit("flash_attn patch: FORCE_BUILD line not found -- "
+                     "upstream changed; update this patch")
+Path("setup.py").write_text(_s.replace(_force_old, _force_new))
 
 print("flash_attn patch: FORCE_BUILD default -> TRUE (no prebuilt-wheel adoption)")
 
@@ -245,3 +277,24 @@ _s2 = _s2.replace("os.rename(wheel_filename, wheel_path)",
                   "shutil.move(wheel_filename, wheel_path)")
 _sp2.write_text(_s2)
 print("flash_attn patch: os.rename -> shutil.move (shutil already imported upstream)")
+
+
+# ── final assertion: prove the edits are ON DISK, not just in a variable ──
+# Every require() above asserts that a SUBSTITUTION MATCHED. Not one asserts
+# that the result was ever written back, which is exactly how f3d89a9 turned
+# this whole script into a no-op that printed six success messages. Re-read the
+# file we claim to have patched and check for the markers.
+_final = setup_file.read_text()
+for _marker, _what in (
+        ("cuda_extra_archs", "the arch bridge (cuda_archs/cuda_extra_archs)"),
+        ("code=compute_", "the +PTX gencode backport"),
+        ('FLASH_ATTENTION_FORCE_BUILD", "TRUE"', "the FORCE_BUILD flip"),
+        ("cuda-wheels: skipped composable_kernel", "the submodule skips"),
+):
+    _require(_marker in _final,
+             f"flash_attn: {_what} is NOT PRESENT in the setup.py on disk. "
+             f"The substitution reported success, so the edit was made to a "
+             f"variable that was never written back. Do not ship this: the "
+             f"wheel would carry upstream's hardcoded 80;90;100;120 with no "
+             f"PTX, or be downloaded prebuilt from Dao-AILab instead of built.")
+print("flash_attn patch: verified all edits are present in setup.py on disk")
