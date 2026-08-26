@@ -25,20 +25,41 @@ clone_recursive: true
 # 16GB Linux runner — each .cu peaks above the assumed 3.5GB. Backed off
 # to 2 slots (with 8GB swap added in build.yml) paired with nvcc --threads=1
 # (via nvcc_flags below) for single-threaded per-file compiles.
-# max_jobs 1 (was 2): at sharding 20 a shard holds ~7 TUs and two
-# simultaneous CUTLASS peaks tripped the swap gate (0.18GB swapped);
-# in-job parallelism buys nothing sharded this thin.
+# max_jobs stays 1: at sharding 20 a shard held ~7 TUs and two simultaneous
+# CUTLASS peaks tripped the swap gate (0.18GB swapped). The gate has since
+# been relaxed to three branches (swap alone only fails when MemAvailable
+# also bottoms out), so that particular rejection would now be a warning --
+# but two independent whole-TU CUTLASS peaks is still the shape that OOM'd
+# outright at max_jobs=4, so the concurrency knob we are turning instead is
+# nvcc_threads (below), which parallelises WITHIN one TU.
 max_jobs: 1
-# Force nvcc to single-threaded per file (NATTEN's CMakeLists doesn't pass
-# --threads; without this, nvcc default is 1 anyway, but we make it explicit
-# so the parallelism story is documented and stays stable across nvcc
-# versions). Forwarded to every nvcc invocation via NVCC_APPEND_FLAGS.
-nvcc_flags: --threads=1
+# nvcc --threads=2 (owner order 2026-08-26, was 1). --threads parallelises a
+# single nvcc invocation ACROSS ITS GENCODE TARGETS, so the win is bounded by
+# how many arches a given cmake target compiles for:
+#   natten_hopper    CUDA_ARCHITECTURES "90a-real"  -> 1 arch, no win
+#   natten_blackwell CUDA_ARCHITECTURES "100a-real" -> 1 arch, no win
+#   natten (main)    the rest of the arch list      -> real win
+# Those two single-arch OBJECT libs are the expensive families, so expect the
+# speedup to land on the main CUTLASS-FNA library rather than on the Hopper/
+# Blackwell autogen kernels. Peak memory rises roughly like max_jobs=2 (each
+# cicc is its own process), which is why max_jobs stays at 1 -- we are
+# spending the memory budget here, not there.
+# Forwarded to every nvcc invocation via NVCC_APPEND_FLAGS.
+nvcc_flags: --threads=2
 # cmake is required by NATTEN's setup.py (checks for the executable at build
 # time). Ninja generator is used.
 extra_deps: cmake ninja
-sharding: 20  # owner order 2026-08-26 -- reverted from a brief 40
-# 40 does NOT work for natten and the reason is structural, not tunable:
+sharding: 23  # owner order 2026-08-26 -- 20 -> brief 40 -> 20 -> 23
+# 23 is the structural ceiling for this package, not an arbitrary bump. The
+# shard filter partitions the ~144 autogen .cu files by GLOBAL sorted index
+# (i %% shard_count) and the Hopper family has only ~22 of them, so at 23 every
+# shard receives 0 or 1 Hopper TU -- maximally sharded. Going higher adds
+# shards that hold zero Hopper files and buys no further wall-clock there.
+# Shards that receive zero files of a family are SURVIVABLE: the
+# `if(NATTEN_WITH_HOPPER_FNA AND (AUTOGEN_HOPPER_FNA OR ...))` guard in
+# patches/natten.py skips the OBJECT library instead of letting add_library()
+# fail configure with "No SOURCES given to target: natten_hopper".
+# Why 40 did NOT work, kept as the record:
 # the shard filter partitions the ~144 autogen .cu files by GLOBAL sorted
 # index (i %% shard_count), while the Hopper family has only ~22 of them.
 # Simulated over the real category sizes: at 20 shards, 0/20 shards receive
