@@ -206,6 +206,43 @@ def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
     return _normalize_arch_list(_ensure_ptx_on_highest_base(_policy))
 
 
+def resolve_windows_arch_list(pkg: dict, cuda_version: str,
+                             combo_arch_list=None, pytorch_version=None,
+                             default_arch_list=None) -> str:
+    """Windows arch list: the package's dedicated windows override, else the
+    ordinary x86 resolution.
+
+    Windows was the one lane with NO way to say "this platform differs". ARM
+    has had `arch_list_aarch64` / `arch_list_by_cuda_aarch64` from the start;
+    Windows silently shared the x86 fields. So a package whose Windows build
+    genuinely cannot produce an arch had exactly one place left to express it:
+    its patch script. natten's did, stripping 10.0/10.3 out of NATTEN_CUDA_ARCH
+    at build time because MSVC cannot parse
+    sm100_fmha_bwd_kernel_tma_warpspecialized.hpp (C2061) -- while the resolver,
+    reading the same YAML a human reads, still said sm_100 was expected. The
+    two disagreed, nothing reconciled them, and C7 failed every natten Windows
+    wheel on `missing arch families sm_[10]` with no honest fix available:
+    narrowing the shared x86 row to match would have stripped Blackwell from
+    Linux too.
+
+    An arch list is configuration. It belongs in YAML, where a reader sees it
+    and the gate resolves the same value the build uses. A patch's job is to
+    PLUG THE LIST IN -- translate it into whatever env var or gencode form the
+    package wants -- never to decide its contents.
+
+    Falls through to resolve_arch_list() when no windows field is set, so every
+    package that does not opt in behaves exactly as before.
+    """
+    by_cuda = pkg.get("arch_list_by_cuda_windows") or {}
+    raw = by_cuda.get(cuda_version) or pkg.get("arch_list_windows")
+    if raw:
+        if not _ptx_tail_allowed(pkg):
+            return _normalize_arch_list(raw)
+        return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
+    return resolve_arch_list(pkg, cuda_version, combo_arch_list,
+                             pytorch_version, default_arch_list)
+
+
 def _normalize_arch_list(arch_list: str) -> str:
     """Canonicalise to SPACE-separated, which is torch's documented format.
 
@@ -687,9 +724,16 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         # SBSA). Packages whose kernel gaps are platform-
                         # independent (sageattention ships no sm_100 anywhere)
                         # declare the dedicated aarch64 fields instead.
-                        "arch_list": (resolve_aarch64_arch_list(pkg, cuda, pytorch)
-                                      if platform == "linux_aarch64"
-                                      else resolve_arch_list(pkg, cuda, combo_arch_list, pytorch, default_arch_list)),
+                        "arch_list": (
+                            resolve_aarch64_arch_list(pkg, cuda, pytorch)
+                            if platform == "linux_aarch64"
+                            else resolve_windows_arch_list(
+                                pkg, cuda, combo_arch_list, pytorch,
+                                default_arch_list)
+                            if platform == "windows"
+                            else resolve_arch_list(
+                                pkg, cuda, combo_arch_list, pytorch,
+                                default_arch_list)),
                         "extra_deps": pkg.get("extra_deps", ""),
                         "pre_build_script": pkg.get("pre_build_script", ""),
                         "free_disk_space": pkg.get("free_disk_space", defaults.get("free_disk_space", False)),

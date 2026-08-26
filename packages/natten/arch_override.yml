@@ -31,3 +31,35 @@ arch_list_by_cuda:
   # the shared policy silently. Same shape as the sageattention ARM cu12.6 gap
   # found the same day. nvcc 13.2 supports sm_103, so 10.3 is valid here.
   '13.2': 8.0 8.6 8.9 9.0 10.0 10.3 12.0+PTX
+
+# ---------------------------------------------------------------------------
+# WINDOWS lane. Added 2026-08-26 together with the resolver's third lane
+# (resolve_windows_arch_list). Until then Windows silently shared the x86
+# fields above, so this divergence had nowhere to live but patches/natten.py,
+# which stripped 10.0/10.3 out of NATTEN_CUDA_ARCH at build time while the
+# resolver -- and anyone reading this file -- still said sm_100 was expected.
+# C7 duly failed every natten Windows wheel:
+#   [arch_sass] natten-...-win_amd64.whl: missing arch families sm_[10]
+#     expected ['sm_100','sm_103','sm_120','sm_80','sm_86','sm_89','sm_90']
+#     found    ['sm_120','sm_80','sm_86','sm_89','sm_90']
+#
+# The reason for the gap is genuine and not a build-tuning excuse: enabling
+# Blackwell DC sets NATTEN_WITH_BLACKWELL_FNA, which pulls in
+# csrc/.../sm100_fmha_bwd_kernel_tma_warpspecialized.hpp, and MSVC's strict
+# mode rejects it with C2061 (syntax error, identifier). It is a compiler
+# limitation on that header, not something a knob can move; there is no
+# __CUDA_ARCH__ guard or shim that makes MSVC parse it.
+#
+# NOT a coverage decision taken lightly: sm_120 (RTX 5090 / Blackwell consumer)
+# is unaffected and stays, because it compiles through the regular CUTLASS-FNA
+# path and never triggers the Blackwell DC code. Only the DATACENTRE parts
+# (B200/GB200 sm_100, B300 sm_103) are absent, and on Windows specifically --
+# a combination that barely exists in the field. Linux and ARM keep both.
+# Delete these rows the day MSVC or NATTEN can parse that header.
+arch_list_by_cuda_windows:
+  '12.4': 8.0 8.6 8.9 9.0+PTX
+  '12.6': 8.0 8.6 8.9 9.0+PTX
+  '12.8': 8.0 8.6 8.9 9.0 12.0+PTX
+  '12.9': 8.0 8.6 8.9 9.0 12.0+PTX
+  '13.0': 8.0 8.6 8.9 9.0 12.0+PTX
+  '13.2': 8.0 8.6 8.9 9.0 12.0+PTX

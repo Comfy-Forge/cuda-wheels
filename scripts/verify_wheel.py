@@ -548,7 +548,7 @@ def check_glibc_ceiling(rep, infos, vendored):
 # ── C7 ─────────────────────────────────────────────────────────────────────
 
 def _cuobjdump_archs(binary_path, cuobjdump, timeout):
-    """(sass, ptx) arch sets. PTX drops `a` targets -- they are not a tail.
+    r"""(sass, ptx) arch sets. PTX drops `a` targets -- they are not a tail.
 
     The suffix used to be discarded right here, by `sm_(\d+)`, long before
     `_norm()` further down got a chance to think about it. For SASS that is
@@ -650,7 +650,15 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
     exp_sass, exp_ptx = arch_list_to_sm_ptx(args.arch_list)
     # Documented upstream gaps only. A package whose UPSTREAM has no kernel for
     # an arch declares it here with a reason; anything else is a defect.
-    waived = set(vknobs.get("allow_missing_archs") or [])
+    # platform_knob, not a bare .get(): an arch a package cannot build is very
+    # often a PER-LANE fact, and until now there was no way to say so. A waiver
+    # written as one flat list is a claim about every lane the farm builds --
+    # the defect that let cumm's single-string skip_arch switch the arch gate
+    # off farm-wide on a Linux-only premise. Both shapes accepted:
+    #     allow_missing_archs: [sm_100]                # every platform
+    #     allow_missing_archs: {windows: [sm_100]}     # this lane only
+    # A lane with no entry is NOT waived: the omission fails closed.
+    waived = set(platform_knob(vknobs, "allow_missing_archs", args.platform) or [])
     data["expected_ptx"] = sorted(exp_ptx)
     data["waived"] = sorted(waived)
 
@@ -1027,29 +1035,54 @@ def main():
             gate_error("pyelftools missing on Linux -- the Repair step "
                        "(auditwheel) should have installed it; step order broken")
 
-    # cross-check the arch list against the resolver (warn-only drift alarm)
-    if args.arch_list and is_linux:
+    # THE arch list for this cell, resolved HERE from the package YAML.
+    #
+    # It used to arrive as --arch-list, handed down by the same matrix that
+    # drove the build -- so the gate was told what to expect by the thing whose
+    # output it was checking. That is a tautology with extra steps: get the
+    # matrix wrong and the build compiles the wrong archs while the gate
+    # expects the wrong archs, and it passes green. It is the same shape as
+    # narrowing an override to make C7 quiet, which moves both sides of the
+    # comparison at once, and which cost spconv its Blackwell cubins.
+    #
+    # A warn-only "drift alarm" used to sit here recomputing the list purely to
+    # compare against what was passed. It was a SECOND copy of the lane logic,
+    # it called the x86 resolver for aarch64 jobs, and it therefore fired on
+    # every single ARM build until a branch was bolted on. Adding a third
+    # branch for the new Windows lane would have guaranteed the same bug again.
+    # Deleted: there is now one derivation, so there is nothing to drift.
+    #
+    # generate_matrix.resolve_* reads defaults/arch_policy.yml plus the
+    # package's arch_override.yml. That is the single source of truth for what
+    # a cell is supposed to contain; the build reads it to compile, the gate
+    # reads it to check. --arch-list survives only as an explicit override for
+    # running this script by hand.
+    if args.arch_list:
+        log(f"  arch list: {args.arch_list!r} (--arch-list override)")
+    else:
         try:
-            # The ARM lane has its own resolver and its own override fields;
-            # calling the x86 one made this alarm fire on EVERY aarch64 job
-            # ("--arch-list '8.0 9.0 12.0+PTX' differs from resolver output
-            # '8.0 8.6 8.9 9.0 12.0+PTX'"), so the one cross-check meant to
-            # catch real matrix/action drift was permanent noise on ARM.
             if args.platform == "linux_aarch64":
-                resolved = _GM.resolve_aarch64_arch_list(
+                args.arch_list = _GM.resolve_aarch64_arch_list(
                     pkg, args.cuda, args.torch)
-            else:
-                resolved = _GM.resolve_arch_list(
+            elif args.platform == "windows":
+                args.arch_list = _GM.resolve_windows_arch_list(
                     pkg, args.cuda, pytorch_version=args.torch,
                     default_arch_list=_GM.policy_arch_list(
                         args.cuda, args.torch, platform=args.platform))
-            if arch_list_to_sm(resolved) != arch_list_to_sm(args.arch_list):
-                annotate("warning",
-                         f"--arch-list {args.arch_list!r} differs from resolver "
-                         f"output {resolved!r} -- matrix/action drift?")
-        except Exception:  # noqa: BLE001 -- advisory only
-            pass
-
+            else:
+                args.arch_list = _GM.resolve_arch_list(
+                    pkg, args.cuda, pytorch_version=args.torch,
+                    default_arch_list=_GM.policy_arch_list(
+                        args.cuda, args.torch, platform=args.platform))
+            log(f"  arch list: {args.arch_list!r} "
+                f"(resolved for {args.platform} from package YAML)")
+        except Exception as e:  # noqa: BLE001
+            # Resolution failing is a GATE fault, not a wheel defect: without a
+            # list C7 degrades to "skip", which is exactly the silent pass this
+            # change exists to remove.
+            gate_error(f"could not resolve the arch list for "
+                       f"{args.package} cuda={args.cuda} torch={args.torch} "
+                       f"platform={args.platform}: {type(e).__name__}: {e}")
     reports, any_fail = [], False
     for wheel_path in paths:
         log(f"verifying {wheel_path.name}")

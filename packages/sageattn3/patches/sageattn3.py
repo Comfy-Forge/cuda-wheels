@@ -47,6 +47,7 @@ new_gpu_detect = """    cc_flag = []
         "12.0": ("compute_120a", "sm_120a"),
         "12.1": ("compute_121a", "sm_121a"),
     }
+    _unknown = []
     for item in arch_list_env.replace(",", " ").replace(";", " ").split():
         # Strip +PTX before the exact-key lookup: the farm's arch resolver
         # always suffixes the highest arch ("12.0+PTX"), which would
@@ -55,6 +56,24 @@ new_gpu_detect = """    cc_flag = []
         if item in arch_map:
             compute, sm = arch_map[item]
             cc_flag.extend(["-gencode", f"arch={compute},code={sm}"])
+        else:
+            _unknown.append(item)
+    # FAIL, do not skip. This loop used to have no `else`: a token the map did
+    # not recognise was dropped without a word, so the arch list in
+    # arch_override.yml was advisory and the wheel could quietly contain less
+    # than the YAML promised -- while C7, which resolves that same YAML, went
+    # looking for it. A patch translates the farm's arch list into upstream's
+    # gencode form; it does not get a vote on the contents. If the two ever
+    # disagree that is a config error and it should stop the build here, where
+    # the message names the token, rather than three hours later as
+    # "missing arch families".
+    if _unknown:
+        raise RuntimeError(
+            f"sageattn3: TORCH_CUDA_ARCH_LIST asks for {_unknown}, which this "
+            f"package cannot emit. Known: {sorted(arch_map)}. Fix "
+            f"packages/sageattn3/arch_override.yml -- do NOT widen arch_map "
+            f"unless upstream really grew a kernel for it."
+        )
     if not cc_flag:
         raise RuntimeError(
             f"No supported Blackwell architectures found in TORCH_CUDA_ARCH_LIST={arch_list_env!r}. "

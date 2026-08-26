@@ -442,17 +442,25 @@ if not os.getenv("NATTEN_N_WORKERS"):
     _mj = os.getenv("MAX_JOBS", "")
     if _mj.isdigit() and int(_mj) > 0:
         os.environ["NATTEN_N_WORKERS"] = _mj
-# Windows: strip Blackwell DC archs (10.0, 10.3) from NATTEN_CUDA_ARCH to
-# avoid enabling NATTEN_WITH_BLACKWELL_FNA and pulling in the
-# sm100_fmha_bwd_kernel_tma_warpspecialized.hpp template that MSVC's
-# strict mode rejects with C2061. RTX 5090 (sm_120) is unaffected and
-# stays in the arch list (it doesn't trigger the Blackwell DC code path).
-import platform as _cuw_platform
-if _cuw_platform.system() == "Windows":
-    _na = os.environ.get("NATTEN_CUDA_ARCH", "")
-    _kept = [a for a in _na.split(";") if a.strip() and a.strip() not in ("10.0", "10.3", "100", "103")]
-    os.environ["NATTEN_CUDA_ARCH"] = ";".join(_kept)
-    print(f"[cuda-wheels] Windows: stripped Blackwell DC archs from NATTEN_CUDA_ARCH; result: {os.environ['NATTEN_CUDA_ARCH']!r}")
+# The Windows Blackwell-DC strip that used to live here is GONE. It read:
+#     if platform.system() == "Windows":
+#         drop 10.0 / 10.3 from NATTEN_CUDA_ARCH
+# because MSVC's strict mode rejects
+# sm100_fmha_bwd_kernel_tma_warpspecialized.hpp with C2061.
+#
+# The limitation is real. Expressing it HERE was the mistake. An arch list is
+# configuration: the resolver reads the YAML, the gate resolves the same YAML,
+# and a human reading arch_override.yml is entitled to believe it. This patch
+# silently disagreed with all three, so C7 failed every natten Windows wheel
+# with `missing arch families sm_[10]` and there was no honest way to fix it --
+# narrowing the shared x86 row to match would have stripped Blackwell from
+# Linux too, and Windows had no arch field of its own.
+#
+# It does now: `arch_list_by_cuda_windows` in arch_override.yml carries the
+# Windows list, with the C2061 reason written down next to it. A patch's job is
+# to PLUG THE LIST IN -- translate the farm's arch list into whatever env var
+# or gencode form upstream wants (the shim above does exactly that) -- never to
+# decide its contents.
 # Pin NATTEN_BUILD_DIR to a predictable in-source location so the cuda-wheels
 # shard/link harness can find the .o files. Default is a temporary directory
 # whose name changes per run, which doesn't survive the upload/restore

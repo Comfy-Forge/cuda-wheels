@@ -1394,7 +1394,16 @@ runs:
       # never runs, and the wheel is not published.
       if: (inputs.shard-count == '0' || inputs.link-only == 'true')
       shell: bash
-      run: python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" "$GITHUB_WORKSPACE/dist" --package "${{ inputs.package }}" --arch-list "${{ inputs.arch-list }}" --cuda "${{ inputs.cuda-version }}" --torch "${{ inputs.pytorch-version }}" --platform "${{ inputs.platform }}"
+      # NO --arch-list. The gate resolves it from the package YAML itself.
+      # Passing it here meant the gate was told what to expect by the same
+      # matrix that drove the build: get the matrix wrong and the build
+      # compiles the wrong archs while the gate expects the wrong archs, and it
+      # passes green. Now the build reads the YAML to compile and the gate
+      # reads the YAML to check, with no copy travelling through CI plumbing
+      # between them -- so a mangled arch_list is a hard C7 failure instead of
+      # a silent agreement. (verify_wheel keeps --arch-list as an explicit
+      # override for running it by hand.)
+      run: python "$GITHUB_WORKSPACE/scripts/verify_wheel.py" "$GITHUB_WORKSPACE/dist" --package "${{ inputs.package }}" --cuda "${{ inputs.cuda-version }}" --torch "${{ inputs.pytorch-version }}" --platform "${{ inputs.platform }}"
 
     - name: Set wheel-path output
       # Empty in compile-shard mode.
