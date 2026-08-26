@@ -913,8 +913,25 @@ runs:
             | grep -oE '[^/]+\.libs/lib[^/]+\.so[^/]*$' \
             | sed -E 's#.*/##; s/-[0-9a-f]{8}\.so.*//; s/\.so.*//' \
             | sort -u || true)
+          # The allowlist rides the SAME links_torch switch as the excludes
+          # above, and it has to -- otherwise the two halves of this step
+          # contradict each other. For a torch-free package the excludes are
+          # deliberately cleared so auditwheel VENDORS libcudart/libgomp
+          # (nothing preloads them without `import torch`); this assertion then
+          # saw exactly that and killed the build with "vendored unexpected
+          # libraries: libcudart". The allowlist was imported at d897f4b
+          # (2026-08-20); the conditional exclude landed at 5e8736b five days
+          # later and did not update it. Net effect until 2026-08-26: every
+          # torch-free package was either shipping a wheel that cannot dlopen
+          # (all 17 published cumm assets DT_NEEDED libcudart.so.13 with only
+          # libnvrtc* in cumm.libs/) or, after the fix, failing to build at all.
+          ALLOWED='^(libnvrtc|libnvrtc-builtins)$'
+          if [ "$LT" = "false" ]; then
+            ALLOWED='^(libnvrtc|libnvrtc-builtins|libcudart|libgomp)$'
+            echo "torch-free package: also allowing vendored libcudart/libgomp"
+          fi
           unexpected=$(echo "$bundled" \
-            | grep -vE '^(libnvrtc|libnvrtc-builtins)$' | grep -v '^$' || true)
+            | grep -vE "$ALLOWED" | grep -v '^$' || true)
           if [ -n "$unexpected" ]; then
             echo "::error::$whl vendored unexpected libraries:"
             echo "$unexpected" | sed 's/^/  /'
