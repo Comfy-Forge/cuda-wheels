@@ -207,7 +207,44 @@ if old_abi in content:
 else:
     print("WARNING: Could not find FORCE_CXX11_ABI block - source may have changed")
 
+# 4. Pin the CUTLASS clone.
+# setup.py shells out to `git clone --depth 1 https://github.com/NVIDIA/cutlass`
+# from inside build_ext, with no tag: it takes whatever NVIDIA's default branch
+# happens to be at the moment the cell runs. Two problems, and the second is
+# the serious one:
+#   * cost -- a fresh clone on every cell of the grid, not once per build;
+#   * reproducibility -- this is the ONLY unpinned input in the farm. Every
+#     other source is fixed by source_tag, so "the pin protects us from
+#     upstream churn" is true everywhere except here. Two cells of the same
+#     matrix, built hours apart, can compile against different CUTLASS trees,
+#     and a wheel is not reproducible from its inputs.
+# v4.2.1 (2025-09-24) is the last CUTLASS release before this pinned sageattn3
+# tag (v2.2.0, 2025-10-28), i.e. the tree upstream was developing against.
+# If it is ever wrong the failure is a loud compile error, not a silent
+# miscompile -- bump the tag here.
+old_clone = '''            ["git", "clone", "--depth", "1", "https://github.com/NVIDIA/cutlass.git", str(cutlass_dir)],'''
+new_clone = '''            ["git", "clone", "--depth", "1", "--branch", "v4.2.1",
+             "https://github.com/NVIDIA/cutlass.git", str(cutlass_dir)],'''
+
+if old_clone in content:
+    content = content.replace(old_clone, new_clone, 1)
+    print("Patched CUTLASS clone: pinned to v4.2.1 (was an unpinned default branch)")
+else:
+    raise SystemExit(
+        "FATAL: sageattn3: the CUTLASS `git clone` line was not found in "
+        "sageattention3_blackwell/setup.py. It is the only unpinned source in "
+        "the farm; refusing to build against whatever NVIDIA's default branch "
+        "is today. Re-check the patch against the pinned source_tag."
+    )
+
 setup_file.write_text(content)
+
+_final_s3 = setup_file.read_text()
+if '"--branch", "v4.2.1"' not in _final_s3:
+    raise SystemExit(
+        "FATAL: sageattn3: the CUTLASS pin is NOT PRESENT in the setup.py on "
+        "disk -- the build would clone an unpinned CUTLASS."
+    )
 
 # ===========================================================================
 # kernel_traits.h patch — MSVC dependent-name workaround

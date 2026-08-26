@@ -40,7 +40,13 @@ old_flags = '    CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "
 
 new_flags = """    import platform
     if platform.system() == "Windows":
-        CXX_FLAGS = ["/O2", "/Zi", "/openmp", "-DENABLE_BF16"]
+        # /Zi dropped 2026-08-26, same reasoning as the -g below and from the
+        # same review. It was OURS, not upstream's -- this patch introduced it
+        # when translating the GCC flags to MSVC, so the "it's upstream's"
+        # defence never applied. /Zi is full MSVC debug info: it makes cl.exe
+        # write a .pdb per TU, serialises writes through mspdbsrv, and nothing
+        # in the wheel consumes it. Windows is already the slowest lane.
+        CXX_FLAGS = ["/O2", "/openmp", "-DENABLE_BF16"]
     else:
         # -g dropped 2026-08-26: it is upstream's, it produces debug info
         # nothing here consumes, and auditwheel now runs --strip so it would be
@@ -95,7 +101,82 @@ if old_sm90_ext in content:
 else:
     print("WARNING: Could not find _qattn_sm90 compile_args - source may have changed")
 
+# ── _qattn_sm89: FP8 sources must not be built for pre-Ada archs ────────
+# Same defect as _qattn_sm90 above, one arch down and much easier to miss
+# because it does NOT fail the build -- it silently ships traps.
+#
+# The seven sm89_* sources are the FP8 QMMA path. Their mma wrapper is gated:
+#   csrc/mma.cuh:44   #if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 890))
+#                     #define MMA_F8F8F32_M16N8K16_ENABLED
+# and when that macro is absent the wrapper body becomes
+#   csrc/mma.cuh:56   #define RUNTIME_ASSERT(x) __brkpt()
+# So every gencode below sm_89 compiles the whole kernel down to a breakpoint.
+# Measured in a shipped wheel: 26,880 BPT.TRAP instructions and zero QMMA.
+#
+# The extension is built whenever HAS_SM89 or HAS_SM90 or HAS_SM120, so it
+# inherits the FULL global gencode list -- sm_80 and sm_86 included. Nothing
+# can ever call those cubins: core.py:148 dispatches on `arch == "sm89"`, so a
+# pre-Ada GPU never enters this extension at all. They are pure compile cost
+# and pure wheel weight.
+#
+# Filter by capability rather than naming archs, so this keeps working as the
+# arch policy moves. compute_100/compute_120 sort correctly against 89 because
+# the tag is major*10+minor throughout (89, 90, 100, 120).
+helper_anchor = "import warnings"
+helper = '''import warnings
+
+
+def _cuw_min_cc_gencodes(flags, minimum):
+    """Drop -gencode pairs whose compute capability is below `minimum`.
+
+    Injected by cuda-wheels (packages/sageattention/patches). Pairs must be
+    removed two elements at a time: setup.py appends them as
+    ["-gencode", "arch=compute_NN,code=sm_NN"].
+    """
+    out, i = [], 0
+    while i < len(flags):
+        if flags[i] == "-gencode" and i + 1 < len(flags):
+            spec = flags[i + 1]
+            cc = spec.split("compute_")[1].split(",")[0] if "compute_" in spec else ""
+            if cc.isdigit() and int(cc) < minimum:
+                i += 2
+                continue
+            out.extend([flags[i], flags[i + 1]])
+            i += 2
+            continue
+        out.append(flags[i])
+        i += 1
+    return out'''
+
+_require(helper_anchor in content,
+         "sageattention: 'import warnings' not found in setup.py -- cannot "
+         "inject the gencode filter helper")
+content = content.replace(helper_anchor, helper, 1)
+
+old_sm89_ext = '''                    "csrc/qattn/sm89_qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf.cu",
+                ],
+                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS},'''
+new_sm89_ext = '''                    "csrc/qattn/sm89_qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf.cu",
+                ],
+                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": _cuw_min_cc_gencodes(NVCC_FLAGS, 89)},'''
+
+_require(old_sm89_ext in content,
+         "sageattention: the _qattn_sm89 extension block was not found in "
+         "setup.py. Without the filter its FP8 kernels are compiled for sm_80 "
+         "and sm_86, where they are nothing but __brkpt() traps.")
+content = content.replace(old_sm89_ext, new_sm89_ext, 1)
+print("Patched _qattn_sm89 to skip gencodes below sm_89 (FP8 QMMA floor)")
+
 setup_file.write_text(content)
+
+# Prove both arch filters are on disk, not merely computed.
+_final = setup_file.read_text()
+for _marker, _what in (
+        ("_cuw_min_cc_gencodes(NVCC_FLAGS, 89)", "the _qattn_sm89 FP8 gencode filter"),
+        ("arch=compute_90a,code=sm_90a", "the _qattn_sm90 Hopper gencode filter")):
+    _require(_marker in _final,
+             f"sageattention: {_what} is NOT PRESENT in the setup.py on disk -- "
+             "the wheel would ship trap-only kernels for those archs")
 
 
 # ── Let torch pick the C++ standard (review board 2026-08-24) ───────────
