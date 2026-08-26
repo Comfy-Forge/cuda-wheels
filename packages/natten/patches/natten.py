@@ -407,6 +407,60 @@ if 'cuda-wheels nvcc diagnostic suppression' not in cmake_text:
 else:
     print("NOTE: nvcc diag-suppression block already present in csrc/CMakeLists.txt -- skipping")
 
+# --- RPATH: $ORIGIN only, never the build machine's torch --------------------
+# natten sets no RPATH itself, but it links torch through cmake
+# (target_link_libraries(natten PUBLIC c10 torch torch_cpu ...)), and cmake's
+# default is to bake the BUILD-TREE location of every linked library into the
+# binary's RPATH. The wheel is packaged straight out of the build tree, so the
+# .so ships pointing at a path that exists only on the runner:
+#
+#   [elf_sanity] libnatten.cpython-312-x86_64-linux-gnu.so: non-$ORIGIN RPATH
+#   entry '/opt/python/cp312-cp312/lib/python3.12/site-packages/torch/lib'
+#
+# auditwheel does not rewrite it because torch is an EXCLUDED library -- it is
+# deliberately not vendored -- so nothing downstream fixes this. Verify C4
+# rejects the wheel and blocks the upload, which is why natten has never
+# published on Linux. (C4 runs before C7, so it was failing here even while the
+# missing-PTX defect was also present; fixing the PTX only revealed this.)
+#
+# The farm's other torch extensions never hit it because they build through
+# setuptools' CUDAExtension, which does not add an RPATH at all. They work
+# because `import torch` has already loaded libtorch into the process by the
+# time the extension is imported -- the extension resolves torch symbols from
+# the already-loaded image, not from disk. natten is identical in that respect,
+# so it needs no torch RPATH either; $ORIGIN is enough for anything it ships
+# beside itself.
+#
+# BUILD_WITH_INSTALL_RPATH makes cmake apply INSTALL_RPATH to the build-tree
+# binary directly, which is the one that gets packaged -- setting INSTALL_RPATH
+# alone would change nothing here, because no `make install` ever runs.
+rpath_block = '''
+
+# --- cuda-wheels RPATH hygiene (injected) ---
+# Do not bake the runner's torch path into the shipped .so. See
+# packages/natten/patches/natten.py for the full reasoning.
+set_target_properties(natten PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH_USE_LINK_PATH FALSE)
+message(STATUS "cuda-wheels: natten RPATH pinned to $ORIGIN (was the build-tree torch/lib)")
+# --- end cuda-wheels RPATH hygiene ---
+'''
+cmake_text = cmake_file.read_text()
+if 'cuda-wheels RPATH hygiene' not in cmake_text:
+    cmake_file.write_text(cmake_text + rpath_block)
+    print("Appended RPATH hygiene block to csrc/CMakeLists.txt")
+else:
+    print("NOTE: RPATH hygiene block already present in csrc/CMakeLists.txt -- skipping")
+
+_cm_final = cmake_file.read_text()
+if 'BUILD_WITH_INSTALL_RPATH TRUE' not in _cm_final:
+    raise SystemExit(
+        "FATAL: natten: the RPATH hygiene block is NOT PRESENT in "
+        "csrc/CMakeLists.txt on disk -- the wheel would ship a non-$ORIGIN "
+        "RPATH pointing at the runner's torch, and verify C4 would block the "
+        "upload exactly as it has been doing.")
+
 # csrc/include/natten/helpers.h: CHECK_CONTIGUOUS uses the C++ alternative
 # token `not` (`TORCH_CHECK(not x.is_sparse(), ...)`). GCC/Clang accept this
 # without <ciso646>; MSVC errors with `identifier "not" is undefined` unless

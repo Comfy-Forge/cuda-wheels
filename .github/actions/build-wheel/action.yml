@@ -1247,11 +1247,42 @@ runs:
           $cpu = try { [math]::Round((Get-CimInstance Win32_Processor |
                    Measure-Object LoadPercentage -Average).Average, 0) } catch { '--' }
           $procs = Get-Process -ErrorAction SilentlyContinue
-          $nthr  = ($procs | Measure-Object { $_.Threads.Count } -Sum).Sum
+          # Process/thread/handle census. The old line here was
+          #     ($procs | Measure-Object { $_.Threads.Count } -Sum).Sum
+          # which never once produced a number: Measure-Object -Property takes a
+          # property NAME, and Windows PowerShell 5.1 (what `powershell` is on
+          # the runner) does not accept a scriptblock there, so it searched for a
+          # property literally called "{ $_.Threads.Count }" and threw
+          # GenericMeasurePropertyNotFound on every sample for the life of the
+          # farm -- printing an empty "( thr)" and a stack trace each time.
+          #
+          # Win32_PerfRawData_PerfOS_System gives Processes and Threads directly
+          # and cheaply, with no per-process enumeration; fall back to summing
+          # per-process thread counts if the counter class is unavailable.
+          # $_.Threads throws on protected processes, hence the inner try.
+          $sys = Get-CimInstance Win32_PerfRawData_PerfOS_System -ErrorAction SilentlyContinue
+          if ($sys) {
+            $nproc = $sys.Processes; $nthr = $sys.Threads
+          } else {
+            $nproc = @($procs).Count   # @() so a single-object result still has .Count on PS 5.1
+            $nthr  = ($procs | ForEach-Object { try { $_.Threads.Count } catch { 0 } } |
+                      Measure-Object -Sum).Sum
+          }
+          # Handles matter here specifically. A Windows build does not only die
+          # of memory: nvcc forks cicc/cudafe++/cl per TU per gencode, and once
+          # the desktop heap or handle table is exhausted the NEXT process fails
+          # to start with STATUS_DLL_INIT_FAILED (0xC0000142) -- which is exactly
+          # how a natten Windows shard died on 2026-08-26 AFTER successfully
+          # building and packaging its wheel, with 12.5GB of RAM still free.
+          # Nothing in this monitor could see it coming. Now it can.
+          $nhnd = try { ($procs | Measure-Object HandleCount -Sum).Sum } catch { 0 }
           $top3  = ($procs | Sort-Object WorkingSet64 -Descending | Select-Object -First 3 |
                     ForEach-Object { '{0}({1:N2}GB)' -f $_.ProcessName, ($_.WorkingSet64 / 1GB) }) -join ' '
           $ts = (Get-Date).ToUniversalTime().ToString('HH:mm:ssZ')
-          Write-Host "[resmon $ts] mem: $usedGB/$totGB`GB used ($availGB avail) | pagefile: $pfUsed/$pfTot`GB used | cpu: $cpu% ($nthr thr) | top3: $top3"
+          Write-Host "[resmon $ts] mem: $usedGB/$totGB`GB used ($availGB avail) | pagefile: $pfUsed/$pfTot`GB used | cpu: $cpu% ($nproc proc, $nthr thr, $nhnd hnd) | top3: $top3"
+          if ($nhnd -gt 400000) {
+            Write-Host "::warning title=Windows handle pressure::$nhnd open handles across $nproc processes. Past ~500k the next process launch can fail with STATUS_DLL_INIT_FAILED (0xC0000142), which looks like an unexplained crash rather than exhaustion."
+          }
           # High-water files, read by the "Memory pressure signal (Windows)"
           # step, mirroring the Linux swap gate.
           $hw = "$env:RUNNER_TEMP\cuw_win_pf_highwater"
