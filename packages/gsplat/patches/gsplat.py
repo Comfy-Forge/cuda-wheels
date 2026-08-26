@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import (guard_labeled_partition_in_files, require,
+from patch_lib import (guard_labeled_partition_in_files, prune_glm_docs, require,
                        strip_std_flags, translate_cxx_flags_for_msvc)
 
 setup_file = Path("setup.py")
@@ -45,3 +45,16 @@ print(f"gsplat patch: dropped {n_std} hardcoded std flag(s); torch's "
 n_lp = guard_labeled_partition_in_files(
     sorted(glob.glob("gsplat/cuda/csrc/*.cu")), required=True)
 print(f"gsplat patch: guarded {n_lp} cg::labeled_partition site(s) for sm<70")
+
+
+# ── Prune glm's documentation out of the wheel ─────────────────────────────
+# glm is vendored for its headers, and it brings ~1,000 files of doxygen HTML,
+# images and a manual PDF along with them. Measured on a published gsplat
+# wheel: 1,662 third_party/glm entries, of which 426 are headers and 1,236 are
+# documentation, tests and repo metadata -- 19.2MB uncompressed, 5.59MB
+# compressed, 18% of the wheel and 96% of its file count, served on every one
+# of 75 assets.
+# The headers stay: gsplat/cuda/_backend.py points extra_include_paths at this
+# directory for the runtime JIT fallback, so removing them would convert a
+# working fallback into an ImportError. prune_glm_docs asserts they survived.
+prune_glm_docs(pathlib.Path("gsplat/cuda/csrc/third_party/glm"))

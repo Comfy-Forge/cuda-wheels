@@ -44,13 +44,31 @@ arch_policy:
 # user pinned to torch 2.4.x or 2.5.x.
 # Row matches 12.6: sm_80 (A100/Altra) and sm_90+PTX (Grace-Hopper). Note those
 # torch wheels are ~2.4GB each, so free_disk_space matters on this lane.
+# 8.7 (Jetson Orin / AGX Orin) ADDED 2026-08-26 to every row.
+#
+# It was in none of them, and unlike the desktop parts Orin cannot be reached
+# any other way. A cubin for sm_80 runs on sm_86/sm_89 by minor-version binary
+# compatibility -- but NVIDIA documents that guarantee as NOT applying to
+# Tegra, and the PTX tails these rows carry are all ABOVE 8.7 (9.0, 12.0), and
+# PTX only ever JITs FORWARD. So an Orin gets no cubin it can load and no PTX
+# it can compile: nothing at all, on every ARM package that inherits this
+# table. The farm already knew the arch exists -- packages/cumm/arch_override.yml
+# carries 8.7 on its own ARM rows -- the shared table simply never did.
+#
+# 8.7 is Ampere-class, so any source that compiles 8.0 compiles 8.7; nvcc has
+# accepted sm_87 since CUDA 11.4, well below this grid's 12.4 floor. Packages
+# that override arch_list_aarch64 are unaffected -- they do not read this table.
+#
+# Cost: one more cubin per ARM wheel. Deliberate: the alternative is that the
+# entire Jetson line silently gets nothing, which is the outcome this farm's
+# standing rule exists to prevent.
 arch_policy_aarch64:
-  "12.4": "8.0;9.0+PTX"
-  "12.6": "8.0;9.0+PTX"
-  "12.8": "8.0;9.0+PTX;10.0;12.0+PTX"
-  "12.9": "8.0;9.0+PTX;10.0;12.0+PTX"
-  "13.0": "8.0;9.0+PTX;10.0;11.0;12.0+PTX"
-  "13.2": "8.0;9.0+PTX;10.0;11.0;12.0+PTX"
+  "12.4": "8.0;8.7;9.0+PTX"
+  "12.6": "8.0;8.7;9.0+PTX"
+  "12.8": "8.0;8.7;9.0+PTX;10.0;12.0+PTX"
+  "12.9": "8.0;8.7;9.0+PTX;10.0;12.0+PTX"
+  "13.0": "8.0;8.7;9.0+PTX;10.0;11.0;12.0+PTX"
+  "13.2": "8.0;8.7;9.0+PTX;10.0;11.0;12.0+PTX"
 # Per-(cuda, torch-minor) exceptions, hand-maintained (CW-ADR-0012's clamp,
 # applied by hand). Inverted 2026-08-22: the policy rows above carry the
 # CURRENT floor (7.5 on cu128/cu129); these rows pin the closed set of OLD

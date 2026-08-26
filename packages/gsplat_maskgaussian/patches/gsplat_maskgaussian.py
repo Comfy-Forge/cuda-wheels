@@ -94,7 +94,7 @@ import sys as _sys
 import pathlib as _pl
 
 _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import (guard_labeled_partition_in_files, require,
+from patch_lib import (guard_labeled_partition_in_files, prune_glm_docs, require,
                        strip_std_flags, translate_cxx_flags_for_msvc)
 
 _text = setup_py.read_text()
@@ -113,3 +113,9 @@ _n_lp = guard_labeled_partition_in_files(
     sorted(_glob.glob(str(BUILD_SUBDIR / "gsplat/cuda/csrc/*.cu"))),
     required=True)
 print(f"gsplat_maskgaussian: guarded {_n_lp} labeled_partition site(s) for sm<70")
+
+
+# Same prune as vanilla gsplat -- this fork clones glm itself (the vendored
+# tree had the submodule stripped), so it gets the docs too. Headers kept; the
+# helper hard-fails if the header tree does not survive.
+prune_glm_docs(TARGET)

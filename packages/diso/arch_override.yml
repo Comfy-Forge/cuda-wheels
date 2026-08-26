@@ -1,11 +1,24 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-# SM 6.0 FLOOR (see README.md): diso's backward pass calls atomicAdd on
-# double accumulators, and atomicAdd(double*, double) only exists from
-# sm_60 (Pascal). The shared cu124/cu126 rows include 5.0 (Maxwell,
-# matching torch's own wheels); compiling diso for sm_50 fails with
-# "no instance of overloaded function atomicAdd". cu128+ rows already
-# start at 7.0 and are left to inherit.
-arch_list_by_cuda:
-  "12.4": "6.0;7.0;7.5;8.0;8.6;9.0+PTX"
-  "12.6": "6.0;7.0;7.5;8.0;8.6;9.0+PTX"
+# SM 6.0 FLOOR REMOVED 2026-08-26 -- Maxwell restored, at the source.
+#
+# The floor was real: diso's backward pass accumulates into doubles with
+# atomicAdd, and atomicAdd(double*, double) is an intrinsic only from sm_60, so
+# compiling for sm_50 died with "no instance of overloaded function atomicAdd".
+# The response was this override, pinning cu12.4/12.6 to 6.0 and dropping
+# Maxwell -- an arch torch's own cu124/cu126 wheels ship.
+#
+# That is the shape the farm bans. C7 compares the wheel against the RESOLVED
+# list, so narrowing moved both sides at once: the check went green and the only
+# record that Maxwell was unsupported was this comment. It is the same mistake
+# that cost spconv its Blackwell cubins.
+#
+# packages/diso/patches/diso.py now injects NVIDIA's own documented workaround
+# (CUDA C Programming Guide B.14: a compare-and-swap loop over the same 64
+# bits), guarded to `defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600` so it exists
+# only in the device passes that lack the intrinsic. The patch hard-fails if it
+# finds no atomicAdd to guard, so this file cannot quietly outlive its fix.
+#
+# With no rows left, this package inherits the shared policy on every lane --
+# which is the point. Delete the file entirely once someone confirms the
+# Maxwell cells build; it is kept for the record until then.

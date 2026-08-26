@@ -538,3 +538,124 @@ def add_pybind_module_local(expected: dict[str, int]) -> dict[str, int]:
         print(f"patch_lib: {rel}: {n} py::class_ registration(s) "
               f"-> module_local() ({already} already were)")
     return counts
+
+
+# --------------------------------------------------------------------------
+# glm ships its own documentation: ~1,000 files of doxygen HTML, PNGs and a
+# manual PDF, plus its test suite and repo metadata. Packages that vendor glm
+# for a header-only include path end up shipping all of it inside a binary
+# wheel -- measured on gsplat: 1,236 files, 19.2MB uncompressed / 5.59MB
+# compressed, 18% of the wheel and 96% of its file count.
+#
+# The HEADERS are load-bearing and must survive: gsplat/cuda/_backend.py points
+# extra_include_paths at this directory for its runtime JIT fallback, so a
+# prune that took them would turn a working fallback into an ImportError on the
+# first cache miss. Hence an allowlist of what to delete rather than a filter of
+# what to keep, and an explicit assertion afterwards.
+# --------------------------------------------------------------------------
+_GLM_PRUNE_DIRS = ("doc", "test", ".git", ".github")
+
+
+def prune_glm_docs(glm_root: str | Path) -> int:
+    """Delete glm's docs/tests/repo metadata, keep every header.
+
+    Returns the number of files removed. Raises if the header tree did not
+    survive -- silently shipping a glm without headers is worse than the bloat.
+    """
+    import shutil
+    root = Path(glm_root)
+    if not root.exists():
+        print(f"prune_glm_docs: {root} absent -- nothing to prune")
+        return 0
+    removed = 0
+    for sub in _GLM_PRUNE_DIRS:
+        d = root / sub
+        if d.is_dir():
+            removed += sum(1 for _ in d.rglob("*") if _.is_file())
+            shutil.rmtree(d)
+    sentinel = root / "glm" / "gtc" / "type_ptr.hpp"
+    require(sentinel.exists(),
+            f"prune_glm_docs: {sentinel} is gone after pruning -- the header "
+            f"tree was damaged. gsplat's JIT fallback includes this path.")
+    n_hdr = sum(1 for _ in (root / "glm").rglob("*")
+                if _.suffix in (".hpp", ".inl", ".h"))
+    require(n_hdr > 300,
+            f"prune_glm_docs: only {n_hdr} headers left under {root}/glm -- "
+            f"expected 400+. Refusing to ship a gutted glm.")
+    print(f"prune_glm_docs: removed {removed} doc/test/metadata file(s); "
+          f"{n_hdr} headers kept")
+    return removed
+
+
+# --------------------------------------------------------------------------
+# atomicAdd(double*, double) is a hardware intrinsic from sm_60 (Pascal) on.
+# Below that, nvcc reports "no instance of overloaded function atomicAdd
+# matches the argument list" and the whole compile dies -- so a package whose
+# backward pass accumulates into doubles cannot build for Maxwell.
+#
+# The farm's rule forbids answering that by deleting sm_50 from the arch list:
+# the verify gate compares the wheel against the RESOLVED list, so trimming
+# moves both sides of the comparison and the gap vanishes from the record.
+#
+# NVIDIA publishes the alternative in the CUDA C Programming Guide (section
+# B.14, "Atomic Functions"): a compare-and-swap loop over the same 64 bits.
+# It is the standard workaround, not an invention, and it is what this injects.
+#
+# Guarded on `defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600`, which matters in
+# both directions: the definition must NOT appear when compiling for sm_60+
+# (CUDA already declares it -- redefinition error), and must NOT appear in the
+# host pass either (no __device__ context). So the shim exists only in the
+# device passes that lack the intrinsic, and is invisible everywhere else.
+# --------------------------------------------------------------------------
+_ATOMICADD_MARKER = "cuda-wheels: atomicAdd(double*) shim for sm < 60"
+
+_ATOMICADD_SHIM = """
+/* %s
+   atomicAdd(double*, double) is an intrinsic only from sm_60. Below that,
+   emulate it with the CAS loop from the CUDA C Programming Guide (B.14) so
+   this translation unit still compiles for Maxwell/Kepler. Compiled ONLY into
+   device passes below sm_60; on sm_60+ the real intrinsic is used. */
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
+__device__ __forceinline__ double atomicAdd(double* address, double val) {
+    unsigned long long int* address_as_ull = (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed,
+                        __double_as_longlong(val + __longlong_as_double(assumed)));
+    } while (assumed != old);   /* NaN-safe: compares bits, not values */
+    return __longlong_as_double(old);
+}
+#endif
+""" % _ATOMICADD_MARKER
+
+
+def add_atomicadd_double_shim(paths) -> int:
+    """Prepend the sm<60 atomicAdd(double*) shim to each file that needs it.
+
+    `paths` is an iterable of .cu/.cuh paths. Files with no `atomicAdd` are
+    skipped; already-patched files are skipped (idempotent). Returns the number
+    of files changed, and raises if that is zero -- a silent no-op here means
+    the arch list was widened on the strength of a fix that never applied.
+    """
+    changed = 0
+    scanned = 0
+    for f in paths:
+        f = Path(f)
+        if not f.is_file():
+            continue
+        scanned += 1
+        text = f.read_text(encoding="utf-8", errors="surrogateescape")
+        if "atomicAdd" not in text or _ATOMICADD_MARKER in text:
+            continue
+        f.write_text(_ATOMICADD_SHIM + text,
+                     encoding="utf-8", errors="surrogateescape")
+        changed += 1
+        print(f"  atomicAdd shim -> {f}")
+    require(changed > 0,
+            f"add_atomicadd_double_shim: scanned {scanned} file(s) and found no "
+            f"atomicAdd call to guard. The arch list was widened below sm_60 on "
+            f"the assumption this shim applies -- if upstream no longer uses "
+            f"atomicAdd on doubles, restore the floor instead of shipping a "
+            f"wheel that cannot compile.")
+    return changed
