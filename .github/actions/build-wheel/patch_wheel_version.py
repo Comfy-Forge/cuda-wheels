@@ -162,6 +162,61 @@ def fix_wheel(wheel_path: Path) -> bool:
         print(f"  {filename}: stripped {removed} Requires-Dist/Provides-Extra "
               f"header(s) -- the farm declares no dependencies")
 
+        # Prune phantom top_level.txt entries: a declared top-level name that
+        # NO member of the wheel provides.
+        #
+        # spconv (upstream v2.3.8) declares:
+        #     core_cc
+        #     spconv
+        # but its only top-level member is `spconv/`. `core_cc` is a SUBMODULE
+        # -- the extension is spconv/core_cc.<abi>.so and spconv/core_cc/ holds
+        # nothing but type stubs (__init__.pyi). Every real reference in the
+        # package is `import spconv.core_cc as _ext` /
+        # `from spconv.core_cc.csrc.sparse.all import SpconvOps`; nothing
+        # imports `core_cc` top-level and nothing could. Upstream's
+        # find_packages() swept up the generated stub directory as if it were a
+        # distributable package.
+        #
+        # verify_wheel's C8 builds its import list from top_level.txt, so it
+        # dutifully tried `import core_cc` and blocked the upload:
+        #   [import] core_cc: top_level.txt declares 'core_cc' but no member of
+        #   the wheel provides it -- phantom top-level entry, not a missing
+        #   dependency
+        # The gate is right and the metadata is wrong. Fixed farm-wide rather
+        # than per-package: the gate already distinguishes this case generically,
+        # which says whoever wrote it expected recurrence. Dropping a name that
+        # points at nothing cannot break an import that never worked.
+        top_level_path = dist_info / "top_level.txt"
+        if top_level_path.exists():
+            declared = [ln.strip() for ln in
+                        top_level_path.read_text(encoding="utf-8").splitlines()
+                        if ln.strip()]
+            provided = set()
+            for entry in tmpdir.iterdir():
+                if entry.name.endswith((".dist-info", ".data")):
+                    continue
+                # a package dir provides its own name; a module file provides
+                # its name up to the first dot (strips .py/.so/.pyd + ABI tag)
+                provided.add(entry.name if entry.is_dir()
+                             else entry.name.split(".", 1)[0])
+            kept = [n for n in declared if n in provided]
+            phantom = [n for n in declared if n not in provided]
+            if phantom and kept:
+                top_level_path.write_text("\n".join(kept) + "\n",
+                                          encoding="utf-8")
+                modified = True
+                print(f"  {filename}: dropped phantom top_level.txt "
+                      f"entr{'y' if len(phantom) == 1 else 'ies'} "
+                      f"{phantom} -- no wheel member provides "
+                      f"{'it' if len(phantom) == 1 else 'them'}")
+            elif phantom and not kept:
+                # Every declared name is phantom. That is not a metadata typo,
+                # it means the wheel has no top-level content at all -- refuse
+                # to paper over it with an empty file.
+                print(f"  WARNING: {filename}: ALL top_level.txt entries "
+                      f"{phantom} are phantom; leaving the file alone -- "
+                      f"this wheel looks structurally wrong, not mislabelled")
+
         if not modified:
             return False
         metadata_path.write_text(content, encoding="utf-8")

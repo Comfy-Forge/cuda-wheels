@@ -19,3 +19,15 @@ arch_list_by_cuda:
   '12.8': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
   '12.9': 8.0 8.6 8.9 9.0 10.0 12.0+PTX
   '13.0': 8.0 8.6 8.9 9.0 10.0 10.3 12.0+PTX
+  # 13.2 ADDED 2026-08-26 -- a copy of the 13.0 row, not a new policy. Without
+  # it the CUDA 13.2 line fell through to arch_policy's row, which is
+  #   7.5 8.0 8.6 9.0+PTX 10.0 12.0+PTX
+  # and that is wrong three ways at once, on all 32 cu13.2 cells:
+  #   * it ADDS 7.5, below NATTEN's documented sm_80 build floor -- forwarded
+  #     verbatim into NATTEN_CUDA_ARCH, which has no allowlist;
+  #   * it LOSES 8.9, so Ada gets no native cubin where 13.0 gives it one;
+  #   * it LOSES 10.3, so B300/Blackwell-Ultra falls back to the sm_100 image.
+  # A missing key is not "no override" -- resolve_arch_list() falls through to
+  # the shared policy silently. Same shape as the sageattention ARM cu12.6 gap
+  # found the same day. nvcc 13.2 supports sm_103, so 10.3 is valid here.
+  '13.2': 8.0 8.6 8.9 9.0 10.0 10.3 12.0+PTX

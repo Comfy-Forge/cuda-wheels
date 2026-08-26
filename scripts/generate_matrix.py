@@ -526,20 +526,28 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
         elif pkg.get("links_torch") is False:
             # CW-ADR-0011, build half: a package that never links libtorch is
             # built ONCE per (cuda, python, platform) -- the torch axis is not
-            # a dimension for it. Pick the newest torch row per CUDA line as
-            # the build environment (the wheel's tag records it; the index's
-            # alias expansion lists the asset under every other torch).
-            newest = {}
-            for c in DEFAULTS["combinations"]:
-                cur = newest.get(c["cuda"])
-                if cur is None or [int(x) for x in c["pytorch"].split(".")] > \
-                        [int(x) for x in cur["pytorch"].split(".")]:
-                    newest[c["cuda"]] = c
-            combos = []
-            for c in newest.values():
-                combos.append((c["cuda"], c["pytorch"], c["python_versions"],
-                               None, c.get("source_tag"),
-                               policy_arch_list(c["cuda"], c["pytorch"])))
+            # a dimension for it. One torch row per (cuda, python, platform) is
+            # chosen as the build environment (the wheel's tag records it; the
+            # index's alias expansion lists the asset under every other torch).
+            #
+            # The anchor USED to be picked here, per CUDA line only: "newest
+            # torch row for this cuda". That is decided before platforms are
+            # even known, and the phantom filter runs much later -- so when the
+            # winner happened to be phantom on a platform, that platform got
+            # NOTHING and said nothing. cumm and spconv lost the entire cu12.9
+            # WINDOWS lane exactly that way: the newest cu12.9 row is torch
+            # 2.13.0, upstream shipped no cu12.9 Windows torch after 2.9.0, so
+            # every ('129','2.10'..'2.13',*,'windows') tuple is a phantom and
+            # the chosen row evaporated. Every other package kept the lane,
+            # because links_torch: true keeps per-row granularity.
+            #
+            # So emit ALL rows here and resolve the anchor per
+            # (cuda, python, platform) inside the loop, where PHANTOM_COMBOS is
+            # in scope -- see _torch_free_anchor below.
+            combos = [(c["cuda"], c["pytorch"], c["python_versions"], None,
+                       c.get("source_tag"),
+                       policy_arch_list(c["cuda"], c["pytorch"]))
+                      for c in DEFAULTS["combinations"]]
         else:
             # Inherit standard combinations from packages/_defaults.yml
             combos = []
@@ -552,6 +560,27 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
         # Inject platforms back into build dict so existing code below reads it uniformly
         build = dict(build)
         build["platforms"] = platforms
+
+        # For a torch-free package: the NEWEST NON-PHANTOM torch per
+        # (cuda_short, python_short, platform). Built here rather than at combo
+        # time because it needs the platform list and PHANTOM_COMBOS together.
+        # A key with no entry means upstream ships no torch at all for that
+        # (cuda, python, platform) -- correctly nothing to build.
+        _torch_free_anchor = {}
+        if pkg.get("links_torch") is False:
+            for c in DEFAULTS["combinations"]:
+                cu_s = c["cuda"].replace(".", "")
+                t_s = ".".join(c["pytorch"].split(".")[:2])
+                for py in c["python_versions"]:
+                    py_s = py.replace(".", "")
+                    for plat in platforms:
+                        if (cu_s, t_s, py_s, plat) in PHANTOM_COMBOS:
+                            continue
+                        key = (cu_s, py_s, plat)
+                        cur = _torch_free_anchor.get(key)
+                        if cur is None or ([int(x) for x in c["pytorch"].split(".")]
+                                           > [int(x) for x in cur.split(".")]):
+                            _torch_free_anchor[key] = c["pytorch"]
 
         # Optional per-package floor: skip any combo with pytorch < min_pytorch.
         # Used when upstream source has a hard-coded torch version assert
@@ -566,6 +595,18 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
         max_cuda_parts = None
         if pkg.get("max_cuda"):
             max_cuda_parts = [int(x) for x in str(pkg["max_cuda"]).split(".")[:2]]
+        # Optional per-package CUDA FLOOR: skip combos with cuda < min_cuda.
+        # The mirror of max_cuda, and the honest way to express "this source
+        # needs a recent toolkit". The alternative -- freezing a hand-written
+        # build_matrix.combinations block -- is a snapshot that silently stops
+        # tracking the grid: sageattn3's froze at torch 2.11 and cost 86 cells
+        # including the whole of CUDA 13.2, which is precisely where its
+        # Blackwell-only audience lives. derive_defaults.py and torch_watch.py
+        # regenerate defaults/ but nothing reconciles a package-level
+        # combinations block, so such a block can only ever get staler.
+        min_cuda_parts = None
+        if pkg.get("min_cuda"):
+            min_cuda_parts = [int(x) for x in str(pkg["min_cuda"]).split(".")[:2]]
 
         for cuda, pytorch, python_versions, combo_arch_list, combo_source_tag, default_arch_list in combos:
             if cuda_filter != "all" and cuda != cuda_filter:
@@ -585,6 +626,11 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                 cu_parts = [int(x) for x in cuda.split(".")[:2]]
                 if cu_parts > max_cuda_parts:
                     continue
+            # Enforce per-package CUDA floor
+            if min_cuda_parts is not None:
+                cu_parts = [int(x) for x in cuda.split(".")[:2]]
+                if cu_parts < min_cuda_parts:
+                    continue
 
             cuda_short = cuda.replace(".", "")
             torch_short = ".".join(pytorch.split(".")[:2])  # 2.9.1 -> 2.9
@@ -603,6 +649,14 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                     if (platform == "linux_aarch64"
                             and cuda not in (_ARCH_POLICY.get("arch_policy_aarch64") or {})):
                         continue
+                    # Torch-free package: keep only the anchor row for this
+                    # (cuda, python, platform). Every other torch row would be
+                    # a duplicate wheel, and the anchor is guaranteed
+                    # non-phantom, so the lane cannot silently evaporate.
+                    if pkg.get("links_torch") is False:
+                        if _torch_free_anchor.get(
+                                (cuda_short, python_short, platform)) != pytorch:
+                            continue
                     # Skip phantom combos (no upstream torch wheel)
                     if (cuda_short, torch_short, python_short, platform) in PHANTOM_COMBOS:
                         continue

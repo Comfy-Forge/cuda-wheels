@@ -1,8 +1,50 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-# cumm 0.7.11's arch table ends at 9.0 (plus 8.7): Blackwell (10.0/12.0)
-# and Thor (11.0) tokens crash setup with "Unknown CUDA arch". Inert for
-# wheel content (runtime NVRTC JIT, no AOT SASS; verify.skip_arch) --
-# the list only needs to parse. Trimmed on every lane.
-arch_list: "7.5;8.0;8.6;8.9;9.0+PTX"
-arch_list_aarch64: "8.0;8.7;9.0+PTX"
+#
+# RESTORED 2026-08-26: 10.0 (Blackwell DC), 12.0 (Blackwell consumer) and 11.0
+# (Thor, ARM 13.x). The rows used to read "7.5;8.0;8.6;8.9;9.0+PTX" flat, on
+# this justification:
+#   "cumm 0.7.11's arch table ends at 9.0 (plus 8.7): Blackwell (10.0/12.0)
+#    and Thor (11.0) tokens crash setup with 'Unknown CUDA arch'."
+# That was true, and it stopped being true at commit a093ad1, which patches
+# cumm/common.py's `supported_arches` to add exactly '10.0', '11.0', '12.0'
+# (see packages/cumm/patches/cumm.py) and _require()s the result, so a silent
+# regression is impossible. spconv's arch_override was corrected at the same
+# time and says so at its line 14; cumm -- the package that was actually
+# patched -- was never updated. Its own `verify.skip_arch` waiver guaranteed
+# no build would ever surface the discrepancy.
+#
+# Per-CUDA rather than flat, because the tokens are not universally valid:
+# measured from NVIDIA's own nvcc binaries, `nvcc --list-gpu-code` gives
+#   12.8 -> sm_100 sm_101 sm_120                    (no sm_103, no sm_121)
+#   12.9 -> sm_100 sm_101 sm_103 sm_120 sm_121
+#   13.0 -> sm_100 sm_103 sm_110 sm_120 sm_121      (Thor arrives here)
+# so Blackwell starts at 12.8 and Thor at 13.0, matching arch_policy_aarch64.
+#
+# Still near-inert for wheel CONTENT -- cumm compiles kernels at import via the
+# vendored NVRTC and ships no AOT device code at all (cuobjdump on the x86 and
+# aarch64 core_cc*.so: "does not contain device code"; the Windows .pyd has no
+# .nv_fatb section). The list only has to parse. It is restored anyway because
+# a narrowed list that nothing checks is how spconv lost its Blackwell SASS,
+# and "inert" was the exact word used to justify that trim too.
+arch_list_by_cuda:
+  '12.4': "7.5;8.0;8.6;8.9;9.0+PTX"
+  '12.6': "7.5;8.0;8.6;8.9;9.0+PTX"
+  '12.8': "7.5;8.0;8.6;8.9;9.0;10.0;12.0+PTX"
+  '12.9': "7.5;8.0;8.6;8.9;9.0;10.0;12.0+PTX"
+  '13.0': "7.5;8.0;8.6;8.9;9.0;10.0;12.0+PTX"
+  '13.2': "7.5;8.0;8.6;8.9;9.0;10.0;12.0+PTX"
+# 8.7 (Jetson Orin) is kept on the ARM rows and is deliberately NOT mirrored to
+# x86. NOTE for whoever touches patches/cumm.py next: '8.7' is absent from
+# `supported_arches` both before and after that patch, yet these rows have
+# carried it and the ARM wheel builds -- so get_cuda_arch_flags(), which raises
+# on a non-member, is not reached in this build mode. That becomes a hard
+# failure the day cumm compiles AOT. Left as-is: measured working, and widening
+# supported_arches is outside this change.
+arch_list_by_cuda_aarch64:
+  '12.4': "8.0;8.7;9.0+PTX"
+  '12.6': "8.0;8.7;9.0+PTX"
+  '12.8': "8.0;8.7;9.0;10.0;12.0+PTX"
+  '12.9': "8.0;8.7;9.0;10.0;12.0+PTX"
+  '13.0': "8.0;8.7;9.0;10.0;11.0;12.0+PTX"
+  '13.2': "8.0;8.7;9.0;10.0;11.0;12.0+PTX"

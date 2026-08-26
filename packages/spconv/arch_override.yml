@@ -38,3 +38,20 @@ arch_list_by_cuda_aarch64:
   "12.9": "8.0;9.0;10.0;12.0+PTX"
   "13.0": "8.0;9.0;10.0;11.0;12.0+PTX"
   "13.2": "8.0;9.0;10.0;11.0;12.0+PTX"
+
+# NOTE on `[arch_sass] extra archs ['sm_75']` (ARM cu13.0, 2026-08-26).
+# Benign, investigated, no action. spconv compiles nothing for Turing: the
+# build log's own gencode flags are exactly 478 each of
+#   compute_80,code=sm_80   compute_90,code=sm_90   compute_100,code=sm_100
+#   compute_110,code=sm_110 compute_120,code=[sm_120,compute_120]
+# i.e. the resolved ARM list and nothing else. The sm_75 image comes from
+# NVIDIA's own CUDA device runtime, which the prebuilt cumm wheel bundles and
+# spconv links:
+#   cumm/lib/libcudadevrt.a -> sm_75 sm_80 sm_86 sm_89 sm_90 sm_100 sm_103
+#                              sm_110 sm_120 sm_121
+# C7 scans the whole extension, so linked-in vendor code shows up alongside the
+# package's own. "extra" is a warning and not a failure precisely because the
+# farm cannot enumerate what a toolkit archive contributes. Do NOT "fix" this
+# by adding 7.5 to the arch list -- that would make the expectation match the
+# artifact while telling every reader that spconv ships Turing kernels, which
+# it does not.

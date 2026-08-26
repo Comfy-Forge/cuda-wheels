@@ -1,100 +1,33 @@
 # Overrides of the shared PCTO axes (defaults/python_cuda_torch_os_policy.yml)
 # for this package only.
+#
+# 2026-08-26: the hand-written `build_matrix.combinations` block that used to
+# live here (12 rows, 95 lines) was DELETED in favour of one declarative floor.
+#
+# Why it had to go. That block was a snapshot of the grid taken when neither
+# CUDA 13.2 nor torch 2.12/2.13 existed, and nothing in the farm reconciles a
+# package-level combinations block against the policy -- derive_defaults.py and
+# torch_watch.py regenerate defaults/ only. So it could only get staler, and it
+# had: 157 cells against 243 eligible. The 86 missing were
+#   cu12.9 t2.12 (10)   cu13.0 t2.12 (15)   cu13.2 t2.12 (15)
+#   cu12.9 t2.13 (12)   cu13.0 t2.13 (17)   cu13.2 t2.13 (17)
+# i.e. every CUDA 13.2 cell and every torch 2.12/2.13 cell. This package is the
+# FP4 Blackwell attention path -- sm_100a/sm_120a only -- so its entire
+# audience is B200/GB200 and RTX 50-series owners, who are exactly the people
+# on the newest CUDA and the newest torch. The missing cells and the target
+# population overlapped perfectly.
+# It also pinned torch 2.7.0/2.9.0 where the policy rows say 2.7.1/2.9.1, and
+# because those were the package's OWN combos they never keyed into the
+# per-platform torch anchor machinery (_PT_OVERRIDES) at all.
+#
+# The only real axis constraint is a CUDA floor, asserted twice in the source:
+#   sageattention3_blackwell/setup.py -- `if bare_metal_version < Version("12.8"):
+#     raise RuntimeError("Sage3 is only supported on CUDA 12.8 and above")`
+# and restated in this package's README. Nothing bounds it from above, so
+# min_cuda is the whole of it and the package now tracks the grid forever.
+min_cuda: "12.8"
+
 build_matrix:
-  combinations:
-  - cuda: '12.8'
-    pytorch: 2.7.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-  - cuda: '12.8'
-    pytorch: 2.8.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-  - cuda: '12.8'
-    pytorch: 2.9.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '12.8'
-    pytorch: 2.10.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '12.8'
-    pytorch: 2.11.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '12.9'
-    pytorch: 2.8.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-  - cuda: '12.9'
-    pytorch: 2.9.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '12.9'
-    pytorch: 2.10.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '12.9'
-    pytorch: 2.11.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '13.0'
-    pytorch: 2.9.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '13.0'
-    pytorch: 2.10.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
-  - cuda: '13.0'
-    pytorch: 2.11.0
-    python_versions:
-    - '3.10'
-    - '3.11'
-    - '3.12'
-    - '3.13'
-    - '3.14'
   platforms:
   - linux
   - windows

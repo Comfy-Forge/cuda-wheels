@@ -1,13 +1,47 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-arch_list: 10.0 12.0
+# 12.1 (sm_121, GB10 / DGX Spark) ADDED 2026-08-26.
+#
+# Normally sm_121 needs no cubin of its own: a plain sm_120 cubin runs on
+# sm_121 by minor-version compatibility, and plain compute_120 PTX JITs onto it
+# -- which is why sm_121 appears in no arch_policy row and why the other 41
+# packages are fine without it. Neither escape hatch exists here, and they fail
+# for the same reason:
+#   * this package ships NO PTX at all (see no_ptx below) -- measured on the
+#     published wheels, cuobjdump --list-ptx returns nothing for either module;
+#   * its cubins are sm_100a / sm_120a, and an ARCH-CONDITIONAL image has no
+#     minor-version compatibility. sm_120a runs on sm_120 and nothing else.
+# So a DGX Spark currently gets a wheel containing two .so files and not one
+# loadable kernel. patches/sageattn3.py:48 has always carried the mapping
+# ("12.1" -> compute_121a/sm_121a); it was simply never asked for.
+#
+# PER-CUDA, not flat, and that is load-bearing. Measured from NVIDIA's own nvcc
+# binaries (`nvcc --list-gpu-code`, rpms pulled from rhel8/x86_64):
+#   12.8 -> sm_100 sm_101 sm_120                 <-- NO sm_121
+#   12.9 -> sm_100 sm_101 sm_103 sm_120 sm_121
+#   13.0 -> sm_100 sm_103 sm_110 sm_120 sm_121
+# and patches/sageattn3.py looks the token up unconditionally, so a flat list
+# carrying 12.1 would emit `arch=compute_121a,code=sm_121a` to an nvcc that
+# cannot parse it and hard-fail every cu12.8 cell.
+arch_list_by_cuda:
+  '12.8': 10.0 12.0
+  '12.9': 10.0 12.0 12.1
+  '13.0': 10.0 12.0 12.1
+  '13.2': 10.0 12.0 12.1
 # Same kernels on ARM (sm_100a for GB200/B200, sm_120a for Blackwell
 # consumer-class): the aarch64 lane ignores x86 overrides, so the default
 # ARM policy row (8.0/9.0/...) would demand archs upstream cannot build.
 # Future: consider adding 12.1 on cu12.9+/13.0 for DGX Spark (GB10,
 # sm_121) -- sm_120a cubins carry no official compat guarantee on sm_121,
 # and the patch's arch map already knows 12.1 -> sm_121a.
-arch_list_aarch64: 10.0 12.0
+# Same rows on ARM -- the aarch64 lane never reads the x86 fields, so the 12.1
+# addition has to be spelled out twice or GB10-class ARM boards keep getting
+# nothing. (The "Future: consider adding 12.1" note above is now done.)
+arch_list_by_cuda_aarch64:
+  '12.8': 10.0 12.0
+  '12.9': 10.0 12.0 12.1
+  '13.0': 10.0 12.0 12.1
+  '13.2': 10.0 12.0 12.1
 
 # NO PTX -- and it is not a coverage decision, it is what the source can emit.
 # patches/sageattn3.py maps the arch list onto exactly two ARCH-CONDITIONAL
