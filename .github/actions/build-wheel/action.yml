@@ -717,8 +717,16 @@ runs:
           find build -name '*.o' | head -1 | xargs -I{} stat -c '%y %n' {} || true
         fi
         if [ "${{ inputs.shard-count }}" != "0" ] \
-           && [ "${{ inputs.link-only }}" != "true" ] \
-           && [ "${{ inputs.shard-filter }}" = "source" ]; then
+           && [ "${{ inputs.link-only }}" != "true" ]; then
+          # ANY compile shard can fail the shard-stage link. This was gated on
+          # shard-filter=source until 2026-08-26 on the assumption that "seat
+          # shards never hit this -- every TU still emits an object, an empty
+          # one when out-of-slice". That is wrong: an EMPTY object still leaves
+          # the symbol undefined, so a dispatcher TU that survives in every
+          # shard still references kernels this shard stubbed. spconv cu13.0
+          # proved it -- all 10 shards died on "undefined reference to
+          # cumm::conv::main::Volta_...::conv_kernel", every ARM and Linux cell.
+          #
           # A source-partition shard DELETES every autogen TU outside its slice.
           # Any dispatcher TU that is NOT autogen survives in all N shards and is
           # left calling kernels this shard never built, so the final link
