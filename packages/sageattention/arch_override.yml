@@ -81,6 +81,20 @@ arch_list_by_cuda_aarch64:
   # was never exempt -- the x86 rows have carried 8.9 from the start.
   # nvcc >= 12.4 is required for 8.9 (setup.py raises below that); every ARM
   # row here is 12.8+, so the floor is satisfied on all four.
+  # 12.6 ADDED 2026-08-26. This row was absent, and a missing row does NOT
+  # mean "no override" -- it falls through to arch_policy_aarch64['12.6'],
+  # which is '8.0;9.0+PTX'. NO sm_89. That is precisely the trap the top of
+  # this file spends 30 lines documenting: setup.py still builds _qattn_sm89
+  # (HAS_SM90 is true), core.py:148 still routes an Ada device into it, the
+  # loader takes the sm_80 cubin by minor-version compatibility, and the FP8
+  # paths gated on __CUDA_ARCH__ >= 890 are 26,880 BPT.TRAP instructions --
+  # "CUDA error: an illegal instruction was encountered", context destroyed.
+  # The 12.8/12.9/13.0/13.2 rows were fixed on 2026-08-25; this one was missed
+  # because nothing asserts that a package declaring arch_list_by_cuda_aarch64
+  # has a row for every CUDA line it actually builds.
+  # nvcc >= 12.4 is required for 8.9 (setup.py raises below that); 12.6 clears
+  # it. Widening only -- nothing is removed.
+  '12.6': 8.0 8.9 9.0+PTX
   '12.8': 8.0 8.9 9.0 10.0 12.0+PTX
   # Same kernel gap on every newer ARM line: the default aarch64 policy rows
   # carry 10.0 (and 11.0 on 13.x), which SageAttention 2.2 cannot emit, so the

@@ -120,6 +120,34 @@ def override_rows():
             else:
                 rendered = fmt_archs(val)
             out.append((d.name, field, rendered))
+        # A package can declare an arch and still be unable to BUILD it. The
+        # farm's preferred encoding for a documented upstream gap is
+        # verify.allow_missing_archs -- the arch stays in the list so C7 keeps
+        # comparing against the real policy, and the waiver records the gap.
+        # That is the right call for the gate and it silently made THIS page
+        # lie: rendering only the arch_list* fields, the page told a B200 owner
+        # that sageattention cu13.0 targets 10.0 when the wheel provably has no
+        # sm_100 kernel. The waiver has to be rendered next to the list it
+        # qualifies, or "waive, don't narrow" just moves the untruth from the
+        # gate to the published page.
+        pkg_yml = d / "package.yml"
+        if pkg_yml.exists():
+            pcfg = yaml.safe_load(pkg_yml.read_text()) or {}
+            vk = pcfg.get("verify") or {}
+            waived = vk.get("allow_missing_archs") or []
+            if waived:
+                out.append((d.name, "NOT BUILT (waived)",
+                            "declared above but absent from the wheel: "
+                            + ", ".join(str(a) for a in waived)))
+            sk = vk.get("skip_arch")
+            if sk:
+                lanes = (", ".join(sorted(sk)) if isinstance(sk, dict)
+                         else "every platform")
+                out.append((d.name, "NOT CHECKED (skip_arch)",
+                            f"arch content unverified on: {lanes}"))
+            if cfg.get("no_ptx"):
+                out.append((d.name, "no PTX",
+                            "cubins only -- no JIT path onto newer GPUs"))
     return out
 
 
