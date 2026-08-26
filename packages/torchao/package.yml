@@ -17,7 +17,16 @@ clone_recursive: true          # third_party/cutlass
 # max_jobs 1 (was 3): the ARM runner died twice with "runner lost
 # communication" (OOM starvation kill) at 3 -- CUTLASS TU peaks exceed the
 # 16GB box. At 1 the swap parachute is also legal under the swap gate.
-jobs: 3
+# jobs 1, NOT the farm-wide 3. Restored 2026-08-26 after the uniform policy
+# raised it and cu13.0/torch2.11 linux immediately reproduced the failure this
+# value exists to prevent: peak swap 7.84GB, MemAvailable low-water 0.18GB.
+# The original note, still accurate: the ARM runner died twice with "runner
+# lost communication" (an OOM starvation kill) at 3 -- CUTLASS TU peaks exceed
+# the 16GB box. At 1 the swap parachute is also legal under the swap gate.
+# Upstream passes -t=0 (one thread per gencode, ~6 on cu128) to nvcc; the
+# farm's trailing --threads=1 neutralises it, so the whole memory budget goes
+# to one CUTLASS translation unit.
+jobs: 1
 nvcc_threads: 1
 verify:
   # _C_cutlass_90a / _C_mxfp8 are torch-ops libraries with no PyInit --

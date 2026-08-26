@@ -4,5 +4,7 @@ source_repo: facebookresearch/pytorch3d
 source_tag: v0.7.9
 patch_script: packages/pytorch3d/patches/pytorch3d.py
 clone_recursive: true
-jobs: 3   # many medium TUs, no heavy tail
+# jobs 4 (restored 2026-08-26). Same shape as gsplat: many medium TUs, no
+# heavy tail, no recorded OOM at 4.
+jobs: 4   # many medium TUs, no heavy tail
 nvcc_threads: 1

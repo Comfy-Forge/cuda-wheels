@@ -12,9 +12,20 @@ nvcc_flags: -diag-suppress=221
 # Explicit max_jobs bypasses upstream's free-RAM estimator, which under
 # the farm's 4-arch list computes 18GB/job and lands on jobs=1 (serial).
 # With nvcc_threads=1 the real per-job peak is ~one cicc, so 2 fits.
+# nvcc_threads 2, NOT 3 (owner call 2026-08-26 after cu13.0/torch2.11 linux
+# failed at 3). Sharded, so jobs stays 1: a shard holds ~2 TUs and process-level
+# parallelism buys nothing, while --threads runs one cicc per gencode target
+# INSIDE a single TU. On this package's 4-5 arch rows that is where the memory
+# goes, and 3 is over the 16GB box.
 jobs: 1
-nvcc_threads: 3
-sharding: 40  # ~73 .cu TUs -> ~2 per shard; owner order 2026-08-25
+nvcc_threads: 2
+sharding: 25  # owner call 2026-08-26 -- down from 40
+# 40 was raised on the reasoning below (same runner-hours, half the critical
+# path) and that part held. What changed is the memory budget: with
+# nvcc_threads at 2 a shard now runs two cicc processes inside one TU, and at
+# 40 the slice was thin enough that the extra job overhead bought little
+# against that cost. 25 keeps ~3 TUs per shard and cuts the artifact
+# round-trip, measured at ~0.55s of link-job time per shard.
 # Was 20 (owner order 2026-08-22). Raised now that the Windows link path
 # actually works: the link job went from >108min (never completing --
 # the compile no-op was shadowed and it recompiled all 73 TUs serially)

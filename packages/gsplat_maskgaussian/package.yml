@@ -16,5 +16,7 @@ build_subdir: hyworld2/worldgen/third_party/gsplat_maskgaussian
 # `name="gsplat_maskgaussian"` so the wheel filename gets its own
 # release tag and doesn't clobber the vanilla gsplat v1.5.3 publication.
 patch_script: packages/gsplat_maskgaussian/patches/gsplat_maskgaussian.py
-jobs: 3
+# jobs 4 (owner call 2026-08-26). Same source as vanilla gsplat, vendored
+# inside a larger repo, so it carries the same memory profile.
+jobs: 4
 nvcc_threads: 1

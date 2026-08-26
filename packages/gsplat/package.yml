@@ -6,5 +6,7 @@ patch_script: packages/gsplat/patches/gsplat.py
 clone_recursive: true
 # Upstream setup.py self-sets MAX_JOBS=10 when the env is unset -- on a
 # 4-vCPU runner that is -j10. An explicit value preempts the hijack.
-jobs: 3
+# jobs 4 (restored 2026-08-26). It ran at 4 before the farm-wide 3 and had no
+# recorded memory trouble -- many medium TUs, no heavy tail.
+jobs: 4
 nvcc_threads: 1
