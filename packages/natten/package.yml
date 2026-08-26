@@ -24,28 +24,31 @@ clone_recursive: true
 # (exit 143 + runner shutdown signal) ~3min into Blackwell FMHA compile on
 # 16GB Linux runner — each .cu peaks above the assumed 3.5GB. Backed off
 # to 2 slots (with 8GB swap added in build.yml) paired with nvcc --threads=1
-# (via nvcc_flags below) for single-threaded per-file compiles.
+# (the farm-default nvcc_threads: 1) for single-threaded per-file compiles.
 # max_jobs stays 1: at sharding 20 a shard held ~7 TUs and two simultaneous
 # CUTLASS peaks tripped the swap gate (0.18GB swapped). The gate has since
 # been relaxed to three branches (swap alone only fails when MemAvailable
 # also bottoms out), so that particular rejection would now be a warning --
 # but two independent whole-TU CUTLASS peaks is still the shape that OOM'd
 # outright at max_jobs=4, so the concurrency knob we are turning instead is
-# nvcc_threads (below), which parallelises WITHIN one TU.
+# nvcc_threads, which parallelises WITHIN one TU -- but that is at the farm
+# default of 1 as well (see below), so this package compiles serially and
+# buys its wall clock from shard count.
 max_jobs: 1
-# nvcc --threads=2 (owner order 2026-08-26, was 1). --threads parallelises a
-# single nvcc invocation ACROSS ITS GENCODE TARGETS, so the win is bounded by
-# how many arches a given cmake target compiles for:
-#   natten_hopper    CUDA_ARCHITECTURES "90a-real"  -> 1 arch, no win
-#   natten_blackwell CUDA_ARCHITECTURES "100a-real" -> 1 arch, no win
-#   natten (main)    the rest of the arch list      -> real win
-# Those two single-arch OBJECT libs are the expensive families, so expect the
-# speedup to land on the main CUTLASS-FNA library rather than on the Hopper/
-# Blackwell autogen kernels. Peak memory rises roughly like max_jobs=2 (each
-# cicc is its own process), which is why max_jobs stays at 1 -- we are
-# spending the memory budget here, not there.
-# Forwarded to every nvcc invocation via NVCC_APPEND_FLAGS.
-nvcc_flags: --threads=2
+# nvcc --threads stays at the farm default of 1 (owner order 2026-08-26).
+# Do NOT spell it here. There is a dedicated `nvcc_threads:` field, and the
+# build action appends `--threads=<nvcc_threads>` as the LAST flag on
+# NVCC_APPEND_FLAGS precisely so it beats any setup.py hardcode. Putting
+# `--threads=N` in nvcc_flags puts it EARLIER on the command line, so the
+# action's trailing copy wins and the value here is silently ignored --
+# nvcc only says so in passing:
+#   nvcc warning : incompatible redefinition for option 'threads',
+#   the last value of this option was used
+# --threads parallelises one nvcc invocation across its gencode targets, and
+# natten's two expensive families are single-arch OBJECT libraries
+# (natten_hopper 90a-real, natten_blackwell 100a-real), so there is little to
+# overlap. max_jobs is 1 for memory, so this package compiles serially by
+# design; wall clock is bought with shard count instead.
 # cmake is required by NATTEN's setup.py (checks for the executable at build
 # time). Ninja generator is used.
 extra_deps: cmake ninja
