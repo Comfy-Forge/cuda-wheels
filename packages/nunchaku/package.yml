@@ -17,7 +17,13 @@ clone_recursive: true          # cutlass + Block-Sparse-Attention submodules
 # FAST install mode enumerates local GPUs -- zero on CI -> setup.py
 # asserts before compiling anything. ALL builds every supported arch.
 # (setup.py ignores TORCH_CUDA_ARCH_LIST entirely; see README.)
-pre_build_script: echo "NUNCHAKU_INSTALL_MODE=ALL" >> $GITHUB_ENV
+# NUNCHAKU_BUILD_WHEELS=1 added 2026-08-26. Upstream setup.py:136 reads
+# `if os.getenv("NUNCHAKU_BUILD_WHEELS", "0") == "0": NVCC_FLAGS.append(
+# "--generate-line-info")` -- i.e. the DEFAULT is the developer build, and the
+# farm was taking it. That is upstream's own release switch and we were simply
+# never setting it. (Its -g / -Og / -UNDEBUG at setup.py:111,116 are
+# unconditional and NOT covered by this flag; see patches/nunchaku.py.)
+pre_build_script: echo "NUNCHAKU_INSTALL_MODE=ALL" >> $GITHUB_ENV && echo "NUNCHAKU_BUILD_WHEELS=1" >> $GITHUB_ENV
 # Upstream hardcodes --threads=len(sm_targets) (~6); the farm's trailing
 # --threads=1 wins. Cap jobs for the CUTLASS-heavy kernels.
 jobs: 3

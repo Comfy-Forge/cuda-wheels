@@ -680,3 +680,68 @@ def add_atomicadd_double_shim(paths) -> int:
             f"atomicAdd on doubles, restore the floor instead of shipping a "
             f"wheel that cannot compile.")
     return changed
+
+
+# --------------------------------------------------------------------------
+# Debug flags in a RELEASE wheel. Four distinct costs, worst first:
+#
+#   -G / --device-debug   disables ALL device optimisation and inflates
+#                         compile memory enormously. A wheel built with it is
+#                         slow at runtime, not merely large.
+#   -Og / -O0             "optimise for debugging" / none. Genuinely slower
+#                         code. This is the one people miss, because it looks
+#                         like an optimisation flag.
+#   -lineinfo /           keeps line tables INSIDE the cubin. Note auditwheel
+#   --generate-line-info  --strip does NOT remove these: strip only touches
+#                         non-allocated ELF sections, and .nv_fatbin is
+#                         SHF_ALLOC. So this cost is permanent in the wheel.
+#   -g                    host DWARF. Now largely reclaimed by --strip, but
+#                         still paid in compile time and peak memory.
+#
+# Same policy as strip_std_flags: delete the package's opinion. A build farm
+# shipping release wheels has no use for any of them, and upstreams hardcode
+# them because their setup.py was written for developers building locally.
+#
+# Deliberately does NOT touch -O1/-O2/-O3 (real optimisation levels) or -DDEBUG
+# / -UNDEBUG (assertion control, a correctness choice that is upstream's to
+# make).
+# --------------------------------------------------------------------------
+_DEBUG_FLAGS = ("-G", "--device-debug", "-g", "-Og", "-O0",
+                "-lineinfo", "--generate-line-info")
+
+
+def strip_debug_flags(text: str) -> tuple[str, int]:
+    """Remove hardcoded debug/anti-optimisation flags from flag lists.
+
+    Handles quoted list elements ('"-g"', "'-Og'") and the `-Xcompiler=-g`
+    spelling. Returns (new_text, count). Leaves -O1/-O2/-O3 and -D/-U alone.
+    """
+    n = 0
+
+    def _drop(m: re.Match) -> str:
+        nonlocal n
+        quote, flag = m.group(1), m.group(2)
+        base = flag.split("=", 1)[0]
+        if base not in _DEBUG_FLAGS and flag not in _DEBUG_FLAGS:
+            return m.group(0)
+        n += 1
+        return ""
+
+    # quoted elements inside any [...] list
+    text = re.sub(r"""(['"])(-{1,2}[A-Za-z0-9_-]+)\1,?\s*""", _drop, text)
+    text = re.sub(r",\s*,", ",", text)
+    text = re.sub(r"\[\s*,", "[", text)
+    return text, n
+
+
+def strip_debug_flags_in_file(path, label: str = "") -> int:
+    """Apply strip_debug_flags to a file in place. Returns the count."""
+    p = Path(path)
+    if not p.exists():
+        return 0
+    text = p.read_text(encoding="utf-8", errors="surrogateescape")
+    new, n = strip_debug_flags(text)
+    if n:
+        p.write_text(new, encoding="utf-8", errors="surrogateescape")
+        print(f"{label or p}: stripped {n} debug/anti-optimisation flag(s)")
+    return n
