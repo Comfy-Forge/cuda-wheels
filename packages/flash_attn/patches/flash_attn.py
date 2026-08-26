@@ -103,15 +103,53 @@ def cuda_ptx_archs() -> list:
 # verify_wheel's arch_sass check caught it, after a 3h build.
 _CUW_UPSTREAM_ARCHS = {"80", "90", "100", "120"}
 
+# FlashAttention-2's hard floor. Upstream README, v2.8.3:
+#   "1. Ampere, Ada, or Hopper GPUs (e.g., A100, RTX 3090, RTX 4090, H100).
+#       Support for Turing GPUs (T4, RTX 2080) is coming soon, please use
+#       FlashAttention 1.x for Turing GPUs for now.
+#    2. Datatype fp16 and bf16 (bf16 requires Ampere, Ada, or Hopper GPUs)."
+# Turing is not short of FP16 tensor cores -- it has 2nd-gen ones. The blockers
+# are that FA2's CUTLASS pipeline is built on `cp.async` (sm_80+), and that
+# Turing has no BF16 tensor cores at all. That is why FA1 ran on Turing and FA2
+# does not.
+_CUW_ARCH_FLOOR = 80
+
 
 def cuda_extra_archs() -> list:
     """Archs the farm demands that upstream's if-ladder does not emit.
 
     Returned as plain `code=sm_X` cubin targets. csrc/flash_attn is one
     CUTLASS-2.x kernel family with zero `__CUDA_ARCH__ <` guards, compiled
-    unchanged for every arch, so a new target is a recompile and not a port.
+    unchanged for every arch AT OR ABOVE THE FLOOR, so such a target is a
+    recompile and not a port.
+
+    The floor is load-bearing, and it was missing when this function was first
+    written (2026-08-26). Upstream's if-ladder silently drops anything it does
+    not recognise; this function's whole purpose is to stop doing that -- which
+    means it also stops silently dropping archs FA2 genuinely CANNOT build.
+    Restore `7.5` to arch_override.yml and, without this guard, the build would
+    emit `arch=compute_75,code=sm_75` and fail on Turing instead of skipping.
+    Same for the `5.0;6.0;7.0` on the cu12.4/12.6 POLICY rows, which are only
+    out of reach today because this package overrides them away.
+
+    Skipping loudly rather than silently: a sub-floor arch in the list is a
+    config mistake worth seeing in the log, but it must not break the build,
+    because the farm's preferred encoding for an unbuildable arch is to KEEP it
+    in the list and waive it with verify.allow_missing_archs.
     """
-    return [a for a in cuda_archs() if a not in _CUW_UPSTREAM_ARCHS]'''
+    out, below = [], []
+    for a in cuda_archs():
+        if a in _CUW_UPSTREAM_ARCHS:
+            continue
+        if int(a) < _CUW_ARCH_FLOOR:
+            below.append(a)
+            continue
+        out.append(a)
+    if below:
+        print(f"flash_attn: skipping arch(es) {below} -- below FA2's Ampere "
+              f"floor (sm_{_CUW_ARCH_FLOOR}); waive them with "
+              f"verify.allow_missing_archs, do not expect a cubin")
+    return out'''
 
 if old_func in content:
     content = content.replace(old_func, new_func)
