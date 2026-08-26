@@ -1383,7 +1383,14 @@ runs:
         # but the internal METADATA still has the base version from pyproject.toml.
         # Fix the METADATA to match the filename so pip/uv see consistent versions.
         # --package also applies the config's curated requires_dist, if any.
-        python "$GITHUB_WORKSPACE/.github/actions/build-wheel/patch_wheel_version.py" --package "${{ inputs.package }}" "$GITHUB_WORKSPACE/dist"
+        # --arch-list is RECORDED into METADATA here, not used to decide
+        # anything. It is what lets scripts/check_stale.py tell, later, whether
+        # a published wheel was built for the arch list the config now resolves
+        # to -- the question nothing could answer when a fix landed and the
+        # filename-based rebuild check skipped every cell that already had a
+        # wheel. (The verify step deliberately does NOT take an arch list; it
+        # resolves its own from the YAML.)
+        python "$GITHUB_WORKSPACE/.github/actions/build-wheel/patch_wheel_version.py" --package "${{ inputs.package }}" --arch-list "${{ inputs.arch-list }}" "$GITHUB_WORKSPACE/dist"
 
     - name: Verify wheel (gate before upload)
       # The pre-publication quality gate: filename/cell coherence, metadata

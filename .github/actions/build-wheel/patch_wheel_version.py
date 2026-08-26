@@ -25,6 +25,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+# The arch list this wheel was built for, stamped into METADATA so the wheel
+# CARRIES the fact rather than it living only in a workflow input that vanished
+# when the run's logs were deleted. See _stamp_arch_list().
+ARCH_LIST = ""
+
 
 def extract_version_from_filename(filename: str) -> tuple[str, str]:
     """Extract package name and full version from wheel filename.
@@ -217,6 +222,38 @@ def fix_wheel(wheel_path: Path) -> bool:
                       f"{phantom} are phantom; leaving the file alone -- "
                       f"this wheel looks structurally wrong, not mislabelled")
 
+        # Stamp the arch list into METADATA.
+        #
+        # This is the missing half of the farm's worst repeat failure. Rebuilds
+        # are decided by wheel_exists(), which matches on the FILENAME -- and
+        # changing a package's arch list does not change any wheel's name. So a
+        # coverage fix lands, the next run looks at the release, sees a wheel
+        # with the right name, and skips the cell. That is how 24 sageattention
+        # aarch64 wheels kept shipping an Ada trap for fourteen hours after the
+        # fix was committed: the cells that already had a wheel were skipped,
+        # and only the cells that happened to be empty picked the fix up.
+        #
+        # A wheel cannot record this in its name (PEP 427 fixes the fields, and
+        # the index parses them), so it records it here instead. Nothing reads
+        # it during a build -- C7 already checks the binary against the resolved
+        # list. It exists so staleness is DETECTABLE after the fact:
+        # scripts/check_stale.py reads this header from published wheels and
+        # reports every cell whose wheel was built for a different arch list
+        # than the config now resolves to. Before this, nothing anywhere could
+        # answer that question.
+        if ARCH_LIST:
+            content = re.sub(r"^Comfy-Forge-Arch-List:.*\n", "", content,
+                             flags=re.MULTILINE)
+            lines = content.split("\n")
+            for i, ln in enumerate(lines):
+                if ln.strip() == "":          # end of the header block
+                    lines.insert(i, f"Comfy-Forge-Arch-List: {ARCH_LIST}")
+                    break
+            else:
+                lines.append(f"Comfy-Forge-Arch-List: {ARCH_LIST}")
+            content = "\n".join(lines)
+            modified = True
+
         if not modified:
             return False
         metadata_path.write_text(content, encoding="utf-8")
@@ -247,6 +284,11 @@ def main():
     if "--package" in argv:
         i = argv.index("--package")
         package = argv[i + 1]
+        del argv[i:i + 2]
+    if "--arch-list" in argv:
+        global ARCH_LIST
+        i = argv.index("--arch-list")
+        ARCH_LIST = argv[i + 1].strip()
         del argv[i:i + 2]
     if not argv:
         print("Usage: python patch_wheel_version.py [--package <name>] "

@@ -1,0 +1,106 @@
+# Audit the published wheels against the config that claims to describe them.
+#
+# Everything else in this repo checks a wheel at the moment it is built, against
+# the config of the commit that built it. Nothing checked the OTHER direction:
+# is what is published still what the config now says it should be? The answer
+# was unobtainable, and the cost was 24 sageattention aarch64 wheels shipping a
+# device trap on Ada for fourteen hours after the fix was committed, because the
+# filename-based rebuild check skipped every cell that already had a wheel.
+#
+# scripts/audit.py existed for exactly this and was referenced by no workflow.
+# It also compared every wheel -- ARM and Windows included -- against the x86
+# arch expectation, so every ARM wheel reported MISMATCH; and it exited 0 when
+# it had measured nothing at all. Both fixed 2026-08-26; running it is the rest
+# of the fix.
+name: Audit
+
+on:
+  schedule:
+    # Weekly, after a normal week of building. Deliberately not on push: it
+    # downloads wheels, and the answer only changes when a build or a config
+    # change lands.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to audit ("all" or a package name)'
+        required: false
+        default: 'all'
+      lens:
+        description: 'Which audit to run'
+        required: false
+        type: choice
+        options: [archs, gaps, naming, all, stale]
+        default: archs
+      fail_on_stale:
+        description: 'Exit non-zero if any published wheel drifted from config'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install -q pyyaml
+
+      - name: CUDA toolkit (for cuobjdump)
+        # The byte-scan fallback cannot see PTX in a compressed fatbin, so
+        # without cuobjdump every wheel reports UNVERIFIED -- which now fails.
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda: '12.8.0'
+          method: 'network'
+          sub-packages: '["nvcc"]'
+        continue-on-error: true
+
+      - name: Arch audit
+        if: inputs.lens == 'archs' || inputs.lens == 'all' || github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/audit.py --archs \
+            --package "${{ inputs.package || 'all' }}" \
+            --output arch-audit.json
+
+      - name: Staleness check
+        # Reads Comfy-Forge-Arch-List out of each published wheel's METADATA and
+        # compares it against what the resolver produces today. Wheels built
+        # before that header existed report UNKNOWN, not stale.
+        if: inputs.lens == 'stale' || inputs.lens == 'all' || github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/check_stale.py \
+            --package "${{ inputs.package || 'all' }}" \
+            ${{ inputs.fail_on_stale && '--fail-on-stale' || '' }}
+
+      - name: Coverage gaps
+        if: inputs.lens == 'gaps' || inputs.lens == 'all'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/audit.py --gaps --package "${{ inputs.package || 'all' }}"
+
+      - name: Naming
+        if: inputs.lens == 'naming' || inputs.lens == 'all'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/audit.py --naming --package "${{ inputs.package || 'all' }}"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-report
+          path: arch-audit.json
+          if-no-files-found: ignore

@@ -301,7 +301,7 @@ def arch_list_to_sm_ptx(arch_list: str) -> tuple:
     return sass, ptx
 
 
-def expected_archs(pkg: dict, cuda: str, pytorch: str) -> set:
+def expected_archs(pkg: dict, cuda: str, pytorch: str, platform: str = "linux"):
     """Resolved exactly as the build resolves it (same code path)."""
     build = pkg.get("build_matrix") or {}
     combo_arch = None
@@ -309,13 +309,43 @@ def expected_archs(pkg: dict, cuda: str, pytorch: str) -> set:
         if str(c.get("cuda")) == str(cuda) and str(c.get("pytorch")) == str(pytorch):
             combo_arch = c.get("arch_list")
             break
+    # ONE BRANCH PER LANE. This used to call resolve_arch_list() -- the x86
+    # path -- for every wheel including aarch64 and Windows. The platform was
+    # parsed out of the filename a hundred lines above and then never used. So
+    # a cu13.0 ARM wheel holding {80,90,100,110,120}, which is exactly its
+    # policy row, was compared against the x86 expectation
+    # {75,80,86,90,100,120} and reported MISMATCH. Every ARM wheel in the farm
+    # failed this audit, permanently, on a bug in the audit.
+    lane = platform if platform in ("linux", "linux_aarch64", "windows") else "linux"
     try:
-        default_arch = _GM.policy_arch_list(str(cuda), str(pytorch))
+        default_arch = _GM.policy_arch_list(str(cuda), str(pytorch), platform=lane)
     except KeyError:
         default_arch = None
-    return arch_list_to_sm(_GM.resolve_arch_list(
-        pkg, str(cuda), combo_arch_list=combo_arch,
-        pytorch_version=str(pytorch), default_arch_list=default_arch))
+    if lane == "linux_aarch64":
+        resolved = _GM.resolve_aarch64_arch_list(pkg, str(cuda), str(pytorch))
+    elif lane == "windows":
+        resolved = _GM.resolve_windows_arch_list(
+            pkg, str(cuda), combo_arch_list=combo_arch,
+            pytorch_version=str(pytorch), default_arch_list=default_arch)
+    else:
+        resolved = _GM.resolve_arch_list(
+            pkg, str(cuda), combo_arch_list=combo_arch,
+            pytorch_version=str(pytorch), default_arch_list=default_arch)
+    expected = arch_list_to_sm(resolved)
+    # Honour the same waivers the gate honours, or this reports as defects the
+    # gaps the farm has already examined and written down. verify.skip_arch
+    # means "do not judge arch content on this lane at all"; allow_missing_archs
+    # names specific archs upstream cannot build.
+    vk = pkg.get("verify") or {}
+    sk = vk.get("skip_arch")
+    if isinstance(sk, dict):
+        sk = sk.get(lane)
+    if sk:
+        return None                      # caller treats None as "not judged"
+    waived = vk.get("allow_missing_archs")
+    if isinstance(waived, dict):
+        waived = waived.get(lane)
+    return expected - {str(a) for a in (waived or [])}
 
 
 _SKIP_LIBS = ("libtorch", "libc10", "libcudart", "libcuda.", "libcublas",
@@ -439,7 +469,8 @@ def run_archs(args, pkgs, defaults) -> int:
                  if str(c["cuda"]) == w["cuda"]
                  and torch_minor(c["pytorch"]) == w["torch_short"]),
                 w["torch_short"] + ".0")
-            expected = expected_archs(pkg, w["cuda"], pytorch_full)
+            expected = expected_archs(pkg, w["cuda"], pytorch_full,
+                                      w.get("platform", "linux"))
             dest = os.path.join(tmp, w["filename"])
             print(f"[{i}/{len(wheels)}] {w['filename']} ({w['size'] >> 20}MB) ...",
                   end=" ", flush=True)
@@ -454,6 +485,10 @@ def run_archs(args, pkgs, defaults) -> int:
             got = extract_archs(dest)
             os.unlink(dest)
             actual = got["sass"] | got["ptx"]
+            if expected is None:
+                print("SKIPPED (verify.skip_arch on this lane)")
+                results.append({"wheel": w["filename"], "status": "skip_arch"})
+                continue
             if not actual:
                 print("UNVERIFIED (no SASS visible -- compressed fatbin?)")
                 unverified.append({"wheel": w["filename"],
@@ -490,7 +525,16 @@ def run_archs(args, pkgs, defaults) -> int:
             "ok": ok, "mismatches": mismatches, "unverified": unverified,
             "results": results}, indent=2) + "\n")
         print(f"Report written to {args.output}")
-    return 1 if mismatches else 0
+    # UNVERIFIED counts. It used to be excluded, so an audit in which EVERY
+    # wheel was unverifiable -- nothing measured at all -- exited 0 and read as
+    # a clean bill of health. That is the same shape as C7's old UNVERIFIED
+    # warn-and-return path, and it is the reason this script could never have
+    # caught the drift it exists to catch. "I could not check" is not "fine".
+    if unverified:
+        print(f"\n{len(unverified)} wheel(s) could not be measured -- treating "
+              f"as failure, not as a pass. A wheel whose device code no scanner "
+              f"can see is exactly the case worth looking at by hand.")
+    return 1 if (mismatches or unverified) else 0
 
 
 # ── entry ──────────────────────────────────────────────────────────────────
