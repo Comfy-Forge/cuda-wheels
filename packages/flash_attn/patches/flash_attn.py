@@ -59,7 +59,17 @@ new_func = '''def cuda_archs() -> str:
         # The +PTX suffix must be stripped: upstream gates gencode on exact
         # token membership ('"90" in cuda_archs()'), so "90+PTX" would
         # silently drop that arch from the build.
-        return [a.split("+")[0].replace(".", "") for a in torch_archs.split()]
+        #
+        # Split on SEMICOLONS as well as whitespace. defaults/arch_policy.yml
+        # writes ";"-separated lists ("8.0;9.0+PTX;10.0;11.0;12.0+PTX") while
+        # this package's arch_override.yml writes space-separated ones -- and
+        # flash_attn has no aarch64 override, so the ARM lane gets the policy
+        # form. A bare .split() then yields ONE token, no membership test
+        # matches, and ZERO cubin gencodes are emitted: the wheel silently
+        # builds for nvcc's default arch only (2026-08-26).
+        import re as _re
+        return [a.split("+")[0].replace(".", "")
+                for a in _re.split(r"[;\\s]+", torch_archs.strip()) if a]
     return ["80", "90", "100", "120"]
 
 
@@ -72,9 +82,10 @@ def cuda_ptx_archs() -> list:
     than its newest cubin: there is no JIT path. The farm declares +PTX in
     arch_policy precisely to promise that path, so emit it.
     """
+    import re as _re
     out = []
-    for a in os.getenv("TORCH_CUDA_ARCH_LIST", "").split():
-        if "+PTX" in a.upper():
+    for a in _re.split(r"[;\\s]+", os.getenv("TORCH_CUDA_ARCH_LIST", "").strip()):
+        if a and "+PTX" in a.upper():
             out.append(a.split("+")[0].replace(".", ""))
     return out'''
 

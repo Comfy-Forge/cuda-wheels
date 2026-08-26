@@ -165,8 +165,43 @@ def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
     by_cuda = pkg.get("arch_list_by_cuda_aarch64") or {}
     raw = by_cuda.get(cuda_version) or pkg.get("arch_list_aarch64")
     if raw:
-        return _ensure_ptx_on_highest_base(raw)
-    return policy_arch_list(cuda_version, pytorch_version, "linux_aarch64")
+        return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
+    # BOTH return paths normalize. This function bypasses resolve_arch_list
+    # entirely, so normalizing only there left ARM as the one lane still
+    # emitting the policy's ";"-separated form -- which is exactly how
+    # flash_attn's ARM build got `arch=compute_80;90` while x86 and Windows
+    # (which have a space-separated override) were fine.
+    # Also apply _ensure_ptx_on_highest_base to the policy branch, which it
+    # previously skipped: the x86 path normalizes both branches, and the
+    # asymmetry meant an aarch64 policy row without a trailing +PTX would
+    # silently ship no forward-compat tail.
+    return _normalize_arch_list(
+        _ensure_ptx_on_highest_base(
+            policy_arch_list(cuda_version, pytorch_version, "linux_aarch64")))
+
+
+def _normalize_arch_list(arch_list: str) -> str:
+    """Canonicalise to SPACE-separated, which is torch's documented format.
+
+    The value produced here is exported verbatim as TORCH_CUDA_ARCH_LIST, and
+    torch documents that variable as space-separated
+    (cpp_extension.py: `TORCH_CUDA_ARCH_LIST="5.2 6.0 7.5 8.6+PTX"`).
+    But defaults/arch_policy.yml writes ";"-separated rows while every
+    per-package arch_override.yml writes space-separated ones -- so which
+    separator a build saw depended on whether the package happened to have an
+    override. A package parsing the variable with a plain .split() then got
+    ONE token from the policy form, and flash_attn did exactly that: its ARM
+    lane (no aarch64 override, so policy form) emitted zero cubin gencodes and
+    a malformed `arch=compute_80;90`, which nvcc rejected outright
+    (2026-08-26). Before the PTX gencode existed to make it fatal, the same
+    bug silently built for nvcc's default arch.
+
+    Fixing it here rather than in each consumer, because the inconsistency is
+    the farm's, not the packages'. Every downstream tolerates spaces: cumm does
+    `.replace(' ', ';')` (common.py:188), natten's patch and audit.py both do
+    `.replace(";", " ").split()`, and torch prefers them.
+    """
+    return " ".join(a for a in re.split(r"[;\s]+", arch_list.strip()) if a)
 
 
 def resolve_arch_list(pkg: dict, cuda_version: str,
@@ -197,7 +232,7 @@ def resolve_arch_list(pkg: dict, cuda_version: str,
         raw = default_arch_list
 
     if raw is not None:
-        return _ensure_ptx_on_highest_base(raw)
+        return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
 
     raise KeyError(
         f"No arch_list resolved for cuda={cuda_version} pytorch={pytorch_version} "
