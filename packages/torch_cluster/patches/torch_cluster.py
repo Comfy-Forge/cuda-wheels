@@ -33,3 +33,17 @@ for cu_file in sorted(cuda_dir.glob("*.cu")):
 
 print(f"\nDone. Patched {patched} total dispatch sites.")
 print("radius_cuda.cu already has BFloat16 support - no changes needed.")
+
+
+# --- Drop the never-loadable CPU-only extension twin -----------------------
+# setup.py builds every extension twice (`_<name>_cpu` and `_<name>_cuda`) via
+# product(main_files, suffices). The facade loads `cuda_spec or cpu_spec`, so
+# the CPU twin is never loaded when a CUDA library is present -- and it is not
+# a fallback either: the cuda build compiles csrc/cpu/*.cpp as well, making the
+# CUDA library a strict superset. See patch_lib.force_only_cuda.
+import pathlib as _pl
+import sys as _sys
+_sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import force_only_cuda  # noqa: E402
+
+force_only_cuda("setup.py")

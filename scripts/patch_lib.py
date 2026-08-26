@@ -745,3 +745,55 @@ def strip_debug_flags_in_file(path, label: str = "") -> int:
         p.write_text(new, encoding="utf-8", errors="surrogateescape")
         print(f"{label or p}: stripped {n} debug/anti-optimisation flag(s)")
     return n
+
+
+def force_only_cuda(path: str | Path = "setup.py") -> int:
+    """Drop the never-loadable CPU-only extension twin from a pyg-family build.
+
+    torch_scatter / torch_cluster / torch_sparse / torch_spline_conv all build
+    the SAME extension twice -- once as `_<name>_cpu`, once as `_<name>_cuda` --
+    by iterating `product(main_files, suffices)` with `suffices = ['cpu','cuda']`.
+
+    The `_cpu` half is dead weight in every wheel this farm ships:
+
+      * The package facade loads `cuda_spec or cpu_spec` (torch_scatter/
+        __init__.py:15), so with both present the CUDA library ALWAYS wins and
+        the CPU twin is never loaded by anything.
+      * It is not even a CPU fallback: the `cuda` build compiles
+        `csrc/cpu/<name>_cpu.cpp` *and* `csrc/cuda/<name>_cuda.cu`
+        (setup.py:90-96), so the CUDA library is a strict superset. CPU tensors
+        are served by the same .so.
+
+    Cost measured across the four: 51 of 118 TU compiles, plus ~7.3MB of
+    unreachable .so in the wheels.
+
+    Upstream provides the exact switch for this -- `FORCE_ONLY_CUDA=1` sets
+    `suffices = ['cuda']` -- but the farm has no per-package env mechanism, so
+    set it in setup.py itself, where it is also visible in the post-patch tree.
+
+    Idempotent; raises if the upstream anchor is gone.
+    """
+    p = Path(path)
+    text = p.read_text(encoding="utf-8", errors="surrogateescape")
+    if "cuda-wheels: FORCE_ONLY_CUDA" in text:
+        print(f"{p}: FORCE_ONLY_CUDA already applied -- skipping")
+        return 0
+    anchor = "if os.getenv('FORCE_ONLY_CUDA', '0') == '1':"
+    require(
+        anchor in text,
+        f"{p}: upstream anchor \"{anchor}\" not found. This build no longer "
+        "exposes FORCE_ONLY_CUDA, so the CPU twin cannot be dropped safely -- "
+        "re-check the patch against the pinned source_tag.",
+    )
+    shim = (
+        "# cuda-wheels: FORCE_ONLY_CUDA -- the '_cpu' extension twin is never\n"
+        "# loaded (the facade prefers cuda_spec) and the cuda build already\n"
+        "# compiles csrc/cpu/*.cpp, so it is a strict superset. Building it is\n"
+        "# 43% of this package's TU compiles for an unreachable .so.\n"
+        "os.environ.setdefault('FORCE_ONLY_CUDA', '1' if WITH_CUDA else '0')\n"
+        + anchor
+    )
+    text = text.replace(anchor, shim, 1)
+    p.write_text(text, encoding="utf-8", errors="surrogateescape")
+    print(f"{p}: FORCE_ONLY_CUDA=1 when CUDA is present -- CPU twin not built")
+    return 1

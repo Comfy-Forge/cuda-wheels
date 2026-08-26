@@ -189,3 +189,83 @@ if _torch_mm() >= (2, 13):
 else:
     print(f"pyg_lib patch: keeping CMAKE_CXX_STANDARD 17 "
           f"(torch {_os.environ.get('CUW_TORCH_VERSION', '?')} < 2.13)")
+
+
+# --- CUDA arch bridge ------------------------------------------------------
+# pyg_lib picks CMAKE_CUDA_ARCHITECTURES from a hardcoded if-ladder keyed on
+# the nvcc version (CMakeLists.txt:54-64) and never looks at
+# TORCH_CUDA_ARCH_LIST. Two consequences, in opposite directions:
+#
+#   * On x86 it builds MORE than asked. cu13.0 gets "75;80;86;90;100;120", and
+#     because those tags are UNSUFFIXED cmake emits BOTH -real and -virtual for
+#     each -- 12 device passes where the config asks for 4, with PTX on every
+#     arch instead of the one the config declares. The wheel's METADATA then
+#     describes an arch set the wheel does not have.
+#   * On aarch64 it builds the WRONG thing. The ladder has no sm_87 at any CUDA
+#     version, while the farm's aarch64 policy asks for 8.7 (Orin/Thor) on
+#     every row -- so ARM wheels ship without the one arch ARM most needs, and
+#     C7 would reject them for "missing arch families sm_[87]".
+#
+# The fix is the farm's standard shape: the patch TRANSLATES the farm's list
+# into upstream's form and never decides its contents. The upstream ladder is
+# kept verbatim as the fallback for a bare (non-farm) build.
+#
+# arch_override.yml was widened at the same time so that honouring the config
+# does not lose the x86 archs the ladder happened to build. See its comment.
+_cml_arch = _pl.Path("CMakeLists.txt")
+_require(_cml_arch.exists(), "pyg_lib: CMakeLists.txt not found at source root")
+_ca = _cml_arch.read_text()
+
+_arch_anchor = """  if (CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+    set(CMAKE_CUDA_ARCHITECTURES "75;80;86;90;100;120")"""
+
+_require(
+    _arch_anchor in _ca,
+    "pyg_lib: the hardcoded CMAKE_CUDA_ARCHITECTURES ladder was not found in "
+    "CMakeLists.txt. Without the bridge, aarch64 wheels ship no sm_87 and x86 "
+    "wheels ship PTX for every arch -- re-check against the pinned source_tag.",
+)
+
+_arch_bridge = """  # --- cuda-wheels arch bridge (injected; see packages/pyg_lib/patches) ---
+  # Translate the farm's TORCH_CUDA_ARCH_LIST into CMAKE_CUDA_ARCHITECTURES.
+  # "8.0 8.7 9.0+PTX" -> "80-real;87-real;90-real;90-virtual".
+  # Explicit -real/-virtual matters: a bare "80" makes cmake emit real AND
+  # virtual, which is how this build ended up shipping PTX for every arch.
+  set(_CUW_ARCHS "")
+  if (NOT "$ENV{TORCH_CUDA_ARCH_LIST}" STREQUAL "")
+    string(REPLACE ";" " " _CUW_RAW "$ENV{TORCH_CUDA_ARCH_LIST}")
+    string(REPLACE "," " " _CUW_RAW "${_CUW_RAW}")
+    separate_arguments(_CUW_TOKENS UNIX_COMMAND "${_CUW_RAW}")
+    foreach(_CUW_TOK IN LISTS _CUW_TOKENS)
+      set(_CUW_PTX FALSE)
+      if (_CUW_TOK MATCHES "\\\\+PTX$")
+        set(_CUW_PTX TRUE)
+        string(REPLACE "+PTX" "" _CUW_TOK "${_CUW_TOK}")
+      endif()
+      string(STRIP "${_CUW_TOK}" _CUW_TOK)
+      string(REPLACE "." "" _CUW_NUM "${_CUW_TOK}")
+      if (NOT _CUW_NUM STREQUAL "")
+        list(APPEND _CUW_ARCHS "${_CUW_NUM}-real")
+        if (_CUW_PTX)
+          list(APPEND _CUW_ARCHS "${_CUW_NUM}-virtual")
+        endif()
+      endif()
+    endforeach()
+  endif()
+  if (NOT _CUW_ARCHS STREQUAL "")
+    set(CMAKE_CUDA_ARCHITECTURES "${_CUW_ARCHS}")
+    message(STATUS "cuda-wheels: CMAKE_CUDA_ARCHITECTURES from TORCH_CUDA_ARCH_LIST -> ${CMAKE_CUDA_ARCHITECTURES}")
+  elseif (CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+    set(CMAKE_CUDA_ARCHITECTURES "75;80;86;90;100;120")"""
+
+_ca = _ca.replace(_arch_anchor, _arch_bridge, 1)
+_cml_arch.write_text(_ca)
+print("pyg_lib patch: CMAKE_CUDA_ARCHITECTURES bridged to TORCH_CUDA_ARCH_LIST")
+
+# Prove it landed rather than trusting the replace.
+_final_ca = _cml_arch.read_text()
+_require("cuda-wheels arch bridge" in _final_ca,
+         "pyg_lib: the arch bridge is NOT present in CMakeLists.txt on disk")
+_require(_final_ca.count("set(CMAKE_CUDA_ARCHITECTURES") >= 6,
+         "pyg_lib: the upstream ladder fallback was damaged by the bridge "
+         "injection -- a bare build would now have no architectures at all")

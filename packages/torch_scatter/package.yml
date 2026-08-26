@@ -2,6 +2,7 @@ name: torch_scatter
 links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: rusty1s/pytorch_scatter
 source_tag: edeb04224f80f44c4765a05d34fbdde154df057b
+patch_script: packages/torch_scatter/patches/torch_scatter.py
 verify:
   # _X_cuda / _X_cpu are ALTERNATE builds of the same ops: the facade loads
   # exactly one, and importing the other re-registers the same torch
