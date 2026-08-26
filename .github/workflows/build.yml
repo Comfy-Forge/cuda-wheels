@@ -873,6 +873,9 @@ jobs:
           mkdir -p wheels
           if [ -d artifacts ]; then
             find artifacts -name "*.whl" -exec cp {} wheels/ \;
+            # PEP 658 sidecars ride along with their wheel. Collected on their
+            # own pattern because `*.whl` does not match `*.whl.metadata`.
+            find artifacts -name "*.whl.metadata" -exec cp {} wheels/ \; 2>/dev/null || true
           else
             echo "::notice::no artifacts/ directory -- no wheels were uploaded; nothing to release"
             exit 0
@@ -891,6 +894,10 @@ jobs:
               echo "Found package: $pkg"
               mkdir -p "../releases/$pkg"
               cp "$whl" "../releases/$pkg/"
+              # Carry the wheel's PEP 658 sidecar into the same package dir.
+              # This loop iterates *.whl only, so without this the sidecar is
+              # collected but never grouped, and the upload below finds none.
+              [ -f "$whl.metadata" ] && cp "$whl.metadata" "../releases/$pkg/"
             fi
           done
           cd ..
