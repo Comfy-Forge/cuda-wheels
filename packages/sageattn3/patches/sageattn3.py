@@ -142,11 +142,21 @@ old_cxx_block = """    ext_modules.append(
 
 new_cxx_block = """    if os.name == "nt":
         nvcc_flags += ["-D_WIN32=1", "-DUSE_CUDA=1"]
-        cxx_flags = ["/std:c++17", "/Zc:__cplusplus", "/bigobj", "/MD", "/permissive-"]
+        # NO /std: here. The C++ standard is the toolchain's call, not this
+        # package's: torch's cpp_extension picks one that matches the torch
+        # being built against, and the farm sets an MSVC floor from the torch
+        # version via the CL env var (action.yml:1105). An explicit /std: in
+        # extra_compile_args lands later on the command line, beats both, and
+        # stops cpp_extension choosing at all -- so a torch that needs C++20
+        # would be compiled at 17 and fail on its own headers. Every other
+        # patch in the farm was audited to remove exactly this; that is what
+        # patch_lib.strip_std_flags exists for. The rest of these flags are
+        # genuine MSVC necessities and stay.
+        cxx_flags = ["/Zc:__cplusplus", "/bigobj", "/MD", "/permissive-"]
         nvcc_flags += [f"-Xcompiler={flag}" for flag in cxx_flags]
         cxx_flags += ["/O2"]
     else:
-        cxx_flags = ["-O3", "-std=c++17"]
+        cxx_flags = ["-O3"]   # standard omitted deliberately -- see above
 
     ext_modules.append(
         CUDAExtension(

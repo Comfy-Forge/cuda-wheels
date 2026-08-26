@@ -63,10 +63,15 @@ if old_abi in content:
 else:
     print("WARNING: Could not find ABI block - source may have changed")
 
-# Reduce nvcc --threads from 8 to 1 to avoid OOM on GitHub runners.
-# Combined with max_jobs=2 in sageattention.yml.
-content = content.replace('"--threads=8"', '"--threads=1"')
-print("Patched nvcc --threads=8 -> --threads=1")
+# nvcc --threads is NOT decided here. It used to be:
+#     content.replace('"--threads=8"', '"--threads=1"')
+# which was both a policy decision in the wrong place and dead weight. The
+# build action appends a TRAILING --threads=${nvcc_threads} to
+# NVCC_APPEND_FLAGS precisely so it beats setup.py hardcodes -- see
+# action.yml:677 (Linux) / :1124 (Windows), whose input description at :48
+# names this exact case. Trailing wins, so upstream's 8 never survived anyway
+# and this rewrite changed nothing. Set nvcc_threads: in package.yml instead.
+# (Farm default is 1, which is what this line was trying to achieve.)
 
 # Fix _qattn_sm90 extension: it uses Hopper-only wgmma instructions but inherits
 # the global NVCC_FLAGS with all arch gencode flags (sm_80, sm_86, etc.), causing

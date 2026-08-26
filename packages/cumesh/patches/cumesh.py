@@ -102,7 +102,12 @@ def _mm(env: str) -> tuple[int, int]:
 if _mm("CUW_TORCH_VERSION") >= (2, 13) or _mm("CUW_CUDA_VERSION") >= (13, 2):
     _setup = Path("setup.py")
     _t = _setup.read_text()
-    _t2 = _t.replace("c++17", "c++20")
+    # Anchored on the two flag spellings, NOT a bare "c++17". This was an
+    # unanchored whole-file replace, so any other occurrence -- a comment, a
+    # URL, a doc string, a future dependency name -- would have been rewritten
+    # too. Same result on every flag that actually exists today; strictly
+    # narrower blast radius.
+    _t2 = _t.replace("-std=c++17", "-std=c++20").replace("/std:c++17", "/std:c++20")
     if _t2 != _t:
         _setup.write_text(_t2)
         print("cumesh patch: setup.py c++17 -> c++20")
