@@ -2,6 +2,7 @@ name: detectron2
 links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: facebookresearch/detectron2
 source_tag: v0.6
+patch_script: packages/detectron2/patches/detectron2.py
 version: '0.6'
 # Curated Requires-Dist (CW-ADR-0004): upstream v0.6 minus black==21.4b2
 # (a code formatter exact-pinned to a 2021 beta, accidentally a runtime

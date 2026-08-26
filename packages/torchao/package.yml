@@ -6,6 +6,7 @@ links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pa
 # additionally frozen at 0.9.0 upstream.
 source_repo: pytorch/ao
 source_tag: v0.18.0
+patch_script: packages/torchao/patches/torchao.py
 version: 0.18.0
 # Kill upstream's +git<sha> version suffix (setup.py appends it when
 # VERSION_SUFFIX is unset) -- the farm's renamer then produced the

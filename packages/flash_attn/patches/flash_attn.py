@@ -298,3 +298,16 @@ for _marker, _what in (
              f"wheel would carry upstream's hardcoded 80;90;100;120 with no "
              f"PTX, or be downloaded prebuilt from Dao-AILab instead of built.")
 print("flash_attn patch: verified all edits are present in setup.py on disk")
+
+
+# --- Do not install hopper as a top-level package ------------------------
+# hopper/ is FlashAttention-3. We do not build it -- its 453 .cu are never
+# compiled -- so hopper/flash_attn_interface.py's `import flash_attn_3._C`
+# can only ever raise ModuleNotFoundError. 224KB of guaranteed-dead code
+# that also claims the top-level name `hopper` for the whole interpreter.
+# Hopper GPUs are unaffected: they run FA2's sm_90 cubin, which we do build.
+import sys as _sys_tl, pathlib as _pl_tl
+_sys_tl.path.insert(0, str(_pl_tl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import exclude_top_level_packages as _excl_tl  # noqa: E402
+
+_excl_tl(["hopper"])

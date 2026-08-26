@@ -242,16 +242,54 @@ def fix_wheel(wheel_path: Path) -> bool:
         # than the config now resolves to. Before this, nothing anywhere could
         # answer that question.
         if ARCH_LIST:
-            content = re.sub(r"^Comfy-Forge-Arch-List:.*\n", "", content,
-                             flags=re.MULTILINE)
+            # Strip any previous copy, INCLUDING its folded continuation lines.
+            # A bare `^Comfy-Forge-Arch-List:.*\n` leaves the continuations
+            # behind, and re-adding the header would then orphan them onto
+            # whatever field follows.
+            content = re.sub(r"^Comfy-Forge-Arch-List:.*(?:\n[ \t].*)*\n",
+                             "", content, flags=re.MULTILINE)
             lines = content.split("\n")
+
+            # Insert immediately after Metadata-Version, NOT at the first
+            # blank-looking line.
+            #
+            # The old code walked to the first `ln.strip() == ""` and called
+            # that the end of the header block. It is not: RFC 822 folding puts
+            # a field's continuation on INDENTED lines, and a multi-line
+            # License: body contains whitespace-only lines ("        ") which
+            # strip() to "". So the header landed in the MIDDLE of the licence,
+            # and every continuation line below it was reassigned to us:
+            #
+            #     License: MIT License
+            #     Comfy-Forge-Arch-List: 7.5 8.0 8.6 9.0+PTX 10.0 12.0+PTX
+            #             <- this and everything under it now belongs to US
+            #             Copyright (c) 2025 ...
+            #
+            # Measured across all 41 published packages: 7 corrupted (every one
+            # with a multi-line License:), License truncated to its first line
+            # and this header holding ~1.3KB of licence prose. It also made
+            # check_stale.py -- the only consumer of this header -- unable to
+            # read the very packages it was written for.
+            #
+            # Metadata-Version is the first line and is never folded, so
+            # inserting after it cannot land inside another field's body.
+            insert_at = 0
             for i, ln in enumerate(lines):
-                if ln.strip() == "":          # end of the header block
-                    lines.insert(i, f"Comfy-Forge-Arch-List: {ARCH_LIST}")
+                if ln.lower().startswith("metadata-version:"):
+                    insert_at = i + 1
                     break
-            else:
-                lines.append(f"Comfy-Forge-Arch-List: {ARCH_LIST}")
+            lines.insert(insert_at, f"Comfy-Forge-Arch-List: {ARCH_LIST}")
             content = "\n".join(lines)
+
+            # Prove it round-trips rather than trusting the insertion point.
+            import email as _email
+            _m = _email.message_from_string(content)
+            _got = (_m.get("Comfy-Forge-Arch-List") or "").strip()
+            if _got != ARCH_LIST.strip():
+                raise SystemExit(
+                    f"patch_wheel_version: the arch-list header does not parse "
+                    f"back cleanly (wrote {ARCH_LIST!r}, reads {_got[:120]!r}). "
+                    f"Refusing to ship METADATA that misreports itself.")
             modified = True
 
         if not modified:

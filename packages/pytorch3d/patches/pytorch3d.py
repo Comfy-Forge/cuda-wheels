@@ -47,3 +47,16 @@ if cuda_mm() >= (13, 0):
           f"(restores pre-13 __global__ template stub linkage)")
 else:
     print("pytorch3d patch: CUDA < 13.0, no template-stub flag needed")
+
+
+# --- Do not install projects as a top-level package ------------------------
+# find_packages already excludes `projects.*` but not `projects` itself, so
+# the top-level package ships anyway -- and it contains nothing but a
+# licence header. `projects` is a highly collidable name to claim in
+# site-packages. The implicitron trainer is unaffected: it is added
+# separately via `+ [trainer]` with its own package_dir.
+import sys as _sys_tl, pathlib as _pl_tl
+_sys_tl.path.insert(0, str(_pl_tl.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import exclude_top_level_packages as _excl_tl  # noqa: E402
+
+_excl_tl(["projects"])

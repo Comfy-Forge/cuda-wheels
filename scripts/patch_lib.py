@@ -790,10 +790,97 @@ def force_only_cuda(path: str | Path = "setup.py") -> int:
         "# loaded (the facade prefers cuda_spec) and the cuda build already\n"
         "# compiles csrc/cpu/*.cpp, so it is a strict superset. Building it is\n"
         "# 43% of this package's TU compiles for an unreachable .so.\n"
-        "os.environ.setdefault('FORCE_ONLY_CUDA', '1' if WITH_CUDA else '0')\n"
+        "#\n"
+        "# Gate on FORCE_CUDA, NOT on WITH_CUDA. WITH_CUDA is computed as\n"
+        "#     WITH_CUDA = False\n"
+        "#     if torch.cuda.is_available():\n"
+        "#         WITH_CUDA = CUDA_HOME is not None or torch.version.hip\n"
+        "# and a build runner has no GPU, so torch.cuda.is_available() is False\n"
+        "# and WITH_CUDA is ALWAYS False here. Keying on it set FORCE_ONLY_CUDA=0\n"
+        "# and this whole patch silently did nothing -- caught 2026-08-26 by\n"
+        "# tearing the shipped wheel apart, which still contained _scatter_cpu.so\n"
+        "# and its three siblings. FORCE_CUDA=1 is what the farm actually exports\n"
+        "# (.github/actions/build-wheel/action.yml) and is what makes upstream\n"
+        "# choose suffices = ['cuda', 'cpu'] in the first place.\n"
+        "_cuw_building_cuda = (WITH_CUDA or os.getenv('FORCE_CUDA', '0') == '1')\n"
+        "if _cuw_building_cuda:\n"
+        "    os.environ.setdefault('FORCE_ONLY_CUDA', '1')\n"
+        "print('[cuda-wheels] building CUDA:', _cuw_building_cuda,\n"
+        "      '-> FORCE_ONLY_CUDA=' + os.getenv('FORCE_ONLY_CUDA', '0'))\n"
         + anchor
     )
     text = text.replace(anchor, shim, 1)
     p.write_text(text, encoding="utf-8", errors="surrogateescape")
     print(f"{p}: FORCE_ONLY_CUDA=1 when CUDA is present -- CPU twin not built")
     return 1
+
+
+def exclude_top_level_packages(names, path: str | Path = "setup.py") -> int:
+    """Stop setuptools installing repo scaffolding as top-level packages.
+
+    Every top-level directory a wheel installs lands directly in site-packages,
+    which is ONE flat namespace shared by the whole environment. Several
+    upstreams ship their dev scaffolding next to the library, so installing
+    them silently claims a generic name for the entire interpreter:
+
+        detectron2 -> `tools`     (its training scripts become `import tools`)
+        pytorch3d  -> `projects`
+        torchao    -> `test`      (collides with CPython's own stdlib `test`)
+        flash_attn -> `hopper`    (and it cannot even work -- see below)
+
+    Whichever distribution pip installs last owns the directory, and
+    uninstalling that one deletes files the other wrote.
+
+    `names` are added to the existing find_packages(exclude=...) as both the
+    bare name and the `name.*` subpackage glob. Adding only one of the two is
+    the bug pytorch3d already has: it excludes `projects.*` but not `projects`,
+    so the top-level package ships anyway.
+
+    Idempotent. Verifies the result still parses as Python before writing.
+    """
+    p = Path(path)
+    text = p.read_text(encoding="utf-8", errors="surrogateescape")
+
+    m = re.search(r"find_packages\(\s*exclude\s*=\s*([(\[])", text)
+    # Decide "already applied?" from the EXCLUDE CLAUSE ONLY, never from the
+    # whole file. A name like "test" or "tools" can easily appear as an
+    # unrelated string literal somewhere else in a setup.py, and keying on that
+    # would make this helper silently do nothing -- exactly how the
+    # FORCE_ONLY_CUDA patch no-op'd for a whole build pass (2026-08-26).
+    clause = ""
+    if m:
+        depth, i = 1, m.end()
+        opens, closes = m.group(1), {"(": ")", "[": "]"}[m.group(1)]
+        while i < len(text) and depth:
+            if text[i] == opens:
+                depth += 1
+            elif text[i] == closes:
+                depth -= 1
+            i += 1
+        clause = text[m.end():i - 1]
+    wanted = [n for n in names
+              if f'"{n}"' not in clause and f"'{n}'" not in clause]
+    if not wanted:
+        print(f"{p}: top-level excludes already present for {list(names)}")
+        return 0
+
+    require(
+        m is not None,
+        f"{p}: no `find_packages(exclude=...)` call found, so the top-level "
+        f"package(s) {list(names)} cannot be excluded without rewriting the "
+        f"packages= argument. Re-check against the pinned source_tag.",
+    )
+    ins = m.end()
+    added = "".join(f'"{n}", "{n}.*", ' for n in wanted)
+    new = text[:ins] + added + text[ins:]
+
+    import ast as _ast
+    try:
+        _ast.parse(new)
+    except SyntaxError as e:
+        raise SystemExit(
+            f"{p}: injecting the top-level excludes produced invalid Python "
+            f"({e}). Refusing to write a broken setup.py.")
+    p.write_text(new, encoding="utf-8", errors="surrogateescape")
+    print(f"{p}: excluded top-level package(s) {wanted} from the wheel")
+    return len(wanted)
