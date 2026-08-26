@@ -87,7 +87,31 @@ def cuda_ptx_archs() -> list:
     for a in _re.split(r"[;\\s]+", os.getenv("TORCH_CUDA_ARCH_LIST", "").strip()):
         if a and "+PTX" in a.upper():
             out.append(a.split("+")[0].replace(".", ""))
-    return out'''
+    return out
+
+
+# Archs upstream's gencode chain knows about, verbatim from setup.py:179-191
+# of the v2.8.3 tag. The chain is a hardcoded if-ladder:
+#     if "80"  in cuda_archs(): ... arch=compute_80,code=sm_80
+#     if "90"  in cuda_archs(): ... (bare_metal >= 11.8)
+#     if "100" in cuda_archs(): ... (bare_metal >= 12.8)
+#     if "120" in cuda_archs(): ... (bare_metal >= 12.8)
+# Anything else the farm asks for hits NO branch and is SILENTLY DROPPED --
+# no cubin, no PTX, no diagnostic. That is how the cu13.0 ARM wheel shipped
+# without sm_110 (Thor): arch_policy_aarch64's 13.x row is
+# "8.0;9.0+PTX;10.0;11.0;12.0+PTX", 11.0 matched no branch, and only
+# verify_wheel's arch_sass check caught it, after a 3h build.
+_CUW_UPSTREAM_ARCHS = {"80", "90", "100", "120"}
+
+
+def cuda_extra_archs() -> list:
+    """Archs the farm demands that upstream's if-ladder does not emit.
+
+    Returned as plain `code=sm_X` cubin targets. csrc/flash_attn is one
+    CUTLASS-2.x kernel family with zero `__CUDA_ARCH__ <` guards, compiled
+    unchanged for every arch, so a new target is a recompile and not a port.
+    """
+    return [a for a in cuda_archs() if a not in _CUW_UPSTREAM_ARCHS]'''
 
 if old_func in content:
     content = content.replace(old_func, new_func)
@@ -143,6 +167,9 @@ _ptx_anchor = '''        if bare_metal_version >= Version("12.8") and "120" in c
             cc_flag.append("arch=compute_120,code=sm_120")'''
 _ptx_add = _ptx_anchor + '''
 
+    for _cuw_extra in cuda_extra_archs():
+        cc_flag.append("-gencode")
+        cc_flag.append(f"arch=compute_{_cuw_extra},code=sm_{_cuw_extra}")
     for _cuw_ptx in cuda_ptx_archs():
         cc_flag.append("-gencode")
         cc_flag.append(f"arch=compute_{_cuw_ptx},code=compute_{_cuw_ptx}")'''
