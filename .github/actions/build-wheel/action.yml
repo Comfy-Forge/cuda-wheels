@@ -552,8 +552,10 @@ runs:
           if [ $(( 0x$h % CUW_SHARD_COUNT )) -ne "${CUW_SHARD_INDEX0:-0}" ]; then
             cp "$CUW_EMPTY_OBJ" "$out"
             [ -n "$dep" ] && printf '%s:\n' "$out" > "$dep"
+            [ -n "$CUW_STUB_COUNTER" ] && echo "$src" >> "$CUW_STUB_COUNTER"
             exit 0
           fi
+          [ -n "$CUW_COMPILE_COUNTER" ] && echo "$src" >> "$CUW_COMPILE_COUNTER"
         fi
         if [ -n "$CUW_CACHE_TOOL" ]; then exec "$CUW_CACHE_TOOL" "$CUW_REAL_NVCC" "$@"; fi
         exec "$CUW_REAL_NVCC" "$@"
@@ -563,6 +565,13 @@ runs:
         {
           echo "CUW_REAL_NVCC=$REAL_NVCC"
           echo "CUW_EMPTY_OBJ=$CUW/empty.o"
+          # Witnesses for the shard-cache guard: how many TUs this shard
+          # actually compiled, and how many it stubbed out as not-its-slice.
+          # Needed to tell "the wrapper never ran" (both zero -- a real defect)
+          # from "this shard's partition was empty" (stubbed > 0, compiled 0 --
+          # wasteful but correct). See the Package shard cache step.
+          echo "CUW_COMPILE_COUNTER=$CUW/compiled.txt"
+          echo "CUW_STUB_COUNTER=$CUW/stubbed.txt"
           echo "CUW_CACHE_TOOL=$(command -v ccache)"
           # torch's ninja writer honours PYTORCH_NVCC; cmake honours CUDACXX.
           echo "PYTORCH_NVCC=$CUW/nvcc"
@@ -1424,9 +1433,31 @@ runs:
         STATS=$(ccache --print-stats 2>/dev/null || true)
         ENTRIES=$(echo "$STATS" | awk -F'\t' '$1 == "files_in_cache" {print $2+0; exit}')
         MISSES=$(echo "$STATS" | awk -F'\t' '$1 == "cache_miss" {n+=$2} END{print n+0}')
-        echo "shard cache: ${ENTRIES:-0} entries, $MISSES compile(s) stored"
+        COMPILED=$( [ -f "${CUW_COMPILE_COUNTER:-/nonexistent}" ] && wc -l < "$CUW_COMPILE_COUNTER" || echo 0 )
+        STUBBED=$(  [ -f "${CUW_STUB_COUNTER:-/nonexistent}"    ] && wc -l < "$CUW_STUB_COUNTER"    || echo 0 )
+        echo "shard cache: ${ENTRIES:-0} entries, $MISSES compile(s) stored; wrapper saw $COMPILED mine / $STUBBED stubbed"
         if [ "${ENTRIES:-0}" -eq 0 ]; then
-          echo "::error::shard stored ZERO cache entries (files_in_cache=0). Either the wrapper was never invoked (build system bypassed PYTORCH_NVCC/CUDACXX) or ccache refused every TU (a 3.x 'unsupported source language' on -x cu). The link job would recompile everything."
+          # An EMPTY PARTITION is legitimate and must not fail the build. The
+          # seat wrapper partitions by md5(src) % shard_count, which is uniform
+          # only on average: simulated over flash_attn's real 72 sources at
+          # shards=25 it yields max=5, min=0 and TWO shards holding nothing.
+          # Those shards compile nothing, so they store nothing -- correct
+          # behaviour, and the link job rebuilds those TUs from other shards'
+          # caches. (It is still pure waste: a runner boots to do nothing. The
+          # balanced sorted round-robin used on the Windows lane removes it,
+          # and is tracked separately.)
+          if [ "$COMPILED" -eq 0 ] && [ "$STUBBED" -gt 0 ]; then
+            echo "::warning title=Empty shard::shard ${{ inputs.shard-index }}/${{ inputs.shard-count }} was assigned NO sources by the md5 partition ($STUBBED TUs all belonged to other shards). It compiled nothing, so an empty cache is correct. This shard did no useful work -- a balanced partition would eliminate it."
+            mkdir -p $GITHUB_WORKSPACE/shard-out
+            tar -czf $GITHUB_WORKSPACE/shard-out/ccache.tar.gz -C "$RUNNER_TEMP/ccache" .
+            ls -lh $GITHUB_WORKSPACE/shard-out/
+            exit 0
+          fi
+          if [ "$COMPILED" -gt 0 ]; then
+            echo "::error::shard COMPILED $COMPILED TU(s) but stored ZERO cache entries (files_in_cache=0). The compiler cache is not engaging -- ccache refused every TU (a 3.x 'unsupported source language' on -x cu) or the launcher is misconfigured. The link job would recompile everything."
+          else
+            echo "::error::shard stored ZERO cache entries and the wrapper was NEVER INVOKED (0 compiled, 0 stubbed). The build system bypassed PYTORCH_NVCC/CUDACXX entirely."
+          fi
           ccache --print-stats 2>/dev/null | grep -iE "unsupported|files_in_cache|cache_miss" || true
           exit 1
         fi
