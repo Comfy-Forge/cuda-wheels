@@ -364,8 +364,18 @@ def extract_archs(wheel_path: str) -> dict:
                 # fallback stops inventing forward-compat coverage that is not
                 # there. Windows wheels take this path exclusively (cuobjdump
                 # cannot read PE .pyd), so the false positives were farm-wide.
+                # `[af]?`, not `a?`. CUDA 13 added FAMILY targets and a real
+                # module emits `.target sm_100f`. With `a?` the regex cannot
+                # match that at all, so a wheel carrying perfectly good family
+                # PTX reads as having NO PTX and C7 fails it on `missing_ptx`.
+                # Windows takes this path EXCLUSIVELY -- Linux cuobjdump cannot
+                # read a PE .pyd ("does not contain device code"), and the
+                # Windows verify step passes no --cuda-home so the lookup falls
+                # back to /usr/local/cuda-*, which does not exist there. So this
+                # one character decides whether the entire Windows lane can be
+                # gated correctly.
                 for m in re.finditer(
-                        rb"\.version\s+[\d.]+\s+\.target\s+sm_(\d+)a?"
+                        rb"\.version\s+[\d.]+\s+\.target\s+sm_(\d+)[af]?"
                         rb"\s+\.address_size\s+\d+", data):
                     sm = int(m.group(1).decode())
                     if 50 <= sm <= 130:

@@ -548,11 +548,38 @@ def check_glibc_ceiling(rep, infos, vendored):
 # ── C7 ─────────────────────────────────────────────────────────────────────
 
 def _cuobjdump_archs(binary_path, cuobjdump, timeout):
+    """(sass, ptx) arch sets. PTX drops `a` targets -- they are not a tail.
+
+    The suffix used to be discarded right here, by `sm_(\d+)`, long before
+    `_norm()` further down got a chance to think about it. For SASS that is
+    correct: an `sm_90a` cubin really does give an sm_90 device code to run,
+    and folding is what stops every Hopper wheel reading as "missing sm_90".
+
+    For PTX it is not. `compute_90a` PTX loads on sm_90 and on NOTHING else --
+    arch-ACCELERATED images carry instructions that exist on exactly one
+    target, so there is no JIT path forward. Folding it to `sm_90` made a
+    non-portable image indistinguishable from a real forward-compat tail, and
+    C7's `missing_ptx` check -- the whole point of which is "you promised +PTX,
+    prove you shipped it" -- would sign it off.
+
+    Family (`f`) targets are kept: `compute_100f` genuinely covers sm_100 and
+    sm_103, so it is a real, if narrower, tail.
+
+    Verified against nvcc 13.0.88: cuobjdump DOES report the suffix
+    (`k_a.1.sm_120a.ptx`), so this was information already in hand and thrown
+    away. No package in the farm currently ships a `code=compute_XXa` image --
+    all 27 releases measured -- so this closes a hole rather than changing any
+    live verdict. The one place it will bite is sageattention's cu12.4/12.6
+    rows, where upstream maps 9.0 -> compute_90a; that cell will now fail
+    loudly instead of passing on dead bytes. See that package's arch_override.
+    """
     sass, ptx = set(), set()
     for flag, target in (("--list-elf", sass), ("--list-ptx", ptx)):
         r = subprocess.run([cuobjdump, flag, str(binary_path)],
                            capture_output=True, text=True, timeout=timeout)
-        for m in re.finditer(r"sm_(\d+)", r.stdout):
+        for m in re.finditer(r"sm_(\d+)([af]?)", r.stdout):
+            if target is ptx and m.group(2) == "a":
+                continue
             target.add(f"sm_{m.group(1)}")
     return sass, ptx
 
@@ -605,10 +632,14 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
                 "UNVERIFIED: no SASS/PTX visible to any scanner (compressed "
                 "fatbin without cuobjdump?) -- confirm by hand", data)
         return
-    # cuobjdump reports arch-VARIANT names: Hopper cubins come back as `sm_90a`
-    # (arch-specific features), Blackwell can be `sm_100f`. The arch list spells
-    # them `9.0`/`10.0`. Fold the suffix before comparing, or every Hopper wheel
-    # reads as "missing sm_90" the moment this check fails instead of warns.
+    # cuobjdump reports arch-VARIANT names for SASS: Hopper cubins come back as
+    # `sm_90a`. The arch list spells them `9.0`, so fold the suffix, or every
+    # Hopper wheel reads as "missing sm_90".
+    # CORRECTION: this used to add "Blackwell can be `sm_100f`". Measured false
+    # against nvcc 13.0.88 -- `-gencode arch=compute_100f,code=sm_100f` yields
+    # `ELF file 1: k_f.1.sm_100.cubin`. Family cubins are named PLAINLY; only
+    # PTX carries the `f`. Fold anyway (harmless, idempotent), but do not build
+    # on the false premise.
     def _norm(a):
         m = re.match(r"^(sm_\d+)[a-z]*$", a)
         return m.group(1) if m else a
