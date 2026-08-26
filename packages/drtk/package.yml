@@ -26,4 +26,19 @@ extra_deps: numpy setuptools~=80.0
 # 16GB runner with CUTLASS-heavy sources that product is what decides whether
 # the compile swaps or dies.
 jobs: 3
-nvcc_threads: 1
+# nvcc_threads 4, jobs 3 (owner call 2026-08-26). `jobs` cannot help this
+# package and was measured doing nothing: drtk builds SEVEN separate
+# CUDAExtensions, and setuptools builds extensions serially
+# (_distutils/command/build_ext.py::_build_extensions_serial). MAX_JOBS only
+# parallelises WITHIN one extension's ninja invocation, and each of drtk's has
+# 1-2 translation units -- so ninja gets -j3 and two files, seven times over.
+# Live evidence from run 32975448792 (Linux, cu13.0):
+#   MAX_JOBS=3  CMAKE_BUILD_PARALLEL_LEVEL=3
+#   cpu: 25-37% (runq 2-3)      <- ~1 core of 4 busy
+#   mem: 2.4/15.6GB used        <- 13GB idle
+#   ninja: [1/2] [2/2]          <- two edges per invocation
+# nvcc --threads is the knob that fits: it parallelises across GENCODE TARGETS
+# inside a single TU, and drtk's cu13.0 row is six archs
+# (7.5 8.0 8.6 9.0 10.0 12.0), which is exactly where the wall time goes.
+# Memory headroom is ample -- 4 concurrent cicc against 13GB free.
+nvcc_threads: 4
