@@ -100,7 +100,7 @@ shard_link_block = '''
 # Tell MSVC's linker to ignore unresolved externals during a compile-shard
 # build (env var CUDA_WHEELS_SHARD_COUNT set). The resulting .pyd is
 # discarded; only the .o files are uploaded to the link job.
-if(${NATTEN_IS_WINDOWS} AND DEFINED ENV{CUDA_WHEELS_SHARD_COUNT})
+if(NATTEN_IS_WINDOWS AND DEFINED ENV{CUDA_WHEELS_SHARD_COUNT})
     target_link_options(natten PRIVATE "/FORCE:UNRESOLVED")
     message(STATUS "cuda-wheels Windows shard mode: /FORCE:UNRESOLVED enabled")
 endif()
@@ -155,7 +155,14 @@ new_add_lib = '''# --- cuda-wheels arch-specific OBJECT libraries (injected) ---
 # Skipping the target in that shard is correct -- another shard compiles
 # those TUs, and the link job (shard_index 0, no deletion) builds the full
 # target with every source as a cache hit. An empty CMake list is false.
-if(${NATTEN_WITH_BLACKWELL_FNA} AND (AUTOGEN_BLACKWELL_FNA OR AUTOGEN_BLACKWELL_FMHA))
+#
+# NOTE: bare variable names, never ${VAR}. In an if(), ${VAR} is expanded
+# BEFORE parsing, so an undefined variable leaves `if(AND (...))` and cmake
+# dies with "Unknown arguments specified" -- which is exactly what killed
+# every Windows cu13.0 shard on 2026-08-26 (NATTEN_WITH_BLACKWELL_FNA is
+# not defined when the arch list has no sm_100). A bare name is evaluated
+# as a variable and an undefined one is simply false.
+if(NATTEN_WITH_BLACKWELL_FNA AND (AUTOGEN_BLACKWELL_FNA OR AUTOGEN_BLACKWELL_FMHA))
     list(REMOVE_ITEM ALL_SOURCES ${AUTOGEN_BLACKWELL_FNA} ${AUTOGEN_BLACKWELL_FMHA})
     add_library(natten_blackwell OBJECT
         ${AUTOGEN_BLACKWELL_FNA} ${AUTOGEN_BLACKWELL_FMHA})
@@ -189,7 +196,7 @@ endif()
 # Skipping the target in that shard is correct -- another shard compiles
 # those TUs, and the link job (shard_index 0, no deletion) builds the full
 # target with every source as a cache hit. An empty CMake list is false.
-if(${NATTEN_WITH_HOPPER_FNA} AND (AUTOGEN_HOPPER_FNA OR AUTOGEN_HOPPER_FMHA))
+if(NATTEN_WITH_HOPPER_FNA AND (AUTOGEN_HOPPER_FNA OR AUTOGEN_HOPPER_FMHA))
     list(REMOVE_ITEM ALL_SOURCES ${AUTOGEN_HOPPER_FNA} ${AUTOGEN_HOPPER_FMHA})
     add_library(natten_hopper OBJECT
         ${AUTOGEN_HOPPER_FNA} ${AUTOGEN_HOPPER_FMHA})
@@ -217,10 +224,10 @@ endif()
 
 add_library(natten SHARED ${ALL_SOURCES})
 
-if(${NATTEN_WITH_BLACKWELL_FNA})
+if(NATTEN_WITH_BLACKWELL_FNA)
     target_link_libraries(natten PRIVATE $<TARGET_OBJECTS:natten_blackwell>)
 endif()
-if(${NATTEN_WITH_HOPPER_FNA})
+if(NATTEN_WITH_HOPPER_FNA)
     target_link_libraries(natten PRIVATE $<TARGET_OBJECTS:natten_hopper>)
 endif()'''
 if 'cuda-wheels arch-specific OBJECT libraries' in cmake_text:
@@ -252,7 +259,7 @@ msvc_noise_block = '''
 # --- cuda-wheels MSVC noise suppression (injected) ---
 # Suppress high-volume MSVC warnings from CUTLASS template instantiations.
 # Applied via target_compile_options so order vs add_library() doesn't matter.
-if(${NATTEN_IS_WINDOWS})
+if(NATTEN_IS_WINDOWS)
     set(_cuw_msvc_wd_codes
         # First batch (from initial 82k-line log)
         4514  # unreferenced inline function has been removed
