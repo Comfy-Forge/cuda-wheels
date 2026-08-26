@@ -25,8 +25,8 @@ extra_deps: numpy setuptools~=80.0
 # They multiply: peak memory is roughly jobs x nvcc_threads x one cicc. On a
 # 16GB runner with CUTLASS-heavy sources that product is what decides whether
 # the compile swaps or dies.
-jobs: 3
-# nvcc_threads 4, jobs 3 (owner call 2026-08-26). `jobs` cannot help this
+jobs: 1
+# jobs 1, nvcc_threads 4 (owner call 2026-08-26). `jobs` cannot help this
 # package and was measured doing nothing: drtk builds SEVEN separate
 # CUDAExtensions, and setuptools builds extensions serially
 # (_distutils/command/build_ext.py::_build_extensions_serial). MAX_JOBS only
@@ -41,4 +41,8 @@ jobs: 3
 # inside a single TU, and drtk's cu13.0 row is six archs
 # (7.5 8.0 8.6 9.0 10.0 12.0), which is exactly where the wall time goes.
 # Memory headroom is ample -- 4 concurrent cicc against 13GB free.
+# jobs dropped to 1 rather than left at 3: with the extensions built serially
+# anyway, a job count above 1 only matters for the two extensions that hold
+# more than one TU, and keeping it at 1 means the whole 16GB budget belongs to
+# the four cicc processes rather than being nominally split four more ways.
 nvcc_threads: 4
