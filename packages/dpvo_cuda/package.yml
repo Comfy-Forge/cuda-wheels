@@ -35,4 +35,17 @@ extra_deps: numpy
 # sources for it to matter. nvcc --threads parallelises across GENCODE TARGETS
 # inside a single TU, which is work that actually exists here.
 jobs: 1
-nvcc_threads: 3
+# 3 -> 2 (2026-08-26): 3 failed the swap gate on ARM.
+#   ARM  17:22  mem 15.4/15.6GB (0.2 avail) | swap 2.88/3.0 | cicc 4.71 4.67 4.65
+#   ARM  17:24                                              | cicc 5.50 4.98 4.15
+# Three concurrent cicc reached ~5GB each -- jobs x nvcc_threads x one cicc is
+# ~15GB on a 15.6GB runner, so it does not fit in RAM at all.
+#
+# The same cell PASSED on x86 and Windows, which is why this is 2 and not a
+# per-platform value: x86 got there with only two big cicc resident at the
+# sample (4.91 + 4.75 + 0.55) AND 11.0GB of swap to absorb the overflow,
+# against ARM's 3.0GB -- build-linux runs a `fallocate -l 8G ... swapon` step
+# that build-linux-aarch64 does not. So x86 passing was luck plus 3.7x the
+# swap, not evidence that 3 is safe. 2 x ~5GB = ~10GB fits in RAM outright,
+# which is what x86 was actually doing when it passed.
+nvcc_threads: 2
