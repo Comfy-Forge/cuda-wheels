@@ -37,7 +37,12 @@ nvcc_flags: --threads=1
 # cmake is required by NATTEN's setup.py (checks for the executable at build
 # time). Ninja generator is used.
 extra_deps: cmake ninja
-sharding: 20  # sharded for wall-clock; patch reads CUDA_WHEELS_SHARD_INDEX/COUNT; owner order 2026-08-22
+sharding: 40  # owner order 2026-08-26; was 20 (2026-08-22)
+# Raised alongside flash_attn's 20->40. natten autogens ~144 CUTLASS TUs
+# at the cu13.0 arch list (grep_c '__CUDA_ARCH__ *<' over csrc/ is 0, so
+# none are stubs), and max_jobs is pinned to 1 because two simultaneous
+# CUTLASS peaks trip the swap gate on a 16GB runner -- so wall-clock is
+# purely a function of shard count. ~3.6 TUs/shard at 40.
 # The PATCH partitions (deletes foreign autogen .cu files before cmake);
 # the nvcc-seat wrapper must stay a pure ccache pass-through. Running both
 # partitions the intersection (~1/N^2 per shard) -- and the seat wrapper
