@@ -22,11 +22,30 @@ arch_policy:
 # server ARM exists, Grace pairs with Hopper (9.0), and 13.x adds Thor (11.0)
 # as a NATIVE target. Derived from PyTorch's own aarch64 tables (CW-ADR-0012
 # derivation rule applied per platform).
-# A CUDA line ABSENT from this table is deliberately not built for aarch64.
-# 12.4 is absent: NVIDIA's ubuntu2404/sbsa apt repo starts at CUDA 12.5, so
-# the toolkit is uninstallable on GitHub's hosted ARM runners -- and the
-# audience (torch 2.4/2.5 on Grace) is negligible.
+# A CUDA line ABSENT from this table is deliberately not built for aarch64 --
+# generate_matrix.py just `continue`s, with no warning, so an omission here is
+# silent. It is also the ONLY gate on the ARM lane.
+#
+# 12.4 RESTORED 2026-08-26. It was absent on this reasoning:
+#   "NVIDIA's ubuntu2404/sbsa apt repo starts at CUDA 12.5, so the toolkit is
+#    uninstallable on GitHub's hosted ARM runners"
+# That is a true statement about a repo the farm does not use. ARM jobs run in
+# the manylinux_2_28 container (AlmaLinux 8), so setup-cuda takes the
+# /etc/redhat-release branch and installs from rhel8/sbsa; the ubuntu2404 path
+# is labelled in that same file as a "legacy fallback". Measured 2026-08-26:
+#   rhel8/sbsa      -> cuda-toolkit-12-0 12-1 12-2 12-3 12-4 12-5 12-6 12-8 ...
+#   ubuntu2404/sbsa -> cuda-toolkit-12-5 12-6 12-8 12-9
+# and all nine rpms setup-cuda installs exist for 12-4 on rhel8/sbsa
+# (cuda-nvcc-12-4-12.4.99-1.aarch64.rpm, libcublas-devel-12-4-12.4.2.65-1, ...).
+# Upstream's cu124 ARM torch is a real CUDA build, not a mirrored CPU wheel:
+# torch-2.4.0/2.4.1/2.5.0/2.5.1 cp310-cp312 linux_aarch64 all ship
+# libtorch_cuda.so. So the excluded audience was not "negligible", it was
+# 6 cells x 42 packages ~ 252 wheels: every Grace-Hopper / Altra / A100-on-ARM
+# user pinned to torch 2.4.x or 2.5.x.
+# Row matches 12.6: sm_80 (A100/Altra) and sm_90+PTX (Grace-Hopper). Note those
+# torch wheels are ~2.4GB each, so free_disk_space matters on this lane.
 arch_policy_aarch64:
+  "12.4": "8.0;9.0+PTX"
   "12.6": "8.0;9.0+PTX"
   "12.8": "8.0;9.0+PTX;10.0;12.0+PTX"
   "12.9": "8.0;9.0+PTX;10.0;12.0+PTX"
