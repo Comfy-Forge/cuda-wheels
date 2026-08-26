@@ -250,6 +250,7 @@ jobs:
     # accident that excluded Ubuntu-22.04 Grace hosts and JetPack 6).
     container:
       image: quay.io/pypa/manylinux_2_28_aarch64
+      options: --privileged   # swapon needs CAP_SYS_ADMIN (same as x86)
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix).linux_aarch64 }}
@@ -317,6 +318,36 @@ jobs:
           platform: linux
           installer-type: ${{ matrix.cuda_installer }}
           extra-components: ${{ matrix.extra_cuda_components }}
+
+      - name: Add swap space (safety net)
+        if: steps.check.outputs.exists != 'true'
+        # Added 2026-08-26. This step existed on the x86 build job and nowhere
+        # else, so ARM ran on the runner's stock ~3GB against x86's 11GB on an
+        # identical 16GB box -- an asymmetry nobody chose, and the direct cause
+        # of three separate ARM-only failures in one afternoon:
+        #   dpvo_cuda  swap gate: peak swap 2.88/3.0GB, MemAvailable 0.17GB
+        #   sageattn3  "runner lost communication" (OOM kill), 49 min in
+        #   torchao    same, twice, recorded in its own package.yml
+        # The x86 lane survived the identical dpvo_cuda workload having used
+        # MORE swap (4.17GB) -- it simply had somewhere to page to, so
+        # MemAvailable never collapsed and the gate passed it.
+        #
+        # Swap remains a PARACHUTE, not a strategy: if resmon shows swap in
+        # active use the fix is fewer jobs, never more swap. What this buys is
+        # that a brief peak becomes a slow minute instead of the runner being
+        # killed outright -- and a killed runner is the worst case, because the
+        # swap gate is a LATER step and never executes, so the build dies with
+        # no diagnostic at all.
+        run: |
+          # Same constraints as x86: the container runs as root (--privileged
+          # for CAP_SYS_ADMIN) and the swapfile MUST live on a host bind-mount
+          # (RUNNER_TEMP -> host ext4), because the container's own paths are
+          # overlayfs and swapon there fails with "Invalid argument".
+          fallocate -l 8G "$RUNNER_TEMP/swapfile"
+          chmod 600 "$RUNNER_TEMP/swapfile"
+          mkswap "$RUNNER_TEMP/swapfile"
+          swapon "$RUNNER_TEMP/swapfile"
+          free -g | head -2
 
       - name: Setup build environment
         if: steps.check.outputs.exists != 'true'

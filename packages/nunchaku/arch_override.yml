@@ -29,3 +29,23 @@ arch_list_by_cuda_aarch64:
   "12.9": "7.5;8.0;8.6;8.9;12.0"
   "13.0": "7.5;8.0;8.6;8.9;12.0"
   "13.2": "7.5;8.0;8.6;8.9;12.0"
+
+# PTX opt-out for the Blackwell rows. Added 2026-08-26 with the PTX-tail patch.
+#
+# generate_matrix's _ensure_ptx_on_highest_base appends +PTX to the highest
+# base arch of every list, so these rows silently asked for a sm_120 PTX tail
+# that upstream cannot produce: nunchaku builds Blackwell as sm_120a/121a
+# (setup.py appends the "a" deliberately, for the FP4 MMA path), and the PTX of
+# an arch-conditional target is compute_120a, which loads on sm_120 and nothing
+# else -- dead bytes and a false forward-compat promise. The base compute_120
+# that WOULD be portable cannot be built from `a`-only instructions. C7 rejected
+# all three platforms for it (2026-08-26).
+#
+# Only the rows whose top arch is 12.0 are listed. The cu12.4/12.6 rows top out
+# at 8.9, which upstream builds as plain sm_89, so a genuine portable
+# compute_89 tail IS possible there -- patches/nunchaku.py now emits it. Same
+# split, and the same reasoning, as sageattention's no_ptx.
+#
+# This drops no SASS: the wheel still ships 7.5/8.0/8.6/8.9/12.0 exactly as
+# before. It stops the gate claiming a tail that was never there.
+no_ptx: ["12.8", "12.9", "13.0", "13.2"]
