@@ -236,7 +236,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}-linux-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
           if-no-files-found: ignore
 
 
@@ -393,7 +395,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}-linux_aarch64-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
           if-no-files-found: ignore
 
   link-linux:
@@ -494,7 +498,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}-linux-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
 
   link-linux-aarch64:
     name: ARM Link ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
@@ -599,7 +605,9 @@ jobs:
           # architecture never reaches `release`. The unsharded aarch64 job
           # (:364) already gets this right; only the link lane drifted.
           name: ${{ matrix.package }}-linux_aarch64-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
 
   build-windows:
     name: Windows ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }}
@@ -746,7 +754,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}-windows-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
 
   link-windows:
     name: Link ${{ matrix.package }} py${{ matrix.python }} cu${{ matrix.cuda_short }} torch${{ matrix.pytorch }} (Windows)
@@ -825,7 +835,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}-windows-py${{ matrix.python }}-cu${{ matrix.cuda_short }}-torch${{ matrix.pytorch }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
 
   release:
     needs:
@@ -900,6 +912,19 @@ jobs:
               --latest=false \
               "$pkg_dir"/*.whl \
             || gh release upload "${pkg}-latest" "$pkg_dir"/*.whl --clobber
+            # PEP 658 sidecars. Uploaded as <wheel>.metadata assets so their
+            # URL is exactly the wheel URL + ".metadata", which is where a
+            # resolver looks. Best-effort: a missing sidecar simply means the
+            # deps index falls back to opening the wheel, which is the same
+            # answer the no-deps index gives.
+            shopt -s nullglob
+            sidecars=( "$pkg_dir"/*.whl.metadata )
+            shopt -u nullglob
+            if [ ${#sidecars[@]} -gt 0 ]; then
+              gh release upload "${pkg}-latest" "${sidecars[@]}" --clobber \
+                && echo "uploaded ${#sidecars[@]} PEP 658 sidecar(s) for ${pkg}" \
+                || echo "::warning::sidecar upload failed for ${pkg}; the deps index will fall back to reading the wheel"
+            fi
             # Rolling-release hygiene (CW-ADR-0002): for every cell that now
             # holds wheels from multiple versions, keep only the highest.
             pip install -q pyyaml 2>/dev/null || true

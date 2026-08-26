@@ -269,3 +269,60 @@ _require("cuda-wheels arch bridge" in _final_ca,
 _require(_final_ca.count("set(CMAKE_CUDA_ARCHITECTURES") >= 6,
          "pyg_lib: the upstream ladder fallback was damaged by the bridge "
          "injection -- a bare build would now have no architectures at all")
+
+
+# --- Do not record a dependency on NVRTC ------------------------------------
+# The Linux wheels vendor a 109 MB copy of libnvrtc that libpyg.so never calls:
+#
+#   $ readelf --dyn-syms -W libpyg.so | awk '$7=="UND"' | grep -ci nvrtc
+#   0                     # 398 undefined symbols, not one of them from nvrtc
+#   $ readelf -d libpyg.so | grep nvrtc
+#   (NEEDED) Shared library: [libnvrtc-a49e67e8.so.13.0.88]
+#
+# The Windows wheel, same four CUDA modules, is 1.9 MB against Linux's 47.7 MB.
+# The vendored copy could not work anyway -- it dlopens libnvrtc-builtins.so.13.0
+# at runtime and that file is not in the wheel.
+#
+# Nothing in pyg_lib asks for NVRTC. It arrives transitively: torch's cmake puts
+# it in TORCH_LIBRARIES (torch uses NVRTC for its own JIT) and CMakeLists.txt:118
+# links that whole variable. auditwheel then does its job and vendors an
+# unexcluded NEEDED entry.
+#
+# Fixed at the linker rather than by adding an auditwheel --exclude. An exclude
+# gives the library NO rpath and assumes torch has already loaded it eagerly at
+# `import torch`; the action's own comment is explicit that a wrong exclude
+# costs a broken import. --as-needed is exact instead of assumed: the linker
+# records DT_NEEDED only for libraries that actually resolve a symbol, so
+# anything genuinely used (libtorch, libc10, libcudart) is untouched and only
+# the unreferenced entries disappear.
+_cml_ln = _pl.Path("CMakeLists.txt")
+_require(_cml_ln.exists(), "pyg_lib: CMakeLists.txt not found at source root")
+_c_ln = _cml_ln.read_text()
+
+_ln_anchor = "target_link_libraries(${PROJECT_NAME} PRIVATE ${TORCH_LIBRARIES})"
+_require(
+    _ln_anchor in _c_ln,
+    "pyg_lib: the TORCH_LIBRARIES link line was not found in CMakeLists.txt, so "
+    "--as-needed cannot be scoped to it. Without it the wheel vendors 109MB of "
+    "NVRTC that nothing calls.",
+)
+
+if "cuda-wheels as-needed" not in _c_ln:
+    _ln_new = (
+        "# --- cuda-wheels as-needed (injected; see packages/pyg_lib/patches) ---\n"
+        "# Record DT_NEEDED only for libraries that actually resolve a symbol.\n"
+        "# Drops the transitive libnvrtc that TORCH_LIBRARIES drags in and that\n"
+        "# libpyg.so never references (0 undefined nvrtc symbols of 398).\n"
+        "if(NOT WIN32)\n"
+        "  target_link_options(${PROJECT_NAME} PRIVATE \"LINKER:--as-needed\")\n"
+        "endif()\n"
+        + _ln_anchor
+    )
+    _c_ln = _c_ln.replace(_ln_anchor, _ln_new, 1)
+    _cml_ln.write_text(_c_ln)
+    print("pyg_lib patch: --as-needed on the torch link line (drops unused NVRTC)")
+else:
+    print("pyg_lib patch: as-needed block already present -- skipping")
+
+_require("cuda-wheels as-needed" in _cml_ln.read_text(),
+         "pyg_lib: the as-needed block is NOT PRESENT in CMakeLists.txt on disk")

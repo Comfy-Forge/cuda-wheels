@@ -116,6 +116,35 @@ def strip_all_requires_dist(content: str) -> tuple[str, int]:
     return "\n".join(kept) + (sep + body if sep else "\n"), removed
 
 
+_TORCH_DIST = re.compile(
+    r"^Requires-Dist:\s*(torch|torchvision|torchaudio|pytorch-triton[\w-]*|triton)"
+    r"\s*(?:[<>=!~;\[(].*)?$", re.IGNORECASE)
+
+
+def _drop_torch_requires(content: str) -> str:
+    """Remove Requires-Dist lines for the torch family from a sidecar.
+
+    Only the torch family, and only from the SIDECAR -- the wheel itself has
+    already had every dependency removed by strip_all_requires_dist(). See the
+    call site for why torch specifically can never be delegated to a resolver.
+
+    Folded continuation lines go with their header, same as the wholesale
+    strip; leaving them behind would attach an environment marker to whatever
+    header follows.
+    """
+    head, sep, body = content.partition("\n\n")
+    kept, dropping = [], False
+    for line in head.splitlines():
+        if _TORCH_DIST.match(line):
+            dropping = True
+            continue
+        if dropping and line[:1] in (" ", "\t"):
+            continue
+        dropping = False
+        kept.append(line)
+    return "\n".join(kept) + (sep + body if sep else "\n")
+
+
 def fix_wheel(wheel_path: Path) -> bool:
     """Fix METADATA (version) and strip all dependency headers, in-place.
     Returns True if modified."""
@@ -159,6 +188,28 @@ def fix_wheel(wheel_path: Path) -> bool:
             )
             modified = True
 
+        # Capture the dependency-bearing METADATA before the strip. This is
+        # the ONLY moment upstream's Requires-Dist still exists: after the
+        # next four lines it is gone from the wheel forever.
+        #
+        # It is written beside the wheel as `<wheel>.metadata` -- a PEP 658
+        # sidecar. The wheel itself still ships zero dependencies, exactly as
+        # before; the sidecar is a second, optional view of the same wheel that
+        # an index may or may not point at. Publishing both lets one set of
+        # wheels serve two indices:
+        #
+        #   /simple/        emits no data-core-metadata -> pip opens the wheel,
+        #                   sees no Requires-Dist, installs nothing extra.
+        #                   This is comfy-env's index and its behaviour is
+        #                   byte-identical to today.
+        #   /simple-deps/   emits data-core-metadata -> pip reads the sidecar
+        #                   for RESOLUTION and installs the declared deps.
+        #
+        # One artifact, two contracts, no duplicated wheels. The wheel is
+        # unchanged in both cases -- only whether the index advertises the
+        # sidecar differs.
+        sidecar_content = content
+
         # Unconditional, every wheel, every package: ship no dependencies.
         new_content, removed = strip_all_requires_dist(content)
         if new_content != content:
@@ -166,6 +217,22 @@ def fix_wheel(wheel_path: Path) -> bool:
             modified = True
         print(f"  {filename}: stripped {removed} Requires-Dist/Provides-Extra "
               f"header(s) -- the farm declares no dependencies")
+
+        # torch is deliberately NOT offered even on the deps index. These
+        # wheels are pinned to one exact (cuda, torch) ABI, recorded only in
+        # the LOCAL version segment -- which pip ignores for resolution. A
+        # `Requires-Dist: torch` would therefore let a resolver install or swap
+        # a torch that does not match the ABI the extension was compiled
+        # against, which loads and then dies on a missing C++ symbol. That is
+        # the one dependency the farm must never delegate; the CUDA torch is
+        # the consumer's job to install first.
+        sidecar_content = _drop_torch_requires(sidecar_content)
+        sidecar_path = wheel_path.with_name(wheel_path.name + ".metadata")
+        sidecar_path.write_text(sidecar_content, encoding="utf-8")
+        _n_dist = sum(1 for ln in sidecar_content.splitlines()
+                      if ln.startswith("Requires-Dist:"))
+        print(f"  {filename}: wrote PEP 658 sidecar with {_n_dist} "
+              f"Requires-Dist line(s) -> {sidecar_path.name}")
 
         # Prune phantom top_level.txt entries: a declared top-level name that
         # NO member of the wheel provides.

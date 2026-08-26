@@ -29,6 +29,48 @@ def _next_link(link_header):
 _PYTAG_RE = re.compile(r"-(cp\d+)-cp\d+t?-")
 
 
+# --- PEP 658 metadata sidecars ---------------------------------------------
+# The farm ships wheels with ZERO Requires-Dist (see
+# .github/actions/build-wheel/patch_wheel_version.py for why). That is right
+# for comfy-env, which installs by direct URL and must not let a resolver chase
+# a dependency list -- but it means `pip install <pkg>` into a clean
+# environment produces something that cannot import: o_voxel_vb alone needs ten
+# third-party modules, proven by running it.
+#
+# Both audiences can be served from ONE set of wheels. patch_wheel_version
+# writes a `<wheel>.metadata` sidecar carrying the dependency-bearing METADATA,
+# and the release hosts it at exactly the wheel URL + ".metadata", which is
+# where PEP 658 says a resolver looks. Whether an index ADVERTISES that sidecar
+# is then a per-index choice:
+#
+#   /          no attribute -> pip opens the wheel, finds no Requires-Dist,
+#              installs nothing extra. Byte-identical to today's behaviour.
+#   /deps/     attribute present -> pip fetches the sidecar for resolution and
+#              installs the declared dependencies. torch is excluded from the
+#              sidecar on purpose: the ABI is pinned in the local version,
+#              which pip ignores for resolution.
+#
+# The wheels are the same files in both trees, so nothing is duplicated and the
+# two indices can never drift apart in content -- only in what they advertise.
+#
+# `data-core-metadata` is the PEP 714 spelling; `data-dist-info-metadata` is
+# the PEP 658 original that older pip reads. Emitting both is what PEP 714
+# tells index providers to do. The value is "true" rather than a hash: PEP 658
+# permits it when the hash is unavailable, and hashing every sidecar would mean
+# fetching ~14k files on every index build to save pip one integrity check it
+# does not require.
+_PEP658_ATTRS = ' data-core-metadata="true" data-dist-info-metadata="true"'
+
+# The root tree never advertises sidecars; only the /deps/ mirror does.
+WITH_META = False
+
+
+def wheel_anchor(wheel, with_metadata=False):
+    """One PEP 503 anchor, optionally advertising its PEP 658 sidecar."""
+    attrs = _PEP658_ATTRS if with_metadata else ""
+    return f'<a href="{wheel["url"]}"{attrs}>{wheel["filename"]}</a><br>\n'
+
+
 def load_torch_free_packages() -> set:
     """Index-normalised names of packages declaring `links_torch: false`.
 
@@ -373,8 +415,46 @@ def main():
             f.write("<body>\n")
             f.write(f"<h1>{pkg}</h1>\n")
             for wheel in sorted(wheels, key=lambda w: w["filename"]):
-                f.write(f'<a href="{wheel["url"]}">{wheel["filename"]}</a><br>\n')
+                f.write(wheel_anchor(wheel, with_metadata=WITH_META))
             f.write("</body>\n</html>\n")
+
+    # The /deps/ mirror. Same wheels, same URLs, one extra attribute per
+    # anchor -- the only difference between the two indices is whether the
+    # PEP 658 sidecar is advertised. Nothing is duplicated: no wheel is
+    # copied, and both trees point at the same release assets, so they cannot
+    # drift apart in content.
+    #
+    #   pip install <pkg> --extra-index-url .../cuda-wheels/          no deps
+    #   pip install <pkg> --extra-index-url .../cuda-wheels/deps/     with deps
+    deps_root = docs / "deps"
+    deps_root.mkdir(exist_ok=True)
+    with open(deps_root / "index.html", "w") as f:
+        f.write("<!DOCTYPE html>\n<html>\n<head><title>CUDA Wheels (with dependencies)"
+                "</title></head>\n<body>\n")
+        f.write("<h1>CUDA Wheels -- dependency-declaring mirror</h1>\n")
+        f.write("<p>Same wheels as the root index. This tree advertises a PEP 658 "
+                "metadata sidecar per wheel, so a resolver installs each package's "
+                "third-party dependencies. <b>torch is deliberately excluded</b> -- "
+                "these wheels are pinned to one exact (CUDA, torch) ABI in their "
+                "local version, which pip ignores when resolving, so torch must be "
+                "installed first by hand.</p>\n")
+        for pkg in sorted(packages):
+            f.write(f'<a href="{pkg}/">{pkg}</a><br>\n')
+        f.write("</body>\n</html>\n")
+
+    for pkg, wheels in packages.items():
+        pkg_dir = deps_root / pkg
+        pkg_dir.mkdir(exist_ok=True)
+        with open(pkg_dir / "index.html", "w") as f:
+            f.write("<!DOCTYPE html>\n")
+            f.write(f"<html>\n<head><title>{pkg}</title></head>\n")
+            f.write("<body>\n")
+            f.write(f"<h1>{pkg}</h1>\n")
+            for wheel in sorted(wheels, key=lambda w: w["filename"]):
+                f.write(wheel_anchor(wheel, with_metadata=True))
+            f.write("</body>\n</html>\n")
+    print(f"Generated /deps/ mirror (PEP 658 sidecars advertised) for "
+          f"{len(packages)} package(s)")
 
     print(f"Generated index for {len(packages)} built packages:")
     for pkg, wheels in packages.items():
@@ -420,7 +500,7 @@ def main():
                 f.write("<body>\n")
                 f.write(f"<h1>{pkg} -- {cuda} / {torch}</h1>\n")
                 for wheel in sorted(wheels, key=lambda w: w["filename"]):
-                    f.write(f'<a href="{wheel["url"]}">{wheel["filename"]}</a><br>\n')
+                    f.write(wheel_anchor(wheel, with_metadata=WITH_META))
                 f.write("</body>\n</html>\n")
 
     # Machine-readable manifest: consumers (comfy-env first) stop
