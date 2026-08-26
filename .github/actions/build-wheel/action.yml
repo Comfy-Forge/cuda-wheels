@@ -548,8 +548,21 @@ runs:
           *CMakeScratch*|*CompilerId*|*CMakeTmp*|*cmTC_*|*meson-private*|*conftest*) src="" ;;
         esac
         if [ -n "$src" ] && [ -n "$out" ] && [ "${CUW_SHARD_COUNT:-0}" != "0" ]; then
-          h=$(printf %s "$src" | md5sum | cut -c1-8)
-          if [ $(( 0x$h % CUW_SHARD_COUNT )) -ne "${CUW_SHARD_INDEX0:-0}" ]; then
+          # Balanced partition precomputed at setup (see CUW_PART_DIR there):
+          # sorted .cu dealt round-robin, keyed by md5 of the realpath. Falls
+          # back to the old md5(src) % N for anything not in the map -- sources
+          # generated during the build, or non-.cu TUs.
+          mine=""
+          if [ -n "$CUW_PART_DIR" ]; then
+            rp=$(readlink -f "$src" 2>/dev/null || printf %s "$src")
+            k=$(printf %s "$rp" | md5sum | cut -c1-32)
+            [ -f "$CUW_PART_DIR/$k" ] && read mine < "$CUW_PART_DIR/$k"
+          fi
+          if [ -z "$mine" ]; then
+            h=$(printf %s "$src" | md5sum | cut -c1-8)
+            mine=$(( 0x$h % CUW_SHARD_COUNT ))
+          fi
+          if [ "$mine" -ne "${CUW_SHARD_INDEX0:-0}" ]; then
             cp "$CUW_EMPTY_OBJ" "$out"
             [ -n "$dep" ] && printf '%s:\n' "$out" > "$dep"
             [ -n "$CUW_STUB_COUNTER" ] && echo "$src" >> "$CUW_STUB_COUNTER"
@@ -593,6 +606,56 @@ runs:
         if [ "${{ inputs.link-only }}" != "true" ] && [ "${{ inputs.shard-filter }}" = "seat" ]; then
           echo "CUW_SHARD_COUNT=${{ inputs.shard-count }}" >> $GITHUB_ENV
           echo "CUW_SHARD_INDEX0=$(( ${{ inputs.shard-index }} - 1 ))" >> $GITHUB_ENV
+          # ---- Balanced partition map --------------------------------------
+          # The wrapper is stateless -- it sees one TU at a time and cannot know
+          # a global index -- which is why the partition was md5(src) % N. That
+          # is uniform only ON AVERAGE, and at these sizes the variance is the
+          # whole story. Simulated over flash_attn's real 72 sources:
+          #
+          #   N=25  md5:  max=7 min=0  TWO shards with no work   crit 2.43x
+          #   N=20  md5:  max=8 min=1  none empty                crit 2.22x
+          #   N=25  r-r:  max=3 min=2  none empty                crit 1.04x
+          #
+          # so the slowest shard did 2.4x the ideal work while two runners
+          # booted to do nothing at all. Worse, WHICH shards come up empty
+          # depends on the exact path strings hashed -- at N=23 one path form
+          # gives 3 empties and another gives 0 -- so it cannot be tuned away
+          # by picking a different shard count.
+          #
+          # Precompute the assignment here instead, where the whole source tree
+          # IS on disk: sort every .cu and deal them round-robin. Deterministic
+          # across shards (same tree, same sort), so every shard derives the
+          # identical map without coordinating.
+          #
+          # Keyed by md5 of the REALPATH, not the basename: basenames are not
+          # unique (flash_attn has 582 .cu but only 562 distinct names), and
+          # the build system may hand nvcc a relative or an absolute path.
+          #
+          # The map covers the whole tree, not just the files that get built --
+          # which is unknowable here. That is fine: a compiled subset that is
+          # contiguous in path-sort order (flash_attn's 72 are exactly ranks
+          # 0..71) round-robins perfectly, and a scattered subset degrades to
+          # rank % N, which is no worse than the md5 it replaces.
+          #
+          # Only for shard-filter=seat. A source-filter package (natten)
+          # partitions in its patch and DELETES files, so its tree differs per
+          # shard and this map would disagree with itself; its wrapper never
+          # consults the map because CUW_SHARD_COUNT stays unset.
+          PART="$CUW/part"
+          mkdir -p "$PART"
+          SRCROOT="$GITHUB_WORKSPACE/source"
+          _n=0
+          while IFS= read -r _f; do
+            _rp=$(readlink -f "$_f" 2>/dev/null || printf %s "$_f")
+            _k=$(printf %s "$_rp" | md5sum | cut -c1-32)
+            printf '%s\n' "$(( _n % ${{ inputs.shard-count }} ))" > "$PART/$_k"
+            _n=$((_n+1))
+          done < <(find "$SRCROOT" -name '*.cu' -not -path '*/.git/*' 2>/dev/null | sort)
+          echo "CUW_PART_DIR=$PART" >> $GITHUB_ENV
+          echo "balanced partition: $_n .cu source(s) dealt round-robin over ${{ inputs.shard-count }} shards"
+          if [ "$_n" -eq 0 ]; then
+            echo "::warning::no .cu sources found under $SRCROOT -- the wrapper will fall back to the md5 partition (uneven; may leave shards empty)"
+          fi
         fi
         ccache -z || true
         echo "wrapper installed at $CUW/nvcc (real: $REAL_NVCC)"
