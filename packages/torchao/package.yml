@@ -17,7 +17,8 @@ clone_recursive: true          # third_party/cutlass
 # max_jobs 1 (was 3): the ARM runner died twice with "runner lost
 # communication" (OOM starvation kill) at 3 -- CUTLASS TU peaks exceed the
 # 16GB box. At 1 the swap parachute is also legal under the swap gate.
-max_jobs: 1
+jobs: 3
+nvcc_threads: 1
 verify:
   # _C_cutlass_90a / _C_mxfp8 are torch-ops libraries with no PyInit --
   # loaded via torch.ops.load_library by torchao's facade, never imported

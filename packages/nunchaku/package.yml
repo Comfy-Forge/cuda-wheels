@@ -20,7 +20,8 @@ clone_recursive: true          # cutlass + Block-Sparse-Attention submodules
 pre_build_script: echo "NUNCHAKU_INSTALL_MODE=ALL" >> $GITHUB_ENV
 # Upstream hardcodes --threads=len(sm_targets) (~6); the farm's trailing
 # --threads=1 wins. Cap jobs for the CUTLASS-heavy kernels.
-max_jobs: 2
+jobs: 3
+nvcc_threads: 1
 # FluxModel.cpp includes nvtx3/nvToolsExt.h -- NVTX is an opt-in toolkit
 # component on the farm (cuda-nvtx-<ver> on rhel8).
 extra_cuda_components: nvtx

@@ -6,7 +6,8 @@ patch_script: packages/sageattention/patches/sageattention.py
 # Constrain CI peak memory: sage's massive template instantiations × N arches
 # OOM 16GB github-hosted windows runners under unlimited parallelism. Pair with
 # nvcc --threads=1 in patches/sageattention.py.
-max_jobs: 2
+jobs: 3
+nvcc_threads: 1
 verify:
   expect_device_error: true  # __init__ probes the GPU; device errors expected on CI
   # 10 Linux binaries DT_NEEDED libcuda.so.1 (the driver, never shippable).

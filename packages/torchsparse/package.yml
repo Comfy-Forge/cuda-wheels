@@ -11,7 +11,8 @@ source_tag: v2.0.0
 version: 2.0.0b0
 # Plain CUDAExtension with no gencode of its own -- it inherits
 # TORCH_CUDA_ARCH_LIST, so the shared grid arch lists apply unchanged.
-max_jobs: 3   # five 100-120KB implicit-GEMM TUs; heavy tail
+jobs: 3   # five 100-120KB implicit-GEMM TUs; heavy tail
+nvcc_threads: 1
 extra_deps: tqdm   # setup.py imports it at metadata generation
 patch_script: packages/torchsparse/patches/torchsparse.py
 # Google sparsehash (header-only) -- hashmap_cpu.hpp includes

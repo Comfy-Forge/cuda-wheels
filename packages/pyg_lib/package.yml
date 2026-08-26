@@ -7,6 +7,7 @@ patch_script: packages/pyg_lib/patches/pyg_lib.py
 clone_recursive: true
 # cmake --build with no -j upstream; reached via the CMAKE_BUILD_PARALLEL_LEVEL
 # mirror. Vendored CUTLASS TUs -> heavy tail, keep at 3.
-max_jobs: 3
+jobs: 3
+nvcc_threads: 1
 verify:
   import_name: pyg_lib   # top_level.txt also lists libpyg, which is a DLL not a module

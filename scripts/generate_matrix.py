@@ -765,11 +765,18 @@ def generate_matrix(package_filter: str, overwrite: bool = False,
                         "extra_deps": pkg.get("extra_deps", ""),
                         "pre_build_script": pkg.get("pre_build_script", ""),
                         "free_disk_space": pkg.get("free_disk_space", defaults.get("free_disk_space", False)),
-                        "max_jobs": pkg.get("max_jobs", defaults.get("max_jobs", 0)),
+
                         # nvcc --threads (per-arch device compiles within one
                         # TU). Farm default 1: same-TU per-arch peaks land
                         # simultaneously; RAM is better spent on max_jobs.
-                        "nvcc_threads": int(pkg.get("nvcc_threads", defaults.get("nvcc_threads", 1))),
+                        # Both mandatory in package.yml, no fallback -- see
+                        # package_loader._check_parallelism_declared. Reading
+                        # them with .get(..., default) is what let 30 of 42
+                        # packages never state a job count and NONE state a
+                        # thread count, while those two numbers multiply into
+                        # peak compile memory.
+                        "nvcc_threads": int(pkg["nvcc_threads"]),
+                        "jobs": int(pkg["jobs"]),
                         "clone_recursive": pkg.get("clone_recursive", defaults.get("clone_recursive", False)),
                         "patch_script": pkg.get("patch_script", ""),
                         "build_subdir": pkg.get("build_subdir", ""),

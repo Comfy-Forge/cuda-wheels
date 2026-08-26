@@ -61,6 +61,43 @@ def _check_pre_build_not_redactable(cfg: dict, pkg_dir: Path) -> None:
             f"'pre_build_script: bash packages/{pkg_dir.name}/pre_build.sh'.")
 
 
+def _check_parallelism_declared(cfg: dict, pkg_dir: Path) -> None:
+    """`jobs` and `nvcc_threads` are mandatory. No defaults, deliberately.
+
+    They used to fall back to defaults/python_cuda_torch_os_policy.yml, and the
+    result was that 30 of 42 packages never stated a job count and NOT ONE ever
+    stated a thread count -- so the two numbers that decide whether a compile
+    fits in 16GB were invisible in the place a reader looks for them. Worse,
+    "unset" is not neutral: several upstreams pick their own MAX_JOBS when the
+    env is empty, and some pick 10, which on a 4-vCPU runner is -j10 and an OOM.
+    An explicit value preempts that hijack; an absent one hands the decision to
+    whichever setup.py happens to have an opinion.
+
+    Peak memory is roughly `jobs x nvcc_threads x one cicc`, so these two are a
+    pair and belong together, written down, per package.
+    """
+    missing = [k for k in ("jobs", "nvcc_threads") if cfg.get(k) is None]
+    if missing:
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}/package.yml does not declare "
+            f"{' and '.join(missing)}. Both are required in every package, "
+            f"with no default -- they decide peak compile memory together "
+            f"(jobs x nvcc_threads x one cicc). Start from jobs: 3, "
+            f"nvcc_threads: 1 and lower `jobs` if the build swaps.")
+    for k in ("jobs", "nvcc_threads"):
+        v = cfg[k]
+        if not isinstance(v, int) or v < 1:
+            raise SystemExit(
+                f"ERROR: {pkg_dir.name}/package.yml has {k}: {v!r} -- must be "
+                f"an integer >= 1. There is no '0 means default' any more; "
+                f"the value is used verbatim.")
+    if "max_jobs" in cfg:
+        raise SystemExit(
+            f"ERROR: {pkg_dir.name}/package.yml still uses `max_jobs`. It was "
+            f"renamed to `jobs` (2026-08-26) because it is the actual number of "
+            f"compiler processes, not a ceiling. Rename the key.")
+
+
 def _check_no_requires_dist(cfg: dict, pkg_dir: Path) -> None:
     """`requires_dist` is retired -- declaring it is a hard error.
 
@@ -87,6 +124,7 @@ def load_package(pkg_dir: Path) -> dict:
     cfg = yaml.safe_load((pkg_dir / "package.yml").read_text()) or {}
     _check_pre_build_not_redactable(cfg, pkg_dir)
     _check_no_requires_dist(cfg, pkg_dir)
+    _check_parallelism_declared(cfg, pkg_dir)
     for extra in ("pcto_override.yml", "arch_override.yml"):
         p = pkg_dir / extra
         if p.exists():

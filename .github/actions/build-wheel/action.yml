@@ -28,7 +28,7 @@ inputs:
   platform:
     description: 'Platform (linux or windows)'
     required: true
-  max-jobs:
+  jobs:
     description: 'Max parallel compilation jobs'
     required: false
     default: '1'
@@ -672,11 +672,11 @@ runs:
         # a hand-set `max_jobs: 2`. Leaving it unset lets torch size the job
         # count from cpu_count(). build.yml already treats '0' as unset for the
         # dispatch input; this makes the action agree.
-        if [ -n "${{ inputs.max-jobs }}" ] && [ "${{ inputs.max-jobs }}" != "0" ]; then
-          export MAX_JOBS=${{ inputs.max-jobs }}
+        if [ -n "${{ inputs.jobs }}" ] && [ "${{ inputs.jobs }}" != "0" ]; then
+          export MAX_JOBS=${{ inputs.jobs }}
           # CMake-family builds (pyg_lib, llama_cpp_python, skbuild trees)
           # never see ninja -j from MAX_JOBS; this is their jobs knob.
-          export CMAKE_BUILD_PARALLEL_LEVEL=${{ inputs.max-jobs }}
+          export CMAKE_BUILD_PARALLEL_LEVEL=${{ inputs.jobs }}
         fi
         # Force CUDA build even without a GPU (torch.cuda.is_available() is False on CI)
         export FORCE_CUDA=1
@@ -811,7 +811,7 @@ runs:
         memlow=$(cat "$RUNNER_TEMP/cuw_mem_lowwater" 2>/dev/null || echo 999)
         CELL="${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-short }} torch${{ inputs.pytorch-version }}"
         if awk -v u="$used" 'BEGIN{exit !(u > 0.1)}'; then
-          MJ="${{ inputs.max-jobs }}"; NT="${{ inputs.nvcc-threads }}"
+          MJ="${{ inputs.jobs }}"; NT="${{ inputs.nvcc-threads }}"
           if [ "$MJ" = "1" ] && [ "$NT" = "1" ]; then
             # Already at the floor -- swap here is the parachute doing its
             # one legitimate job. Warn, don't fail.
@@ -1179,9 +1179,9 @@ runs:
         }
         cd $buildDir
         $env:TORCH_CUDA_ARCH_LIST = "${{ inputs.arch-list }}"
-        if ("${{ inputs.max-jobs }}" -ne "") {
-          $env:MAX_JOBS = "${{ inputs.max-jobs }}"
-          $env:CMAKE_BUILD_PARALLEL_LEVEL = "${{ inputs.max-jobs }}"
+        if ("${{ inputs.jobs }}" -ne "") {
+          $env:MAX_JOBS = "${{ inputs.jobs }}"
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = "${{ inputs.jobs }}"
         }
         $env:DISTUTILS_USE_SDK = "1"
         # torch < 2.7's cpp_extension omits /std:c++17 from its MSVC flags
@@ -1287,7 +1287,7 @@ runs:
         $memlow = if (Test-Path $lw) { [double](Get-Content $lw) } else { 999 }
         $pfpeak = if (Test-Path $hw) { [double](Get-Content $hw) } else { 0 }
         $cell = "${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-version }} torch${{ inputs.pytorch-version }} windows"
-        Write-Host "[windows memory] available low-water ${memlow}GB, pagefile peak ${pfpeak}GB, max_jobs='${{ inputs.max-jobs }}' nvcc_threads='${{ inputs.nvcc-threads }}'"
+        Write-Host "[windows memory] available low-water ${memlow}GB, pagefile peak ${pfpeak}GB, max_jobs='${{ inputs.jobs }}' nvcc_threads='${{ inputs.nvcc-threads }}'"
         if ($memlow -lt 2.0) {
           Write-Host "::warning title=Windows build ran low on memory::${cell}: available memory fell to ${memlow}GB (pagefile peak ${pfpeak}GB). A compile this close to the ceiling is one template instantiation away from dying with an unexplained compiler crash -- lower max_jobs for this package."
         } elseif ($pfpeak -gt 1.0) {

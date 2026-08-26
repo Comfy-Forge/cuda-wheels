@@ -2,3 +2,21 @@ name: simple_knn
 links_torch: true   # compiled against libtorch: one wheel per (cuda x torch) pair
 source_repo: camenduru/simple-knn
 source_tag: 60f461f4a56b7967e5d8045bf92f8c33f36976d0
+
+# Compile parallelism. BOTH are mandatory in every package.yml -- there is no
+# default to fall back on, by design (see scripts/package_loader.py).
+#
+#   jobs          how many compiler processes run at once. The actual number,
+#                 not a ceiling: exported as MAX_JOBS and
+#                 CMAKE_BUILD_PARALLEL_LEVEL. An explicit value also preempts
+#                 packages whose setup.py picks its own when the env is unset
+#                 -- some choose 10, which on a 4-vCPU runner is -j10.
+#   nvcc_threads  nvcc --threads: parallel device compiles WITHIN one TU, one
+#                 per gencode target. Appended as a TRAILING --threads so it
+#                 beats any setup.py hardcode.
+#
+# They multiply: peak memory is roughly jobs x nvcc_threads x one cicc. On a
+# 16GB runner with CUTLASS-heavy sources that product is what decides whether
+# the compile swaps or dies.
+jobs: 3
+nvcc_threads: 1

@@ -12,7 +12,8 @@ nvcc_flags: -diag-suppress=221
 # Explicit max_jobs bypasses upstream's free-RAM estimator, which under
 # the farm's 4-arch list computes 18GB/job and lands on jobs=1 (serial).
 # With nvcc_threads=1 the real per-job peak is ~one cicc, so 2 fits.
-max_jobs: 1
+jobs: 1
+nvcc_threads: 3
 sharding: 40  # ~73 .cu TUs -> ~2 per shard; owner order 2026-08-25
 # Was 20 (owner order 2026-08-22). Raised now that the Windows link path
 # actually works: the link job went from >108min (never completing --

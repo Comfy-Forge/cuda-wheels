@@ -34,7 +34,8 @@ clone_recursive: true
 # nvcc_threads, which parallelises WITHIN one TU -- but that is at the farm
 # default of 1 as well (see below), so this package compiles serially and
 # buys its wall clock from shard count.
-max_jobs: 1
+jobs: 1
+nvcc_threads: 3
 # nvcc --threads stays at the farm default of 1 (owner order 2026-08-26).
 # Do NOT spell it here. There is a dedicated `nvcc_threads:` field, and the
 # build action appends `--threads=<nvcc_threads>` as the LAST flag on
