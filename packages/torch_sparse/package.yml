@@ -20,5 +20,15 @@ clone_recursive: true
 # They multiply: peak memory is roughly jobs x nvcc_threads x one cicc. On a
 # 16GB runner with CUTLASS-heavy sources that product is what decides whether
 # the compile swaps or dies.
-jobs: 3
-nvcc_threads: 1
+# jobs 1 / nvcc_threads 3 (owner call 2026-08-26). MEMORY-NEUTRAL reshape:
+# 3 jobs x 1 thread and 1 job x 3 threads both run three cicc processes. What
+# changes is WHERE the parallelism lives -- and here it could not live at the
+# process level at all.
+# Measured: 24 extensions x 1-3 sources, 43% avg CPU, 23min.
+# setuptools builds extensions SERIALLY
+# (_distutils/command/build_ext.py::_build_extensions_serial), so MAX_JOBS only
+# ever reaches the ninja run inside ONE extension -- and these hold too few
+# sources for it to matter. nvcc --threads parallelises across GENCODE TARGETS
+# inside a single TU, which is work that actually exists here.
+jobs: 1
+nvcc_threads: 3
