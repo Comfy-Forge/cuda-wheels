@@ -52,9 +52,15 @@ def cuda_mm() -> tuple[int, int]:
 #   * pinned to c++17 -> torch >= 2.13's headers fail on MSVC (C7555 designated
 #     initializers in c10/util/StringUtil.h, C7582 bit-field default member
 #     initializers in c10/core/AutogradState.h)
-#   * pinned to c++20 -> torch < 2.7 fails (nvcc's EDG misparses
+#   * pinned to c++20 -> torch < 2.7 fails ON WINDOWS (nvcc's EDG misparses
 #     `std::move(ivalue).to<List<Elem>>()` in ATen/core/ivalue_inl.h; and on a
-#     pinned MSVC 14.29 host nvcc drops the flag and cudafe++ crashes)
+#     pinned MSVC 14.29 host nvcc drops the flag and cudafe++ crashes).
+#     "ON WINDOWS" added 2026-08-26: this used to describe the misparse without
+#     qualifying the platform, which directly contradicted
+#     packages/cubvh/patches/cubvh.py, whose gate only keeps c++17 on Windows.
+#     Settled by building it -- cubvh cu12.4 / torch 2.4.1 on Linux compiles
+#     clean at c++20 (run 32968713626). The GCC/EDG combination is fine; it is
+#     MSVC's front end that chokes.
 # The farm's answer is to delete the package's opinion and let torch decide.
 # Audited and recommended by the 2026-08-24 review board.
 # --------------------------------------------------------------------------
