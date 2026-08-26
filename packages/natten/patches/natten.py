@@ -433,10 +433,31 @@ shim = '''# cuda-wheels shim: bridge TORCH_CUDA_ARCH_LIST -> NATTEN_CUDA_ARCH
 # drive NATTEN with its standard env vars. See patches/natten.py.
 if not os.getenv("NATTEN_CUDA_ARCH"):
     _torch_arch = os.getenv("TORCH_CUDA_ARCH_LIST", "")
-    _parts = [p.replace("+PTX", "").strip() for p in _torch_arch.replace(";", " ").split()]
+    _raw = [p.strip() for p in _torch_arch.replace(";", " ").split() if p.strip()]
+    _parts = [p.replace("+PTX", "").strip() for p in _raw]
     _parts = [p for p in _parts if p]
     if _parts:
         os.environ["NATTEN_CUDA_ARCH"] = ";".join(_parts)
+    # Remember WHICH archs carried +PTX before we strip it. NATTEN's parser
+    # rejects the suffix, so it has to come off -- but dropping it on the
+    # floor is why every natten wheel shipped SASS only and was rejected by
+    # C7 with "declared +PTX for ['sm_120'] but shipped NO PTX ... no JIT
+    # path onto newer GPUs". Upstream's own knob (NATTEN_BUILD_WITH_PTX=1)
+    # is all-or-nothing: it emits PTX for EVERY arch in the list, which is
+    # both bloat and, for 90/100/103, the useless `a` form. Carry the exact
+    # set instead and let arch_list_to_cmake_tags below honour it.
+    # Stored in NATTEN's own int form (8.6 -> 86, per _check_cuda_arch).
+    if not os.getenv("CUW_NATTEN_PTX_ARCH"):
+        _ptx = [p.replace("+PTX", "").strip() for p in _raw if "+PTX" in p]
+        _ptx_i = []
+        for _p in _ptx:
+            try:
+                _ptx_i.append(str(int(float(_p) * 10)))
+            except ValueError:
+                pass
+        if _ptx_i:
+            os.environ["CUW_NATTEN_PTX_ARCH"] = ";".join(_ptx_i)
+            print(f"[cuda-wheels] PTX tail requested for sm_{_ptx_i}")
 if not os.getenv("NATTEN_N_WORKERS"):
     _mj = os.getenv("MAX_JOBS", "")
     if _mj.isdigit() and int(_mj) > 0:
@@ -486,6 +507,63 @@ else:
         "patch against the pinned source_tag."
     )
 
+# --- PTX tail (pairs with the CUW_NATTEN_PTX_ARCH capture in the shim) -------
+# Teach arch_list_to_cmake_tags to emit `-virtual` for exactly the archs the
+# farm marked +PTX. Without this natten builds `-real` only, ships no PTX at
+# all, and C7 rejects every wheel -- which is why the release currently holds
+# zero natten assets despite ~70 runner-hours per pass.
+ptx_anchor = """    if WITH_PTX:
+        ptx_tags = (
+            "-virtual;".join(
+                [str(x) if x not in [90, 100, 103] else f"{x}a" for x in arch_list]
+            )
+            + "-virtual"
+        )
+
+        return real_tags + ";" + ptx_tags
+    return real_tags"""
+
+ptx_replacement = """    # --- cuda-wheels: farm-directed PTX tail (see patches/natten.py) ---
+    # Upstream's WITH_PTX is all-or-nothing and maps 90/100/103 to the
+    # arch-conditional `90a`/`100a`/`103a` form. Arch-conditional PTX can only
+    # ever JIT back onto that same arch, so it is not a forward-compat tail --
+    # and verify_wheel.py's _cuobjdump_archs drops `a` targets from the PTX set
+    # for precisely that reason, so emitting it would satisfy nobody.
+    # Emit BASE-arch virtual tags for the farm's +PTX archs only.
+    _cuw_ptx = []
+    for _a in os.getenv("CUW_NATTEN_PTX_ARCH", "").replace(";", " ").split():
+        try:
+            _v = int(_a)
+        except ValueError:
+            continue
+        if _v in arch_list and _v not in _cuw_ptx:
+            _cuw_ptx.append(_v)
+    if _cuw_ptx:
+        _cuw_tags = "-virtual;".join(str(x) for x in _cuw_ptx) + "-virtual"
+        print(f"[cuda-wheels] CUDA_ARCHITECTURES PTX tail: {_cuw_tags}")
+        return real_tags + ";" + _cuw_tags
+    # --- end cuda-wheels ---
+    if WITH_PTX:
+        ptx_tags = (
+            "-virtual;".join(
+                [str(x) if x not in [90, 100, 103] else f"{x}a" for x in arch_list]
+            )
+            + "-virtual"
+        )
+
+        return real_tags + ";" + ptx_tags
+    return real_tags"""
+
+if ptx_anchor in content:
+    content = content.replace(ptx_anchor, ptx_replacement, 1)
+    print("Patched setup.py: arch_list_to_cmake_tags honours CUW_NATTEN_PTX_ARCH")
+else:
+    raise SystemExit(
+        "FATAL: arch_list_to_cmake_tags' WITH_PTX branch not found in setup.py. "
+        "Without it natten ships SASS-only wheels that C7 rejects for every "
+        "cell. Re-check the patch against the pinned source_tag."
+    )
+
 # Shard filter for cmake-style build:
 # Inject a post-autogen filter that deletes .cu files NOT in this shard's
 # slice, gated on CUDA_WHEELS_SHARD_INDEX/COUNT env vars (set by the
@@ -516,13 +594,27 @@ autogen_filter = autogen_anchor + """
                 _cuw_shard_index = int(os.environ.get('CUDA_WHEELS_SHARD_INDEX', '1'))
                 _cuw_pattern = path.join(autogen_dir, 'src', 'cuda', '**', '*.cu')
                 _cuw_all = sorted(glob.glob(_cuw_pattern, recursive=True))
+                # csrc/src/*.cu -- the hand-written torch-API dispatch layer,
+                # picked up by cmake's TORCH_APIS glob (csrc/CMakeLists.txt:164)
+                # and NOT under autogen/, so the pattern above never saw them.
+                # All 14 were therefore compiled by EVERY shard: they pull in
+                # the same CUTLASS headers as the autogen kernels, cost ~27
+                # minutes, and put a floor under the shard wall clock that no
+                # `sharding:` value could lower. Partition them with the same
+                # round-robin so each is compiled once across the fleet; the
+                # link job rebuilds the full set from the merged cache.
+                _cuw_shared = sorted(glob.glob(
+                    path.join(path.dirname(autogen_dir), 'src', '*.cu')))
+                _cuw_all = _cuw_all + _cuw_shared
                 _cuw_kept = [f for i, f in enumerate(_cuw_all)
                              if i % _cuw_shard_count == _cuw_shard_index - 1]
                 _cuw_to_delete = set(_cuw_all) - set(_cuw_kept)
                 for _f in _cuw_to_delete:
                     os.remove(_f)
+                _cuw_kept_shared = [f for f in _cuw_kept if f in set(_cuw_shared)]
                 print(f'[cuda-wheels natten shard {_cuw_shard_index}/{_cuw_shard_count}] '
-                      f'kept {len(_cuw_kept)}/{len(_cuw_all)} autogen .cu files; '
+                      f'kept {len(_cuw_kept)}/{len(_cuw_all)} .cu files '
+                      f'({len(_cuw_kept_shared)}/{len(_cuw_shared)} shared torch-API); '
                       f'deleted {len(_cuw_to_delete)}')
 """
 

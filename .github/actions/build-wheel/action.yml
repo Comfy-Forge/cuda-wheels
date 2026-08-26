@@ -482,11 +482,44 @@ runs:
       if: inputs.platform == 'linux' && inputs.shard-count != '0'
       shell: bash
       run: |
-        if [ -f /etc/redhat-release ]; then
-          dnf install -y -q epel-release >/dev/null && dnf install -y -q ccache >/dev/null
-        else
-          sudo apt-get install -y -qq ccache >/dev/null
-        fi
+        # ccache >= 4 is MANDATORY, not preferred. The manylinux_2_28 image is
+        # AlmaLinux 8, whose EPEL ccache is 3.7.7 -- and ccache 3.x has no "cu"
+        # entry in its source-language table, so every TU that cmake compiles
+        # as `-x cu` is rejected with "unsupported source language" and simply
+        # passed through uncached. That is not a slow cache, it is NO cache:
+        # natten's Linux shards reported `files in cache 0` and shipped a
+        # 513-byte tarball, so the link job recompiled all ~160 TUs from
+        # scratch -- the entire point of the shard lane, silently voided.
+        # (flash_attn escaped it only because torch's ninja writer does not
+        # pass -x cu, so its 72/72 hits were never evidence the lane worked.)
+        # Verified locally against nvcc 13.0: ccache 4.14 + `-x cu` gives
+        # cache_miss 1 then direct_cache_hit 1, unsupported_source_language 0.
+        # Pinned static musl build: no glibc dependency, so the same binary
+        # works in every manylinux container, and no package-manager roulette.
+        CC_VER=4.14
+        case "$(uname -m)" in
+          x86_64)  CC_ARCH=x86_64;  CC_SHA=888eaf9697919d6eba77be797e9d9c9e40e734d11d67d25a79b075c3f79f6c77 ;;
+          aarch64) CC_ARCH=aarch64; CC_SHA=40623f11012a97d60c7d90058d7e3c8c70a3802af53a34067b89e6345c89db69 ;;
+          *) echo "::error::unsupported arch $(uname -m) for the ccache pin"; exit 1 ;;
+        esac
+        CC_TAR="ccache-${CC_VER}-linux-${CC_ARCH}-musl-static.tar.xz"
+        curl -fsSL -o "$RUNNER_TEMP/$CC_TAR" \
+          "https://github.com/ccache/ccache/releases/download/v${CC_VER}/${CC_TAR}"
+        echo "${CC_SHA}  $RUNNER_TEMP/$CC_TAR" | sha256sum -c - >/dev/null
+        tar -xf "$RUNNER_TEMP/$CC_TAR" -C "$RUNNER_TEMP"
+        mkdir -p "$RUNNER_TEMP/ccache-bin"
+        cp "$RUNNER_TEMP/ccache-${CC_VER}-linux-${CC_ARCH}-musl-static/ccache" \
+           "$RUNNER_TEMP/ccache-bin/ccache"
+        chmod +x "$RUNNER_TEMP/ccache-bin/ccache"
+        export PATH="$RUNNER_TEMP/ccache-bin:$PATH"
+        echo "$RUNNER_TEMP/ccache-bin" >> $GITHUB_PATH
+        # Belt and braces: if PATH resolution ever picks up a system ccache
+        # ahead of ours, fail here rather than 5 hours later in the link job.
+        CC_HAVE=$(ccache --version | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+        case "$CC_HAVE" in
+          [0-3].*) echo "::error::ccache $CC_HAVE is on PATH but >= 4 is required: 3.x cannot cache '-x cu' and the shard lane would produce an empty cache."; exit 1 ;;
+        esac
+        echo "ccache $CC_HAVE ($(command -v ccache))"
         CUW=$RUNNER_TEMP/cuw
         mkdir -p "$CUW" "$RUNNER_TEMP/ccache"
         cc -x c -c /dev/null -o "$CUW/empty.o"
@@ -706,6 +739,19 @@ runs:
         # and neutralizes setup.py hardcodes (nunchaku's len(sm_targets),
         # torchao's -t=0, sageattn3's --threads 4).
         export NVCC_APPEND_FLAGS="${NVCC_APPEND_FLAGS:-} --threads=${{ inputs.nvcc-threads }}"
+        # Compress device images in every fatbin. 40 of 42 packages shipped
+        # SASS uncompressed because nothing asked for it: fatbinary's own
+        # --compress defaults to true but covers only "ptx and debug images",
+        # NOT the SASS, which is the bulk of a multi-gencode wheel.
+        # Measured (nvcc 13.0, 4 gencodes, synthetic): 455920 -> 119552 bytes,
+        # -73.8%; on a real CUTLASS TU the engineer measured 5.68MB -> 1.66MB
+        # (-71%), compile cost +0.4s (within noise).
+        # -Xfatbin -compress-all, not the nvcc-level -compress-mode=size: the
+        # latter does not exist on the 12.4 toolkit and this one knob has to
+        # be valid on every CUDA line the farm builds (12.4 .. 13.2).
+        # Decompression is done by the driver at module load, so this costs
+        # shipped-kernel launch latency once per process, not throughput.
+        export NVCC_APPEND_FLAGS="${NVCC_APPEND_FLAGS:-} -Xfatbin -compress-all"
         # Shard env vars for source-filter packages (shard-filter=source,
         # e.g. NATTEN): their PATCH partitions the source list itself (the
         # cmake autogen delete-filter); the seat wrapper stays pure ccache.
@@ -1233,6 +1279,10 @@ runs:
         }
         # Trailing --threads wins over setup.py hardcodes (see Linux block).
         $env:NVCC_APPEND_FLAGS = "$($env:NVCC_APPEND_FLAGS) --threads=${{ inputs.nvcc-threads }}".Trim()
+        # Compress device images in every fatbin -- see the Linux block for
+        # the measurement and for why it is -Xfatbin -compress-all rather
+        # than the nvcc-level -compress-mode (absent on the 12.4 toolkit).
+        $env:NVCC_APPEND_FLAGS = "$($env:NVCC_APPEND_FLAGS) -Xfatbin -compress-all".Trim()
         # Shard env vars for source-filter packages (shard-filter=source,
         # e.g. NATTEN): their patch partitions the source list itself; see
         # the equivalent Linux block. Never set alongside the CUDAExtension
@@ -1364,9 +1414,26 @@ runs:
       shell: bash
       run: |
         ccache -s || true
-        FILES=$(find "$RUNNER_TEMP/ccache" -type f | wc -l)
-        if [ "$FILES" = "0" ]; then
-          echo "::error::shard produced an empty compiler cache -- the wrapper was never invoked (build system bypassed PYTORCH_NVCC/CUDACXX?)"
+        # Ask ccache what it stored, do NOT count files in its directory.
+        # `find "$CCACHE_DIR" -type f | wc -l` could never return 0: ccache
+        # keeps CACHEDIR.TAG, per-shard `stats` files and tmp/.cleaned inside
+        # its own cache dir, and the `ccache -z` in the setup step creates
+        # them BEFORE any compile runs. So this guard passed unconditionally
+        # -- including through the whole ccache-3.x era where the real answer
+        # was `files_in_cache 0` and the shard tarball was 513 bytes.
+        STATS=$(ccache --print-stats 2>/dev/null || true)
+        ENTRIES=$(echo "$STATS" | awk -F'\t' '$1 == "files_in_cache" {print $2+0; exit}')
+        MISSES=$(echo "$STATS" | awk -F'\t' '$1 == "cache_miss" {n+=$2} END{print n+0}')
+        echo "shard cache: ${ENTRIES:-0} entries, $MISSES compile(s) stored"
+        if [ "${ENTRIES:-0}" -eq 0 ]; then
+          echo "::error::shard stored ZERO cache entries (files_in_cache=0). Either the wrapper was never invoked (build system bypassed PYTORCH_NVCC/CUDACXX) or ccache refused every TU (a 3.x 'unsupported source language' on -x cu). The link job would recompile everything."
+          ccache --print-stats 2>/dev/null | grep -iE "unsupported|files_in_cache|cache_miss" || true
+          exit 1
+        fi
+        # A shard compiles its own slice cold, so it must MISS: zero misses
+        # with nonzero entries means this job compiled nothing of its own.
+        if [ "$MISSES" -eq 0 ]; then
+          echo "::error::shard stored $ENTRIES entries but recorded ZERO cache misses -- this shard compiled none of its own slice. Partition or wrapper bug."
           exit 1
         fi
         mkdir -p $GITHUB_WORKSPACE/shard-out
