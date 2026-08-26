@@ -602,8 +602,17 @@ runs:
         MEM_LOWWATER_FILE="$RUNNER_TEMP/cuw_mem_lowwater"
         echo "999" > "$MEM_LOWWATER_FILE"
         ( while true; do
-            mem=$(awk '/MemAvailable/{a=$2/1024/1024} /MemTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB free", a, t}' /proc/meminfo 2>/dev/null || echo "?")
-            swap=$(awk '/SwapFree/{f=$2/1024/1024} /SwapTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB swap free", f, t}' /proc/meminfo 2>/dev/null || echo "?")
+            # USED, not free. This line used to print "12.4/15.6GB free" while
+            # every other number on it was a consumption figure, so it read as
+            # "12.4GB in use" -- which makes a 4.5GB cicc in top3 look like it
+            # is hiding 8GB somewhere. Report the number the reader is actually
+            # looking for and keep MemAvailable in parentheses, because that is
+            # the figure the swap gate's low-water message quotes.
+            mem=$(awk '/MemAvailable/{a=$2/1024/1024} /MemTotal/{t=$2/1024/1024} END{printf "%.1f/%.1fGB used (%.1f avail)", t-a, t, a}' /proc/meminfo 2>/dev/null || echo "?")
+            # Same flip: "11.0/11.0GB swap free" means ZERO swap in use, which
+            # is the opposite of how it scans. The swap gate below reports
+            # "peak swap X GB" -- used -- so the live line now matches it.
+            swap=$(awk '/SwapFree/{f=$2/1024/1024} /SwapTotal/{t=$2/1024/1024} END{printf "%.2f/%.1fGB swap used", t-f, t}' /proc/meminfo 2>/dev/null || echo "?")
             used=$(awk '/SwapTotal/{t=$2} /SwapFree/{f=$2} END{printf "%.2f", (t-f)/1024/1024}' /proc/meminfo 2>/dev/null || echo 0)
             prev=$(cat "$SWAP_HIGHWATER_FILE" 2>/dev/null || echo 0)
             awk -v a="$used" -v b="$prev" 'BEGIN{exit !(a>b)}' && echo "$used" > "$SWAP_HIGHWATER_FILE"
@@ -611,8 +620,30 @@ runs:
             prevlow=$(cat "$MEM_LOWWATER_FILE" 2>/dev/null || echo 999)
             awk -v a="$avail" -v b="$prevlow" 'BEGIN{exit !(a<b)}' && echo "$avail" > "$MEM_LOWWATER_FILE"
             load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo "?")
-            top3=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | head -3 | awk '{printf "%s(%.1fGB) ", $2, $1/1024/1024}' || echo "?")
-            echo "[resmon $(date -u +%H:%M:%SZ)] mem: $mem | swap: $swap | load: $load | top3: $top3"
+            # Actual CPU utilisation, from a /proc/stat delta across samples.
+            # Load average alone does not distinguish "4 threads compiling
+            # flat out" from "4 threads blocked on disk", and on a 4-vCPU
+            # runner that is exactly the question when a build looks slow.
+            read _ u n s i rest < /proc/stat
+            cur_busy=$((u+n+s)); cur_tot=$((u+n+s+i))
+            if [ -n "${prev_tot:-}" ] && [ "$cur_tot" -gt "$prev_tot" ]; then
+              cpu=$(awk -v db=$((cur_busy-prev_busy)) -v dt=$((cur_tot-prev_tot)) \
+                    'BEGIN{printf "%.0f%%", 100*db/dt}')
+            else
+              cpu="--"
+            fi
+            prev_busy=$cur_busy; prev_tot=$cur_tot
+            # runnable/total from loadavg field 4, plus the real thread count.
+            # nvcc fans out into cicc/ptxas/cl children, so "how many threads
+            # is this build actually running" is not answerable from max_jobs.
+            runq=$(cut -d' ' -f4 /proc/loadavg 2>/dev/null || echo "?")
+            nthr=$(awk '/^Threads:/{n+=$2} END{print n+0}' /proc/[0-9]*/status 2>/dev/null || echo "?")
+            # top3 is an INSTANTANEOUS sample, 120s apart, and cicc's peak is
+            # far shorter than that -- so the largest number here is routinely
+            # not the largest number that occurred. Two decimals, because
+            # rounding sub-100MB processes to "0.0GB" made the list look broken.
+            top3=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | head -3 | awk '{printf "%s(%.2fGB) ", $2, $1/1024/1024}' || echo "?")
+            echo "[resmon $(date -u +%H:%M:%SZ)] mem: $mem | swap: $swap | cpu: $cpu (runq $runq, $nthr thr) | load: $load | top3: $top3"
             sleep 120
         done ) &
         RESMON_PID=$!
@@ -1067,6 +1098,61 @@ runs:
       if: inputs.platform == 'windows'
       shell: powershell
       run: |
+        # ── Background resource monitor (Windows) ────────────────────────────
+        # There was NONE on this lane. The Linux build has printed a memory,
+        # swap, CPU and top-processes line every 120s for months, and has a gate
+        # that fails an over-committed compile; Windows had neither, so a
+        # Windows build that died of memory pressure looked like an unexplained
+        # compiler crash. Same cadence and same fields as the Linux resmon so
+        # the two logs read alike.
+        #
+        # Run as a child process with -NoNewWindow so it inherits this step's
+        # stdout and the lines interleave into the live log (Start-Job would
+        # buffer them until Receive-Job, which never gets called while the build
+        # is blocking). GH Actions kills the process tree at step end; the
+        # explicit Stop-Process below is belt and braces.
+        #
+        # Windows terms: "Available MBytes" is the true analogue of Linux's
+        # MemAvailable. The pagefile is the swap analogue -- committed bytes
+        # above physical RAM means the same thing a swapped Linux compile does.
+        $monScript = @'
+        $prevIdle = 0; $prevTot = 0
+        while ($true) {
+          $os   = Get-CimInstance Win32_OperatingSystem
+          $totGB   = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+          $availGB = [math]::Round($os.FreePhysicalMemory     / 1MB, 1)
+          $usedGB  = [math]::Round($totGB - $availGB, 1)
+          # Pagefile in use -- the swap analogue.
+          $pf = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue
+          $pfUsed = if ($pf) { [math]::Round(($pf | Measure-Object CurrentUsage -Sum).Sum / 1KB, 2) } else { 0 }
+          $pfTot  = if ($pf) { [math]::Round(($pf | Measure-Object AllocatedBaseSize -Sum).Sum / 1KB, 1) } else { 0 }
+          $cpu = try { [math]::Round((Get-CimInstance Win32_Processor |
+                   Measure-Object LoadPercentage -Average).Average, 0) } catch { '--' }
+          $procs = Get-Process -ErrorAction SilentlyContinue
+          $nthr  = ($procs | Measure-Object { $_.Threads.Count } -Sum).Sum
+          $top3  = ($procs | Sort-Object WorkingSet64 -Descending | Select-Object -First 3 |
+                    ForEach-Object { '{0}({1:N2}GB)' -f $_.ProcessName, ($_.WorkingSet64 / 1GB) }) -join ' '
+          $ts = (Get-Date).ToUniversalTime().ToString('HH:mm:ssZ')
+          Write-Host "[resmon $ts] mem: $usedGB/$totGB`GB used ($availGB avail) | pagefile: $pfUsed/$pfTot`GB used | cpu: $cpu% ($nthr thr) | top3: $top3"
+          # High-water files, read by the "Memory pressure signal (Windows)"
+          # step, mirroring the Linux swap gate.
+          $hw = "$env:RUNNER_TEMP\cuw_win_pf_highwater"
+          $lw = "$env:RUNNER_TEMP\cuw_win_mem_lowwater"
+          if (-not (Test-Path $hw) -or [double](Get-Content $hw) -lt $pfUsed) { $pfUsed | Set-Content $hw }
+          if (-not (Test-Path $lw) -or [double](Get-Content $lw) -gt $availGB) { $availGB | Set-Content $lw }
+          Start-Sleep -Seconds 120
+        }
+        '@
+        $monPath = "$env:RUNNER_TEMP\cuw_resmon.ps1"
+        $monScript | Set-Content -Path $monPath -Encoding UTF8
+        "999" | Set-Content "$env:RUNNER_TEMP\cuw_win_mem_lowwater"
+        "0"   | Set-Content "$env:RUNNER_TEMP\cuw_win_pf_highwater"
+        $mon = Start-Process -FilePath "powershell" `
+                 -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-File",$monPath `
+                 -PassThru -NoNewWindow
+        $mon.Id | Set-Content "$env:RUNNER_TEMP\cuw_resmon.pid"
+        Write-Host "resmon started (pid $($mon.Id)), sampling every 120s"
+
         # Ensure ninja is in PATH (pip Scripts directory)
         $pythonPath = (python -c "import sys; print(sys.prefix)")
         $scriptsPath = "$pythonPath\Scripts"
@@ -1178,6 +1264,36 @@ runs:
           $w = Get-Content $env:CUW_NOOP_COUNTER
           Write-Host "[link-only] compile no-op fired $($w.Count) time(s): $($w -join '; ')"
         }
+    - name: Memory pressure signal (Windows)
+      # The Windows counterpart of the Linux swap gate. Reports rather than
+      # fails: the Linux thresholds were tuned against months of Linux runs and
+      # there is no comparable history here yet, so this starts as an
+      # annotation. Promote it to a failure once the numbers are known -- and
+      # note the Linux gate needed BOTH conditions (swap used AND available
+      # memory bottomed out) because swap alone rejected a healthy build with
+      # 10GB free.
+      if: always() && inputs.platform == 'windows'
+      shell: powershell
+      run: |
+        # Kill the monitor BY ITS RECORDED PID. Never by name: this step is
+        # itself powershell, so Stop-Process -Name powershell would terminate
+        # the process running it.
+        $pidFile = "$env:RUNNER_TEMP\cuw_resmon.pid"
+        if (Test-Path $pidFile) {
+          Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue
+        }
+        $lw = "$env:RUNNER_TEMP\cuw_win_mem_lowwater"
+        $hw = "$env:RUNNER_TEMP\cuw_win_pf_highwater"
+        $memlow = if (Test-Path $lw) { [double](Get-Content $lw) } else { 999 }
+        $pfpeak = if (Test-Path $hw) { [double](Get-Content $hw) } else { 0 }
+        $cell = "${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-version }} torch${{ inputs.pytorch-version }} windows"
+        Write-Host "[windows memory] available low-water ${memlow}GB, pagefile peak ${pfpeak}GB, max_jobs='${{ inputs.max-jobs }}' nvcc_threads='${{ inputs.nvcc-threads }}'"
+        if ($memlow -lt 2.0) {
+          Write-Host "::warning title=Windows build ran low on memory::${cell}: available memory fell to ${memlow}GB (pagefile peak ${pfpeak}GB). A compile this close to the ceiling is one template instantiation away from dying with an unexplained compiler crash -- lower max_jobs for this package."
+        } elseif ($pfpeak -gt 1.0) {
+          Write-Host "::warning title=Windows build touched the pagefile::${cell}: pagefile peak ${pfpeak}GB while available memory stayed at ${memlow}GB. Not over-committed, but worth watching."
+        }
+
     - name: Assert sccache hit rate (Windows source-filter link)
       # The Windows sccache lane (natten, shard_filter: source) had NO hit-rate
       # assert at all -- the Linux one below is gated `platform == 'linux'`. So
