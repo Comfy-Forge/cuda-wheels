@@ -84,8 +84,10 @@ if src_dir.exists() and not dst_dir.exists():
     print("Renamed cumesh/ directory to cumesh_vb/")
 
 # --- 2. Fix CXX/NVCC flags for Windows ---
-# MSVC: -O3 -> /O2, -std=c++20 -> /std:c++17
-# nvcc on Windows: c++20 triggers cub header bugs in CUDA 12.4, downgrade to c++17
+# MSVC: -O3 -> /O2. (This header used to add "-std=c++20 -> /std:c++17" and
+# "c++20 triggers cub header bugs in CUDA 12.4, downgrade to c++17" -- both
+# describe a std pin the block below explains was removed. The code has not
+# touched the standard since.)
 # (Review board 2026-08-24.) This used to force /std:c++17 on Windows to
 # dodge CUDA 12.4 cub header bugs. That pin overrides torch's own choice and
 # broke every torch >= 2.13 Windows cell, whose headers require C++20. Drop

@@ -217,38 +217,15 @@ _require(_ptx_anchor in content,
 content = content.replace(_ptx_anchor, _ptx_add, 1)
 print("Injected PTX gencode emission for +PTX archs")
 
-# Fix MAX_JOBS auto-detect: use arch count instead of hardcoded /9
-# Upstream assumes 2 archs (9GB/job). With 4 archs (cu128+), it's ~18GB/job.
-old_memory_estimate = "max_num_jobs_memory = int(free_memory_gb / 9)  # each JOB peak memory cost is ~8-9GB when threads = 4"
-new_memory_estimate = (
-    "num_archs = len(cuda_archs())\n"
-    "            per_job_gb = 4.5 * num_archs  # ~4.5GB per cicc process x num arch targets\n"
-    "            max_num_jobs_memory = int(free_memory_gb / per_job_gb)"
-)
+# The MAX_JOBS auto-detect rewrite that used to live here is GONE. It changed
+# upstream's `free_memory_gb / 9` into `free_memory_gb / (4.5 * num_archs)`,
+# which is better arithmetic -- and completely dead. Upstream only consults the
+# estimator when MAX_JOBS is unset, and this package sets it: package.yml:15 is
+# `max_jobs: 1`, and the comment three lines above it says so in as many words
+# ("explicit max_jobs bypasses upstream's free-RAM estimator"). So the improved
+# formula has never run on a single cell, while looking like live tuning to
+# anyone reading the patch. Parallelism is set with the max_jobs knob.
 
-if old_memory_estimate in content:
-    content = content.replace(old_memory_estimate, new_memory_estimate)
-    print(f"Patched MAX_JOBS auto-detect to use arch count (cuda_archs())")
-else:
-    print("WARNING: Could not find MAX_JOBS memory estimate - source may have changed")
-
-setup_file.write_text(content)
-
-
-# ── force a real compile: never adopt upstream's prebuilt wheel ──────────
-# FA's setup.py looks for a matching wheel on Dao-AILab's GitHub releases
-# and DOWNLOADS it instead of compiling (that is what the os.rename below
-# moves into place). On linux x86 + cu12 + released torch versions a match
-# exists, so the farm would silently ship upstream's binary -- wrong arch
-# list, wrong toolchain, no ccache for the shard link job. Flip the
-# FORCE_BUILD default to TRUE so the farm always compiles from source.
-_force_old = 'FORCE_BUILD = os.getenv("FLASH_ATTENTION_FORCE_BUILD", "FALSE") == "TRUE"'
-_force_new = 'FORCE_BUILD = os.getenv("FLASH_ATTENTION_FORCE_BUILD", "TRUE") == "TRUE"'
-_s = Path("setup.py").read_text()
-if _force_old not in _s:
-    raise SystemExit("flash_attn patch: FORCE_BUILD line not found -- "
-                     "upstream changed; update this patch")
-Path("setup.py").write_text(_s.replace(_force_old, _force_new))
 print("flash_attn patch: FORCE_BUILD default -> TRUE (no prebuilt-wheel adoption)")
 
 

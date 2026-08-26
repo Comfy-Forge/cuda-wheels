@@ -59,8 +59,7 @@ import sys as _sys
 import pathlib as _pl
 
 _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[3] / "scripts"))
-from patch_lib import (fix_triton_autotuner_super_auto, require, strip_std_flags,
-                       translate_cxx_flags_for_msvc)
+from patch_lib import fix_triton_autotuner_super_auto, require, strip_std_flags
 
 _setup = Path("setup.py")
 _t = _setup.read_text()

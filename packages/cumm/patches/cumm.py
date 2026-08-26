@@ -371,36 +371,11 @@ namespace std {
     else:
         print("nvrtc_std.h already has std::abs, skipping")
 
-# ─── 6. Fix NVRTC "qualified name is not allowed" in dtype headers ───
-# Under __CUDACC_RTC__, CUDA_NAMESPACE_STD expands to cuda::std.
-# `namespace cuda::std {` is C++17 nested namespace syntax which NVRTC
-# rejects in its default C++14 mode. Fix: use C++14-compatible
-# `namespace cuda { namespace std {` and `}}` closing.
-_dtype_dir = Path("include") / "tensorview" / "gemm" / "dtypes"
-_patched_ns = 0
-for _hdr in ["half.h", "bfloat16.h", "tf32.h", "float8.h"]:
-    _hdr_path = _dtype_dir / _hdr
-    if not _hdr_path.exists():
-        print(f"WARNING: {_hdr_path} not found, skipping namespace fix")
-        continue
-    _hdr_content = _hdr_path.read_text()
-    if "namespace CUDA_NAMESPACE_STD {" not in _hdr_content:
-        continue
-    # Replace opening: namespace CUDA_NAMESPACE_STD { -> namespace cuda { namespace std {
-    _hdr_content = _hdr_content.replace(
-        "namespace CUDA_NAMESPACE_STD {",
-        "namespace cuda { namespace std {"
-    )
-    # Replace closing: } // namespace std -> }} // namespace cuda::std
-    # (some files have extra spaces before //)
-    _hdr_content = re.sub(
-        r'\}\s*//\s*namespace std\b',
-        '}} // namespace cuda::std',
-        _hdr_content
-    )
-    _hdr_path.write_text(_hdr_content)
-    _patched_ns += 1
-print(f"Patched {_patched_ns} dtype headers: fixed NVRTC namespace syntax (C++17 -> C++14)")
+# (Section 6 appeared TWICE here, verbatim, at what are now lines ~313 and
+# ~374. The second copy was a guaranteed no-op: the first pass removes the
+# `namespace CUDA_NAMESPACE_STD {` marker, and the second guards on that same
+# marker being present. Duplicate removed 2026-08-26; the surviving copy is
+# above.)
 
 # ─── 8. Fix cu++filt unavailable on Windows — inline Itanium demangler ───
 # cumm calls cu++filt to demangle CUDA symbol names. On Windows, cu++filt

@@ -628,9 +628,32 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
     data = {"expected": sorted(expected), "sass": sorted(sass),
             "ptx": sorted(ptx), "source": source}
     if not sass and not ptx:
-        rep.add("arch_sass", "warn",
-                "UNVERIFIED: no SASS/PTX visible to any scanner (compressed "
-                "fatbin without cuobjdump?) -- confirm by hand", data)
+        # FAIL, not warn. This was the last hole through which a wheel with no
+        # GPU code at all could reach users: the early return fires BEFORE the
+        # four real checks below, C3 is satisfied by the .so merely existing,
+        # and C8 passes because an empty extension still imports -- kernels
+        # only fail at launch, on the user's machine. "Confirm by hand" never
+        # happened; --strict was never passed in CI (action.yml), so the
+        # warning was non-blocking and the wheel uploaded.
+        #
+        # A package that legitimately ships no device code says so with
+        # allow_pure_python -- cumm is the real instance: it compiles kernels
+        # at import via a vendored NVRTC, and cuobjdump on its extension
+        # reports "does not contain device code" on all three lanes. Such a
+        # package should never have reached C7 at all, so this branch treats
+        # arriving here without that declaration as the defect it is.
+        if vknobs.get("allow_pure_python"):
+            rep.add("arch_sass", "skip",
+                    "no device code, and verify.allow_pure_python is set "
+                    "(runtime-JIT package)", data)
+            return
+        rep.add("arch_sass", "fail",
+                "NO DEVICE CODE: neither cuobjdump nor the byte scan found a "
+                "single SASS cubin or PTX image in this wheel. Expected "
+                f"{sorted(expected)}. A compiled extension exists but contains "
+                "no GPU kernels -- it will import cleanly and then fail at the "
+                "first kernel launch. If this package genuinely JITs at "
+                "runtime, declare verify.allow_pure_python.", data)
         return
     # cuobjdump reports arch-VARIANT names for SASS: Hopper cubins come back as
     # `sm_90a`. The arch list spells them `9.0`, so fold the suffix, or every

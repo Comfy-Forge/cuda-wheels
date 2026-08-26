@@ -154,7 +154,16 @@ def _ensure_ptx_on_highest_base(arch_list_str: str) -> str:
     return sep.join(tokens)
 
 
-def _ptx_tail_allowed(pkg: dict) -> bool:
+def _strip_ptx(arch_list_str: str) -> str:
+    """Remove every +PTX marker. Used when a package declares it cannot ship a
+    portable PTX tail -- skipping the tail-adder is not enough, because a row
+    may spell `9.0+PTX` explicitly in YAML."""
+    sep = ";" if ";" in arch_list_str else " "
+    return sep.join(tok.replace("+PTX", "")
+                    for tok in re.split(r"[;\s]+", arch_list_str.strip()) if tok)
+
+
+def _ptx_tail_allowed(pkg: dict, cuda_version: str = None) -> bool:
     """False when the package sets `no_ptx: true` in its arch_override.yml.
 
     `_ensure_ptx_on_highest_base` forces a `+PTX` tail onto every arch list so
@@ -171,10 +180,29 @@ def _ptx_tail_allowed(pkg: dict) -> bool:
     tail back, and verify_wheel's C7 then failed the wheel for not shipping PTX
     it can never ship. This flag is that missing opt-out.
 
-    Deliberately NOT per-CUDA and NOT per-platform: it describes what the
-    package's SOURCE can emit, which does not vary by lane.
+    Accepts two shapes:
+
+        no_ptx: true                # every CUDA line (sageattn3: its kernels
+                                    # are `a`-targets on every toolkit)
+        no_ptx: ["12.4", "12.6"]    # only these lines
+
+    The list form exists because the property is not always uniform. Upstream
+    maps an arch token to a gencode, and WHICH gencode can depend on the CUDA
+    line. sageattention is the case: its cu12.8+ rows end at 12.0, which
+    upstream compiles as plain `compute_120` -- a genuine, portable tail worth
+    shipping. Its cu12.4/12.6 rows end at 9.0, which upstream compiles as
+    `90a`, and `compute_90a` PTX loads on sm_90 and nothing else. So the same
+    package must promise a tail on four CUDA lines and refuse to on two, and a
+    package-wide boolean cannot say that. Before this existed the only options
+    were to ship dead bytes that silently satisfied the gate, or to fail every
+    cu12.4/12.6 cell.
+
+    Still NOT per-platform: it describes what the SOURCE can emit.
     """
-    return not bool(pkg.get("no_ptx"))
+    v = pkg.get("no_ptx")
+    if isinstance(v, (list, tuple, set)):
+        return str(cuda_version) not in {str(x) for x in v}
+    return not bool(v)
 
 
 def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
@@ -188,8 +216,8 @@ def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
     by_cuda = pkg.get("arch_list_by_cuda_aarch64") or {}
     raw = by_cuda.get(cuda_version) or pkg.get("arch_list_aarch64")
     if raw:
-        if not _ptx_tail_allowed(pkg):
-            return _normalize_arch_list(raw)
+        if not _ptx_tail_allowed(pkg, cuda_version):
+            return _normalize_arch_list(_strip_ptx(raw))
         return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
     # BOTH return paths normalize. This function bypasses resolve_arch_list
     # entirely, so normalizing only there left ARM as the one lane still
@@ -201,8 +229,8 @@ def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
     # asymmetry meant an aarch64 policy row without a trailing +PTX would
     # silently ship no forward-compat tail.
     _policy = policy_arch_list(cuda_version, pytorch_version, "linux_aarch64")
-    if not _ptx_tail_allowed(pkg):
-        return _normalize_arch_list(_policy)
+    if not _ptx_tail_allowed(pkg, cuda_version):
+        return _normalize_arch_list(_strip_ptx(_policy))
     return _normalize_arch_list(_ensure_ptx_on_highest_base(_policy))
 
 
@@ -236,8 +264,8 @@ def resolve_windows_arch_list(pkg: dict, cuda_version: str,
     by_cuda = pkg.get("arch_list_by_cuda_windows") or {}
     raw = by_cuda.get(cuda_version) or pkg.get("arch_list_windows")
     if raw:
-        if not _ptx_tail_allowed(pkg):
-            return _normalize_arch_list(raw)
+        if not _ptx_tail_allowed(pkg, cuda_version):
+            return _normalize_arch_list(_strip_ptx(raw))
         return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
     return resolve_arch_list(pkg, cuda_version, combo_arch_list,
                              pytorch_version, default_arch_list)
@@ -295,8 +323,8 @@ def resolve_arch_list(pkg: dict, cuda_version: str,
         raw = default_arch_list
 
     if raw is not None:
-        if not _ptx_tail_allowed(pkg):
-            return _normalize_arch_list(raw)
+        if not _ptx_tail_allowed(pkg, cuda_version):
+            return _normalize_arch_list(_strip_ptx(raw))
         return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
 
     raise KeyError(

@@ -3,7 +3,10 @@
 1. Fix arch parser to handle space-separated TORCH_CUDA_ARCH_LIST.
 2. Replace GCC-specific CXX_FLAGS with MSVC equivalents on Windows.
 3. Skip _GLIBCXX_USE_CXX11_ABI on Windows.
-4. Reduce nvcc --threads from 8 to 4 to avoid OOM on CI runners.
+4. (REMOVED 2026-08-26.) Used to rewrite nvcc --threads 8 -> 1. Both
+   misplaced and dead: the build action appends a TRAILING --threads=
+   from the nvcc_threads knob, which beats any setup.py value. The
+   docstring also said 8 -> 4 while the code did 8 -> 1.
 """
 from pathlib import Path
 import sys as _sys_early

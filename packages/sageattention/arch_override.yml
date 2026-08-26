@@ -138,11 +138,21 @@ arch_list_by_cuda_aarch64:
 # own dispatcher -- NOT cudaErrorNoKernelImageForDevice, which an earlier audit
 # reported. The gap is real; the failure mode was described wrongly.
 #
-# STILL OPEN, deliberately not fixed here: on the cu12.4/12.6 rows the highest
-# arch is 9.0, and setup.py compiles 9.0 as `90a` (an ARCH-CONDITIONAL target),
-# so `9.0+PTX` yields `compute_90a` PTX -- which loads ONLY on sm_90 and is not
-# a forward-compat tail at all. C7 cannot see this: cuobjdump reports `sm_90a`
-# and the check folds the suffix before comparing, so dead PTX satisfies it.
-# The `no_ptx` flag would suppress it but is package-wide, and it would also
-# kill the GENUINE compute_120 PTX on the cu12.8+ rows. Needs a per-CUDA
-# opt-out, or upstream dropping the `a`. Those cells are not currently built.
+# RESOLVED 2026-08-26 -- `no_ptx` now takes a per-CUDA list (see below).
+#
+# The problem: on the cu12.4/12.6 rows the highest arch is 9.0, and setup.py
+# compiles 9.0 as `90a` -- an ARCH-CONDITIONAL target -- so `9.0+PTX` yields
+# `compute_90a` PTX, which loads ONLY on sm_90 and is not a forward-compat tail
+# at all. It used to satisfy C7 anyway, because cuobjdump reports `sm_90a` and
+# the check folded the suffix before comparing, so dead bytes read as a kept
+# promise. That fold was corrected on the PTX side the same day, which turned
+# the silent pass into a hard failure on those two lines -- correct, and
+# unfixable while `no_ptx` was a package-wide boolean, since setting it would
+# also have killed the GENUINE compute_120 tail the cu12.8+ rows do ship.
+#
+# Hence the list form: refuse the promise on exactly the lines that cannot keep
+# it. The resolver also strips the explicit `+PTX` written in those rows above,
+# not just the auto-appended tail.
+no_ptx:
+  - "12.4"
+  - "12.6"

@@ -2,8 +2,17 @@
 
 torch 2.13's headers use C++20 features (designated initializers, bit-field
 default member init); MSVC and Windows nvcc hard-error under c++17. cubvh
-routes every std flag through one `cpp_standard` knob, so bump it. GCC and
-nvcc accept c++20 on every CUDA line in the grid, so this is unconditional.
+routes every std flag through one `cpp_standard` knob, so bump it.
+
+UNVERIFIED, and disputed inside this repo: the gate below is
+`os.name == "nt" and torch_mm() < (2, 13)`, so off Windows EVERY torch gets
+c++20, including the 2.4.1 floor. This docstring used to assert "GCC and nvcc
+accept c++20 on every CUDA line in the grid, so this is unconditional".
+scripts/patch_lib.py:55-57 says the opposite -- that pinning c++20 breaks
+torch < 2.7, because nvcc's EDG misparses `std::move(ivalue).to<List<Elem>>()`
+in ATen/core/ivalue_inl.h -- without limiting that to Windows. Both cannot be
+right, and cubvh has never published a wheel, so neither has been tested. If a
+torch-2.4/2.5 Linux cell fails on ivalue_inl.h, widen the gate to all platforms.
 """
 import os
 import sys

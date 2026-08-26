@@ -12,15 +12,14 @@ between the two so cuda-wheels' standard build env "just works":
   2. If NATTEN_N_WORKERS is unset, fall back to MAX_JOBS. Without this,
      NATTEN defaults to cpu_count()//4 which is unrelated to the cuda-wheels
      max_jobs cap — and CUTLASS template instantiations need the cap.
-  3. On Windows, strip 10.0 / 10.3 (Blackwell DC) from the arch list.
-     NATTEN's setup.py enables -DNATTEN_WITH_BLACKWELL_FNA=1 when those
-     archs are present, which compiles `sm100_fmha_bwd_kernel_tma_warpspecialized.hpp`.
-     That kernel uses CUTLASS template idioms MSVC's strict mode rejects
-     (C2061 syntax error: identifier 'PipelineState'). Stripping the archs
-     skips the Blackwell-DC code path entirely. Windows users with RTX 5090
-     (sm_120 consumer Blackwell) are still covered because sm_120 doesn't
-     trigger NATTEN_WITH_BLACKWELL_FNA — it compiles via the regular
-     CUTLASS-FNA path.
+  3. (REMOVED 2026-08-26.) This patch used to strip 10.0 / 10.3 from the arch
+     list on Windows, because NATTEN enables -DNATTEN_WITH_BLACKWELL_FNA=1 when
+     those archs are present and MSVC rejects the resulting
+     sm100_fmha_bwd_kernel_tma_warpspecialized.hpp with C2061. The limitation
+     is real; deciding it HERE was the mistake -- the resolver and the verify
+     gate both read the YAML, so a patch that disagrees with them is invisible
+     until C7 fails. It now lives in arch_override.yml's
+     arch_list_by_cuda_windows, next to the reason. See the note at the shim.
 
 Also patches pyproject.toml: setuptools.packages.find.where = ["src/"] has
 a trailing slash that newer setuptools' convert_path rejects on Windows
