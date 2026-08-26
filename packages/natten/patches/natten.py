@@ -224,10 +224,24 @@ endif()
 
 add_library(natten SHARED ${ALL_SOURCES})
 
-if(NATTEN_WITH_BLACKWELL_FNA)
+# if(TARGET ...), NOT if(NATTEN_WITH_*_FNA). The two are not the same
+# condition and conflating them is what broke natten at sharding: 23.
+# NATTEN_WITH_HOPPER_FNA is set from the ARCH LIST, so it is true in every
+# shard; the target only exists if THIS shard received Hopper sources. The
+# add_library() above is guarded on the source list, so a shard with zero
+# Hopper files correctly skips the target -- and then this line referenced a
+# target that does not exist:
+#   CMake Error at CMakeLists.txt:291 (target_link_libraries):
+#     Error evaluating generator expression: $<TARGET_OBJECTS:natten_hopper>
+#     Objects of target "natten_hopper" referenced but no such target exists.
+# Guarding the producer without guarding the consumer buys nothing. Note this
+# is a CONFIGURE/GENERATE error, so the shard produces almost no objects and
+# the tolerant-shard-link gate correctly refuses it ("failed without undefined
+# references") rather than passing it off as the expected link failure.
+if(TARGET natten_blackwell)
     target_link_libraries(natten PRIVATE $<TARGET_OBJECTS:natten_blackwell>)
 endif()
-if(NATTEN_WITH_HOPPER_FNA)
+if(TARGET natten_hopper)
     target_link_libraries(natten PRIVATE $<TARGET_OBJECTS:natten_hopper>)
 endif()'''
 if 'cuda-wheels arch-specific OBJECT libraries' in cmake_text:
