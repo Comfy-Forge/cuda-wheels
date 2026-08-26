@@ -18,3 +18,14 @@ verify:
   # `import sageattention` fails with "libcuda.so.1: cannot open shared
   # object file" rather than degrading gracefully.
   needs_driver: true
+  # Archs the policy asks for that SageAttention 2.2 cannot build. Waived, not
+  # deleted from the arch list -- see the "WAIVE, DO NOT NARROW" note at the
+  # bottom of arch_override.yml for why that distinction is the whole point.
+  # Evidence, not assertion: setup.py:46 SUPPORTED_ARCHS = {8.0, 8.6, 8.9,
+  # 9.0, 12.0}; the gencode loop at :141-158 hits `else: continue` for anything
+  # else; core.py:144-155 raises ValueError("Unsupported CUDA architecture")
+  # at runtime for the same set. Delete an entry the day upstream adds it.
+  allow_missing_archs:
+    - sm_75    # Turing. No kernel and no dispatch branch.
+    - sm_100   # Blackwell DC (B200/GB200). No kernel and no dispatch branch.
+    - sm_110   # Thor (SBSA, cu13.x ARM rows). Same.

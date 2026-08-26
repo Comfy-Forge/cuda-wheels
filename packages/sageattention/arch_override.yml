@@ -55,10 +55,15 @@
 arch_list_by_cuda:
   '12.4': 8.0 8.6 8.9 9.0+PTX
   '12.6': 8.0 8.6 8.9 9.0+PTX
-  '12.8': 8.0 8.6 8.9 9.0  12.0+PTX
-  '12.9': 8.0 8.6 8.9 9.0  12.0+PTX
-  '13.0': 8.0 8.6 8.9 9.0  12.0+PTX
-  '13.2': 8.0 8.6 8.9 9.0  12.0+PTX
+  # 7.5 and 10.0 RESTORED 2026-08-26 to match the policy row, and waived in
+  # package.yml's verify.allow_missing_archs instead of deleted here. See
+  # "WAIVE, DO NOT NARROW" at the bottom of this file. Nothing about the built
+  # wheel changes -- setup.py:141-158 hits `else: continue` on both -- but the
+  # gate now REPORTS the gap on every build instead of being told not to look.
+  '12.8': 7.5 8.0 8.6 8.9 9.0 10.0 12.0+PTX
+  '12.9': 7.5 8.0 8.6 8.9 9.0 10.0 12.0+PTX
+  '13.0': 7.5 8.0 8.6 8.9 9.0 10.0 12.0+PTX
+  '13.2': 7.5 8.0 8.6 8.9 9.0 10.0 12.0+PTX
 # NOTE: no 10.0 anywhere -- SageAttention 2.2 ships no sm_100 kernel
 # (Blackwell datacenter unsupported; consumer sm_120 via the FP8 path is).
 # setup.py's SUPPORTED_ARCHS is exactly {8.0, 8.6, 8.9, 9.0, 12.0} and its
@@ -76,15 +81,54 @@ arch_list_by_cuda_aarch64:
   # was never exempt -- the x86 rows have carried 8.9 from the start.
   # nvcc >= 12.4 is required for 8.9 (setup.py raises below that); every ARM
   # row here is 12.8+, so the floor is satisfied on all four.
-  '12.8': 8.0 8.9 9.0 12.0+PTX
+  '12.8': 8.0 8.9 9.0 10.0 12.0+PTX
   # Same kernel gap on every newer ARM line: the default aarch64 policy rows
   # carry 10.0 (and 11.0 on 13.x), which SageAttention 2.2 cannot emit, so the
   # arch_sass gate rejected all 67 cu12.9/13.0/13.2 ARM wheels ("missing arch
   # families sm_[10]"). cuobjdump proves the built wheels contain 80/90/120
   # only, so this drops NO real coverage -- it aligns the expectation with
   # what the source can produce (2026-08-24).
-  '12.9': 8.0 8.9 9.0 12.0+PTX
-  '13.0': 8.0 8.9 9.0 12.0+PTX
-  '13.2': 8.0 8.9 9.0 12.0+PTX
+  '12.9': 8.0 8.9 9.0 10.0 12.0+PTX
+  # 11.0 (Thor) carried too on the 13.x rows: same waive-don't-narrow rule.
+  '13.0': 8.0 8.9 9.0 10.0 11.0 12.0+PTX
+  '13.2': 8.0 8.9 9.0 10.0 11.0 12.0+PTX
 # 8.6 is deliberately NOT mirrored onto the ARM rows: no Ampere consumer part
 # exists on SBSA, and sageattn() routes sm86 to Triton regardless (core.py:146).
+
+
+# ---------------------------------------------------------------------------
+# WAIVE, DO NOT NARROW
+#
+# These rows used to DELETE 7.5, 10.0 and 11.0 because SageAttention 2.2
+# cannot build them. That is a true statement badly encoded, and the bad
+# encoding is the farm's most expensive mistake class:
+#
+#   verify_wheel's C7 compares the wheel against the RESOLVED arch list. Delete
+#   an arch from this file and BOTH SIDES of that comparison move. The check
+#   goes green, no warning is emitted, and the only record that a GPU is
+#   unsupported is a YAML comment. That is indistinguishable from a wheel that
+#   genuinely covers everything.
+#
+# Encoded as verify.allow_missing_archs in package.yml instead, C7 emits
+#   "waived (documented upstream gap): ['sm_75', 'sm_100']"
+# as a warning on every single build, and the day upstream adds a kernel the
+# waiver is the one line to delete.
+#
+# What upstream actually supports (setup.py:46 and the loop at :141-158):
+#   SUPPORTED_ARCHS = {"8.0", "8.6", "8.9", "9.0", "12.0"}
+#   anything else hits `else: continue` -- silently skipped, no error, which
+#   is why carrying these archs in the list is free.
+# The runtime agrees: core.py:144-155 dispatches sm80/86/89/90/120 and raises
+#   ValueError(f"Unsupported CUDA architecture: {arch}")
+# otherwise. So a B200 (sm_100) user gets a clean Python error from upstream's
+# own dispatcher -- NOT cudaErrorNoKernelImageForDevice, which an earlier audit
+# reported. The gap is real; the failure mode was described wrongly.
+#
+# STILL OPEN, deliberately not fixed here: on the cu12.4/12.6 rows the highest
+# arch is 9.0, and setup.py compiles 9.0 as `90a` (an ARCH-CONDITIONAL target),
+# so `9.0+PTX` yields `compute_90a` PTX -- which loads ONLY on sm_90 and is not
+# a forward-compat tail at all. C7 cannot see this: cuobjdump reports `sm_90a`
+# and the check folds the suffix before comparing, so dead PTX satisfies it.
+# The `no_ptx` flag would suppress it but is package-wide, and it would also
+# kill the GENUINE compute_120 PTX on the cu12.8+ rows. Needs a per-CUDA
+# opt-out, or upstream dropping the `a`. Those cells are not currently built.

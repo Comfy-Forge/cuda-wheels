@@ -154,6 +154,29 @@ def _ensure_ptx_on_highest_base(arch_list_str: str) -> str:
     return sep.join(tokens)
 
 
+def _ptx_tail_allowed(pkg: dict) -> bool:
+    """False when the package sets `no_ptx: true` in its arch_override.yml.
+
+    `_ensure_ptx_on_highest_base` forces a `+PTX` tail onto every arch list so
+    a wheel stays JIT-compatible with GPUs that do not exist yet. That is right
+    for almost every package and WRONG for one class: packages whose kernels
+    only compile as ARCH-CONDITIONAL targets (`sm_100a`, `sm_120a`). Their PTX
+    would be `compute_120a`, which loads ONLY on sm_120 -- dead bytes and a
+    false forward-compat promise -- and the non-`a` `compute_120` those kernels
+    would need cannot be produced from source that uses `a`-only instructions.
+
+    The farm already prescribed the remedy ("those packages should drop +PTX
+    from their arch_override instead", packages/flash_attn/patches) but there
+    was no way to do it: the tokens carry no `a`, so the normalizer put the
+    tail back, and verify_wheel's C7 then failed the wheel for not shipping PTX
+    it can never ship. This flag is that missing opt-out.
+
+    Deliberately NOT per-CUDA and NOT per-platform: it describes what the
+    package's SOURCE can emit, which does not vary by lane.
+    """
+    return not bool(pkg.get("no_ptx"))
+
+
 def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
                               pytorch_version: str) -> str:
     """ARM arch list: package's dedicated aarch64 override, else the
@@ -165,6 +188,8 @@ def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
     by_cuda = pkg.get("arch_list_by_cuda_aarch64") or {}
     raw = by_cuda.get(cuda_version) or pkg.get("arch_list_aarch64")
     if raw:
+        if not _ptx_tail_allowed(pkg):
+            return _normalize_arch_list(raw)
         return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
     # BOTH return paths normalize. This function bypasses resolve_arch_list
     # entirely, so normalizing only there left ARM as the one lane still
@@ -175,9 +200,10 @@ def resolve_aarch64_arch_list(pkg: dict, cuda_version: str,
     # previously skipped: the x86 path normalizes both branches, and the
     # asymmetry meant an aarch64 policy row without a trailing +PTX would
     # silently ship no forward-compat tail.
-    return _normalize_arch_list(
-        _ensure_ptx_on_highest_base(
-            policy_arch_list(cuda_version, pytorch_version, "linux_aarch64")))
+    _policy = policy_arch_list(cuda_version, pytorch_version, "linux_aarch64")
+    if not _ptx_tail_allowed(pkg):
+        return _normalize_arch_list(_policy)
+    return _normalize_arch_list(_ensure_ptx_on_highest_base(_policy))
 
 
 def _normalize_arch_list(arch_list: str) -> str:
@@ -232,6 +258,8 @@ def resolve_arch_list(pkg: dict, cuda_version: str,
         raw = default_arch_list
 
     if raw is not None:
+        if not _ptx_tail_allowed(pkg):
+            return _normalize_arch_list(raw)
         return _normalize_arch_list(_ensure_ptx_on_highest_base(raw))
 
     raise KeyError(

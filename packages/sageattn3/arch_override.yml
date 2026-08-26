@@ -1,10 +1,35 @@
 # Overrides of the shared arch policy (defaults/arch_policy.yml)
 # for this package only.
-arch_list: 10.0 12.0+PTX
+arch_list: 10.0 12.0
 # Same kernels on ARM (sm_100a for GB200/B200, sm_120a for Blackwell
 # consumer-class): the aarch64 lane ignores x86 overrides, so the default
 # ARM policy row (8.0/9.0/...) would demand archs upstream cannot build.
 # Future: consider adding 12.1 on cu12.9+/13.0 for DGX Spark (GB10,
 # sm_121) -- sm_120a cubins carry no official compat guarantee on sm_121,
 # and the patch's arch map already knows 12.1 -> sm_121a.
-arch_list_aarch64: 10.0 12.0+PTX
+arch_list_aarch64: 10.0 12.0
+
+# NO PTX -- and it is not a coverage decision, it is what the source can emit.
+# patches/sageattn3.py maps the arch list onto exactly two ARCH-CONDITIONAL
+# gencodes:
+#     10.0 -> arch=compute_100a,code=sm_100a
+#     12.0 -> arch=compute_120a,code=sm_120a
+# The `a` suffix means arch-ACCELERATED: these kernels use instructions that
+# exist only on that exact target. So there are two candidate PTX tails and
+# both are wrong:
+#   * `compute_120a` PTX loads ONLY on sm_120. It is not a forward-compat
+#     path, it is dead bytes that would silently satisfy the gate.
+#   * `compute_120` (non-`a`) PTX cannot be produced at all -- the source uses
+#     `a`-only instructions, so nvcc has nothing to lower.
+# Without this flag `_ensure_ptx_on_highest_base` re-appends `+PTX` no matter
+# what is written above (the tokens carry no `a`; the `a` lives in the
+# gencode), and verify_wheel's C7 then fails every cell with
+#   "declared +PTX for ['sm_120'] but shipped NO PTX ... no JIT path onto
+#    newer GPUs"
+# which is true and unfixable. The honest encoding is to stop promising it.
+#
+# Consequence, stated plainly: a sageattn3 wheel runs on sm_100 and sm_120 and
+# on nothing else, including future Blackwell parts. That is upstream's
+# design (setup.py raises "Unsupported GPU" for anything else), not a gap the
+# farm introduced.
+no_ptx: true

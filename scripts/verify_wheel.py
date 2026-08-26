@@ -623,7 +623,17 @@ def check_arch_sass(rep, wheel_path, exts, args, vknobs):
     data["expected_ptx"] = sorted(exp_ptx)
     data["waived"] = sorted(waived)
 
-    missing_majors = {_arch_major(a) for a in expected} - {_arch_major(a) for a in actual}
+    # `expected - waived`, not `expected`. allow_missing_archs was subtracted
+    # only in the EXACT-arch check below, which made it useless for the case it
+    # exists for: an arch upstream cannot build at all is usually the only
+    # member of its family, so the family check fired first and failed the
+    # wheel before the waiver was ever consulted. That left narrowing the arch
+    # list as the only way to get such a package green -- and narrowing moves
+    # both sides of this comparison, so the gap vanishes from the record
+    # instead of being recorded as waived. (sageattention: upstream's
+    # SUPPORTED_ARCHS has no 10.0, so sm_100 is the whole sm_10x family.)
+    missing_majors = ({_arch_major(a) for a in (expected - waived)}
+                      - {_arch_major(a) for a in actual})
     if missing_majors:
         rep.add("arch_sass", "fail",
                 f"missing arch families sm_{sorted(missing_majors)} -- "
