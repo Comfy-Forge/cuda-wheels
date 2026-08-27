@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU architectures — cuda-wheels</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:#0d1117; color:#c9d1d9; padding:2rem; max-width:1100px; margin:0 auto; }
+h1 { color:#f0f6fc; font-size:1.9rem; margin-bottom:.35rem; }
+h2 { color:#f0f6fc; font-size:1.15rem; margin:1.8rem 0 .6rem; }
+.subtitle { color:#8b949e; margin-bottom:1.4rem; }
+a { color:#58a6ff; text-decoration:none; } a:hover { text-decoration:underline; }
+nav { margin-bottom:1.6rem; font-size:.92rem; } nav a { margin-right:1.1rem; }
+table { border-collapse:collapse; font-size:.88rem; margin-bottom:.4rem; }
+th,td { border:1px solid #30363d; padding:.35rem .7rem; text-align:left; vertical-align:top; }
+th { background:#161b22; color:#8b949e; font-weight:600; }
+code, .mono { font-family:"SF Mono","Fira Code",Consolas,monospace; font-size:.85em; }
+.note { color:#8b949e; font-size:.85rem; margin:.3rem 0 .8rem; }
+.wrap { overflow-x:auto; }
+.ptx { color:#d2a8ff; }
+footer { margin-top:2.5rem; color:#484f58; font-size:.88rem;
+         border-top:1px solid #21262d; padding-top:1rem; }
+</style></head><body>
+<h1>GPU architectures</h1>
+<div class="subtitle">Which SM targets every wheel carries, where that policy
+comes from, and which packages deviate.</div>
+<nav><a href="../">PEP 503 index</a> <a href="../find/">Find your wheel</a>
+<a href="../matrix/">Upstream PyTorch matrix</a></nav>
+
+<h2>Legend</h2>
+<div class="wrap"><table><tr><th>SM</th><th>Silicon</th></tr>
+<tr><td class=mono>7.0</td><td>Volta (V100)</td></tr>
+<tr><td class=mono>7.5</td><td>Turing (RTX 20xx, T4)</td></tr>
+<tr><td class=mono>8.0</td><td>Ampere DC (A100)</td></tr>
+<tr><td class=mono>8.6</td><td>Ampere consumer (RTX 30xx)</td></tr>
+<tr><td class=mono>8.7</td><td>Jetson Orin</td></tr>
+<tr><td class=mono>8.9</td><td>Ada (RTX 40xx, L4/L40)</td></tr>
+<tr><td class=mono>9.0</td><td>Hopper (H100/H200, GH200)</td></tr>
+<tr><td class=mono>10.0</td><td>Blackwell DC (B200/GB200)</td></tr>
+<tr><td class=mono>11.0</td><td>Thor</td></tr>
+<tr><td class=mono>12.0</td><td>Blackwell consumer (RTX 50xx)</td></tr>
+<tr><td class=mono>12.1</td><td>DGX Spark (GB10)</td></tr>
+</table></div>
+<div class="note"><span class="ptx">+PTX</span> = forward-compatible IR
+embedded at that arch, so future GPUs can JIT it.</div>
+
+<h2>Farm policy — x86_64 (linux + windows)</h2>
+<div class="wrap"><table><tr><th>CUDA</th><th>TORCH_CUDA_ARCH_LIST</th></tr>
+<tr><td class=mono>12.4</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.6</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.8</td><td class=mono>7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.9</td><td class=mono>7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>13.0</td><td class=mono>7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>13.2</td><td class=mono>7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+</table></div>
+
+<h2>Farm policy — aarch64 (SBSA / Jetson)</h2>
+<div class="note">A CUDA line absent here is deliberately not built for ARM.</div>
+<div class="wrap"><table><tr><th>CUDA</th><th>TORCH_CUDA_ARCH_LIST</th></tr>
+<tr><td class=mono>12.4</td><td class=mono>8.0 8.7 9.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.6</td><td class=mono>8.0 8.7 9.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.8</td><td class=mono>8.0 8.7 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.9</td><td class=mono>8.0 8.7 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>13.0</td><td class=mono>8.0 8.7 9.0<span class="ptx">+PTX</span> 10.0 11.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>13.2</td><td class=mono>8.0 8.7 9.0<span class="ptx">+PTX</span> 10.0 11.0 12.0<span class="ptx">+PTX</span></td></tr>
+</table></div>
+
+<h2>Exceptions (per CUDA / torch pairing)</h2>
+<div class="note">Old torch minors that still shipped archs the current policy
+floor dropped -- a farm wheel never targets an arch its torch cannot reach.</div>
+<div class="wrap"><table><tr><th>CUDA / torch</th><th>Arch list</th></tr>
+<tr><td class=mono>12.8/2.10</td><td class=mono>7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.8/2.8</td><td class=mono>7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.8/2.9</td><td class=mono>7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.9/2.10</td><td class=mono>7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.9/2.8</td><td class=mono>7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>12.9/2.9</td><td class=mono>7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+</table></div>
+
+<h2>What PyTorch itself bakes into libtorch</h2>
+<div class="note">Evaluated from pytorch's own
+<code>.ci/manywheel/build_cuda.sh</code> at each release tag -- the derivation
+input for the farm policy above (CW-ADR-0012).</div>
+<div class="wrap"><table><tr><th>CUDA</th><th>torch</th>
+<th>x86_64</th><th>aarch64</th></tr>
+<tr><td class=mono>12.4</td><td class=mono>2.4.1</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.4</td><td class=mono>2.5.1</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.4</td><td class=mono>2.6.0</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.6.0</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.7.1</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.8.0</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.9.1</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.10.0</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.11.0</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.12.1</td><td class=mono>5.0 6.0 7.0 7.5 8.0 8.6 9.0</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.6</td><td class=mono>2.13.0</td><td class=mono>(not in this tag&#x27;s build script)</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.8</td><td class=mono>2.7.1</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.8</td><td class=mono>2.8.0</td><td class=mono>7.0 7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.8</td><td class=mono>2.9.1</td><td class=mono>7.0 7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.8</td><td class=mono>2.10.0</td><td class=mono>7.0 7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.8</td><td class=mono>2.11.0</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.9</td><td class=mono>2.8.0</td><td class=mono>7.0 7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.9</td><td class=mono>2.9.1</td><td class=mono>7.0 7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>12.9</td><td class=mono>2.10.0</td><td class=mono>7.0 7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.9</td><td class=mono>2.11.0</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.9</td><td class=mono>2.12.1</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>12.9</td><td class=mono>2.13.0</td><td class=mono>(not in this tag&#x27;s build script)</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>13.0</td><td class=mono>2.9.1</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>13.0</td><td class=mono>2.10.0</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20<span class="ptx">+PTX</span></td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>13.0</td><td class=mono>2.11.0</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>13.0</td><td class=mono>2.12.1</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>13.0</td><td class=mono>2.13.0</td><td class=mono>(not in this tag&#x27;s build script)</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+<tr><td class=mono>13.2</td><td class=mono>2.12.1</td><td class=mono>7.5 8.0 8.6 9.0 1.00 1.20</td><td class=mono>(not in this tag&#x27;s build script)</td></tr>
+<tr><td class=mono>13.2</td><td class=mono>2.13.0</td><td class=mono>(not in this tag&#x27;s build script)</td><td class=mono>(no aarch64 branch in this tag&#x27;s script)</td></tr>
+</table></div>
+
+<h2>Per-package overrides</h2>
+<div class="note">Packages whose kernels cannot span the whole policy row --
+each override is justified in the package folder's README.</div>
+<div class="wrap"><table><tr><th>Package</th><th>Field</th><th>Value</th></tr>
+<tr><td class=mono>cumm</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 7.5 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu126: 7.5 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu128: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu132: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>cumm</td><td class=mono>arch_list_by_cuda_aarch64</td><td class=mono>cu124: 8.0 8.7 9.0<span class="ptx">+PTX</span><br>cu126: 8.0 8.7 9.0<span class="ptx">+PTX</span><br>cu128: 8.0 8.7 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 8.0 8.7 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 8.0 8.7 9.0 10.0 11.0 12.0<span class="ptx">+PTX</span><br>cu132: 8.0 8.7 9.0 10.0 11.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>cumm</td><td class=mono>NOT CHECKED (skip_arch)</td><td class=mono>arch content unverified on: linux, linux_aarch64, windows</td></tr>
+<tr><td class=mono>flash_attn</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 8.0 9.0<span class="ptx">+PTX</span><br>cu126: 8.0 9.0<span class="ptx">+PTX</span><br>cu128: 8.0 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 8.0 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 8.0 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu132: 8.0 9.0 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>natten</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu126: 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu128: 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 8.0 8.6 8.9 9.0 10.0 10.3 12.0<span class="ptx">+PTX</span><br>cu132: 8.0 8.6 8.9 9.0 10.0 10.3 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>nunchaku</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 7.5 8.0 8.6 8.9<br>cu126: 7.5 8.0 8.6 8.9<br>cu128: 7.5 8.0 8.6 8.9 12.0<br>cu129: 7.5 8.0 8.6 8.9 12.0<br>cu130: 7.5 8.0 8.6 8.9 12.0<br>cu132: 7.5 8.0 8.6 8.9 12.0</td></tr>
+<tr><td class=mono>nunchaku</td><td class=mono>arch_list_by_cuda_aarch64</td><td class=mono>cu126: 7.5 8.0 8.6 8.9<br>cu128: 7.5 8.0 8.6 8.9 12.0<br>cu129: 7.5 8.0 8.6 8.9 12.0<br>cu130: 7.5 8.0 8.6 8.9 12.0<br>cu132: 7.5 8.0 8.6 8.9 12.0</td></tr>
+<tr><td class=mono>nunchaku</td><td class=mono>no PTX</td><td class=mono>cubins only -- no JIT path onto newer GPUs</td></tr>
+<tr><td class=mono>pyg_lib</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 6.0 7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span><br>cu126: 6.0 7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span><br>cu128: 6.0 7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 6.0 7.0 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span><br>cu132: 7.5 8.0 8.6 9.0<span class="ptx">+PTX</span> 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>sageattention</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu126: 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu128: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu132: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>sageattention</td><td class=mono>arch_list_by_cuda_aarch64</td><td class=mono>cu126: 8.0 8.9 9.0<span class="ptx">+PTX</span><br>cu128: 8.0 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 8.0 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 8.0 8.9 9.0 10.0 11.0 12.0<span class="ptx">+PTX</span><br>cu132: 8.0 8.9 9.0 10.0 11.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>sageattention</td><td class=mono>NOT BUILT (waived)</td><td class=mono>declared above but absent from the wheel: sm_75, sm_100, sm_110</td></tr>
+<tr><td class=mono>sageattention</td><td class=mono>no PTX</td><td class=mono>cubins only -- no JIT path onto newer GPUs</td></tr>
+<tr><td class=mono>sageattn3</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu128: 10.0 12.0<br>cu129: 10.0 12.0 12.1<br>cu130: 10.0 12.0 12.1<br>cu132: 10.0 12.0 12.1</td></tr>
+<tr><td class=mono>sageattn3</td><td class=mono>arch_list_by_cuda_aarch64</td><td class=mono>cu128: 10.0 12.0<br>cu129: 10.0 12.0 12.1<br>cu130: 10.0 12.0 12.1<br>cu132: 10.0 12.0 12.1</td></tr>
+<tr><td class=mono>sageattn3</td><td class=mono>no PTX</td><td class=mono>cubins only -- no JIT path onto newer GPUs</td></tr>
+<tr><td class=mono>spconv</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 7.5 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu126: 7.5 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu128: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu132: 7.5 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>spconv</td><td class=mono>arch_list_by_cuda_aarch64</td><td class=mono>cu126: 8.0 9.0<span class="ptx">+PTX</span><br>cu128: 8.0 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 8.0 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 8.0 9.0 10.0 11.0 12.0<span class="ptx">+PTX</span><br>cu132: 8.0 9.0 10.0 11.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>torchao</td><td class=mono>arch_list_by_cuda</td><td class=mono>cu124: 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu126: 8.0 8.6 8.9 9.0<span class="ptx">+PTX</span><br>cu128: 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu129: 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span><br>cu130: 8.0 8.6 8.9 9.0 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>torchao</td><td class=mono>arch_list_by_cuda_aarch64</td><td class=mono>cu128: 9.0 10.0 12.0<span class="ptx">+PTX</span></td></tr>
+<tr><td class=mono>torchao</td><td class=mono>NOT CHECKED (skip_arch)</td><td class=mono>arch content unverified on: every platform</td></tr>
+</table></div>
+
+<footer>Built by
+<a href="https://github.com/Comfy-Forge/cuda-wheels">Comfy-Forge/cuda-wheels</a>
+from <code>defaults/arch_policy.yml</code>, pytorch's build scripts, and
+<code>packages/*/arch_override.yml</code>.</footer>
+</body></html>
