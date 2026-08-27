@@ -5,18 +5,49 @@ source_tag: v2.2.0
 version: 1.0.0
 build_subdir: sageattention3_blackwell
 patch_script: packages/sageattn3/patches/sageattn3.py
-# jobs 1 / nvcc_threads 3 (owner call 2026-08-26). MEMORY-NEUTRAL reshape:
-# 3 jobs x 1 thread and 1 job x 3 threads both run three cicc processes. What
-# changes is WHERE the parallelism lives -- and here it could not live at the
-# process level at all.
-# Measured: 2 extensions x 1 source each, 26% CPU.
-# setuptools builds extensions SERIALLY
-# (_distutils/command/build_ext.py::_build_extensions_serial), so MAX_JOBS only
-# ever reaches the ninja run inside ONE extension -- and these hold too few
-# sources for it to matter. nvcc --threads parallelises across GENCODE TARGETS
-# inside a single TU, which is work that actually exists here.
-jobs: 1   # api.cu is a monster TU; upstream --threads 4 is neutralized by the trailing farm --threads=1
-nvcc_threads: 3
+# nvcc_threads 3 -> 1 (2026-08-27). The "MEMORY-NEUTRAL reshape" claim that
+# put this at 3 was FALSE FOR THIS PACKAGE, and the commit that made it
+# (63fd319) contained its own refutation two paragraphs apart:
+#
+#   "3 jobs x 1 thread and 1 job x 3 threads both run three cicc processes"
+#   "sageattn3   2 extensions x 1 source each, 26% CPU"
+#
+# Those cannot both be true. setuptools builds extensions SERIALLY
+# (_distutils/command/build_ext.py::_build_extensions_serial), so with ONE
+# source per extension MAX_JOBS had nothing to parallelise: the old
+# jobs 3 / nvcc_threads 1 ran exactly ONE cicc. Moving the parallelism to
+# --threads TRIPLED the instantaneous peak rather than relocating it, because
+# --threads forks one cicc PER GENCODE inside a single TU and their peaks land
+# together.
+#
+# It killed every Linux and ARM cell. Nine of nine jobs, exit 137 (128+SIGKILL,
+# the OOM killer), e.g. cu13.0 py3.12:
+#   [resmon] mem: 15.5/15.6GB used (0.1 avail) | swap: 10.99/11.0GB | cpu: 9%
+# Swap pinned at 100%, CPU collapsed to 9% for twelve minutes -- thrashing, not
+# compiling -- then the kernel reaped it. Two independent investigations agreed
+# at 95-97% confidence.
+#
+# The dose-response is the proof, with cu12.8 as its own control:
+#   cu13.0  archs 10.0 12.0 12.1 -> 3 cicc -> swap 11.00/11.0 -> SIGKILL
+#   cu12.8  archs 10.0 12.0      -> 2 cicc -> swap  5.04/11.0 -> built a wheel
+# True per-cicc footprint measured on cu12.8, where it is not paged out and the
+# RSS is honest: ~7.0-7.2GB. Three of those is ~21GB against 15.6GB of RAM.
+#
+# NOT 2. Two cicc is ~14-16GB, which is what cu12.8 just did four times: it
+# finished the wheel and the swap gate then rejected it for peak swap 6.01GB.
+# 1 is also the value flash_attn landed on for the same CUTLASS/Blackwell
+# workload on the same 16GB box a day earlier.
+#
+# One cicc at ~7GB leaves ~8GB headroom and needs no swap at all. It also puts
+# this package on the swap gate's explicit floor branch (max_jobs=1 AND
+# nvcc_threads=1 -> warn, never exit 1), so a marginal dip can no longer throw
+# away a finished wheel.
+#
+# Cost: the three gencodes serialise. That is not a real loss -- at 9% CPU the
+# box was paging, not compiling. If wall clock ever matters here the correct
+# lever is sharding by gencode (memory-neutral for real), not raising this.
+jobs: 1   # inert either way: 2 extensions x 1 source, built serially by setuptools
+nvcc_threads: 1
 # Curated Requires-Dist (CW-ADR-0004): AOT-compiled wheel -- upstream's
 # ninja is build-time leakage.
 verify:
