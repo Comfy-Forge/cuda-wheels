@@ -1268,21 +1268,29 @@ runs:
             $nthr  = ($procs | ForEach-Object { try { $_.Threads.Count } catch { 0 } } |
                       Measure-Object -Sum).Sum
           }
-          # Handles matter here specifically. A Windows build does not only die
-          # of memory: nvcc forks cicc/cudafe++/cl per TU per gencode, and once
-          # the desktop heap or handle table is exhausted the NEXT process fails
-          # to start with STATUS_DLL_INIT_FAILED (0xC0000142) -- which is exactly
-          # how a natten Windows shard died on 2026-08-26 AFTER successfully
-          # building and packaging its wheel, with 12.5GB of RAM still free.
-          # Nothing in this monitor could see it coming. Now it can.
+          # Handle count, reported but NOT gated -- and it cannot explain
+          # 0xC0000142. This line previously carried a warning at >400k and the
+          # claim "nothing in this monitor could see it coming; now it can".
+          # That claim was false and the gate was unfalsifiable by its own
+          # instrument: HandleCount is the KERNEL object handle table, while
+          # USER objects are allocated from the desktop heap itself and GDI
+          # objects from a third table, both per-session and neither counted
+          # here. So the gate could never fire for the failure it was written
+          # for. Measured across two real occurrences: handles sat at 43-45k,
+          # ten times below the threshold, while the failure happened anyway.
+          #
+          # Kept as a raw number because a genuine handle leak would still be
+          # worth seeing, and it costs nothing to collect. The warning and the
+          # causal story are gone: retuning the threshold would have preserved
+          # the error, leaving the next engineer a wrong prior wrapped in an
+          # authoritative-looking comment. What actually observes this failure
+          # is the process-launch canary and the Event 243 / Application Error
+          # probes, both added 2026-08-27.
           $nhnd = try { ($procs | Measure-Object HandleCount -Sum).Sum } catch { 0 }
           $top3  = ($procs | Sort-Object WorkingSet64 -Descending | Select-Object -First 3 |
                     ForEach-Object { '{0}({1:N2}GB)' -f $_.ProcessName, ($_.WorkingSet64 / 1GB) }) -join ' '
           $ts = (Get-Date).ToUniversalTime().ToString('HH:mm:ssZ')
           Write-Host "[resmon $ts] mem: $usedGB/$totGB`GB used ($availGB avail) | pagefile: $pfUsed/$pfTot`GB used | cpu: $cpu% ($nproc proc, $nthr thr, $nhnd hnd) | top3: $top3"
-          if ($nhnd -gt 400000) {
-            Write-Host "::warning title=Windows handle pressure::$nhnd open handles across $nproc processes. Past ~500k the next process launch can fail with STATUS_DLL_INIT_FAILED (0xC0000142), which looks like an unexplained crash rather than exhaustion."
-          }
           # High-water files, read by the "Memory pressure signal (Windows)"
           # step, mirroring the Linux swap gate.
           $hw = "$env:RUNNER_TEMP\cuw_win_pf_highwater"
@@ -1417,59 +1425,39 @@ runs:
           $w = Get-Content $env:CUW_NOOP_COUNTER
           Write-Host "[link-only] compile no-op fired $($w.Count) time(s): $($w -join '; ')"
         }
-    - name: Memory pressure signal (Windows)
-      # Non-fatal, deliberately. This step is PURE DIAGNOSTICS: it kills the
-      # resmon background process and prints the high-water memory numbers.
-      # It compiles nothing and produces nothing. But it is an ordinary step,
-      # so its failure fails the JOB and GitHub then skips everything after
-      # it -- rename, METADATA fix, verify, and the artifact upload. A build
-      # that compiled correctly loses its wheel because a logging step could
-      # not start.
+    - name: Process-launch canary (Windows)
+      # SACRIFICIAL, and the most useful step in this file for the 0xC0000142
+      # problem.
       #
-      # That is not hypothetical. natten Windows, 2026-08-26: the log shows it
-      # linked libnatten.cp312-win_amd64.pyd and packaged a 3.3MB wheel, then
-      # this step died 5 seconds later and the whole job was discarded. Again
-      # on 2026-08-27 (job 98356015239), where the step failed 73ms after
-      # starting -- before executing a single line of its own body -- with
-      # exit code -1073741502 (0xC0000142, STATUS_DLL_INIT_FAILED), a
-      # process-LAUNCH failure. resmon's own last reading 34s earlier was
-      # 2.9/16GB used, 13.1GB available, pagefile 0.72/2.9GB: the runner was
-      # not short of memory, and 43k handles is nowhere near a ceiling.
-      # Nothing in the step's contents can prevent a failure to launch, so
-      # the only fix is to stop that failure discarding a finished wheel.
+      # Both confirmed occurrences (jobs 98427509546 and 98356015239) killed
+      # the FIRST process launched after the long build step ended -- once a
+      # powershell step, once a bash step -- and in both jobs `Post Run
+      # actions/checkout` (node.exe) died too, against 0 of 6 sampled
+      # successes. Three unrelated runtimes, so the failure is in the common
+      # floor (ntdll -> kernelbase -> user32 -> CSRSS/win32k), not any shell.
       #
-      # NOT applied to the Linux twin ("Swap usage signal"): that one also
-      # `exit 1`s on purpose -- it is the swap gate that rejects an
-      # over-committed compile, and it caught dpvo_cuda's ARM failure the same
-      # day. Making it non-fatal would silently disable the gate.
-      continue-on-error: true
-      # The Windows counterpart of the Linux swap gate. Reports rather than
-      # fails: the Linux thresholds were tuned against months of Linux runs and
-      # there is no comparable history here yet, so this starts as an
-      # annotation. Promote it to a failure once the numbers are known -- and
-      # note the Linux gate needed BOTH conditions (swap used AND available
-      # memory bottomed out) because swap alone rejected a healthy build with
-      # 10GB free.
+      # This step exists to BE that first process. If the condition is present
+      # it absorbs the hit here, where continue-on-error makes it harmless,
+      # instead of landing on the step that packages the shard cache or
+      # uploads the wheel. It also timestamps the event to ~1s, where the
+      # resource monitor's 120s cadence left a 73-second blind spot.
+      #
+      # It launches a process rather than reading a counter deliberately: when
+      # the failure mode is "a new process cannot initialise", the only valid
+      # instrument is one that starts a process. Every passive counter here
+      # measures a pool that is provably not the pool -- see the HandleCount
+      # note in the monitor.
       if: always() && inputs.platform == 'windows'
+      continue-on-error: true
       shell: powershell
       run: |
-        # Kill the monitor BY ITS RECORDED PID. Never by name: this step is
-        # itself powershell, so Stop-Process -Name powershell would terminate
-        # the process running it.
-        $pidFile = "$env:RUNNER_TEMP\cuw_resmon.pid"
-        if (Test-Path $pidFile) {
-          Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue
-        }
-        $lw = "$env:RUNNER_TEMP\cuw_win_mem_lowwater"
-        $hw = "$env:RUNNER_TEMP\cuw_win_pf_highwater"
-        $memlow = if (Test-Path $lw) { [double](Get-Content $lw) } else { 999 }
-        $pfpeak = if (Test-Path $hw) { [double](Get-Content $hw) } else { 0 }
-        $cell = "${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-version }} torch${{ inputs.pytorch-version }} windows"
-        Write-Host "[windows memory] available low-water ${memlow}GB, pagefile peak ${pfpeak}GB, max_jobs='${{ inputs.jobs }}' nvcc_threads='${{ inputs.nvcc-threads }}'"
-        if ($memlow -lt 2.0) {
-          Write-Host "::warning title=Windows build ran low on memory::${cell}: available memory fell to ${memlow}GB (pagefile peak ${pfpeak}GB). A compile this close to the ceiling is one template instantiation away from dying with an unexplained compiler crash -- lower max_jobs for this package."
-        } elseif ($pfpeak -gt 1.0) {
-          Write-Host "::warning title=Windows build touched the pagefile::${cell}: pagefile peak ${pfpeak}GB while available memory stayed at ${memlow}GB. Not over-committed, but worth watching."
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        cmd /c exit 0
+        $code = $LASTEXITCODE
+        $sw.Stop()
+        Write-Host "[canary] CreateProcess exit=$code latency=$($sw.ElapsedMilliseconds)ms"
+        if ($code -ne 0) {
+          Write-Host "::warning title=Process-launch canary failed::cmd.exe exited $code. If that is -1073741502 (0xC0000142) the runner is in the state that discards finished wheels."
         }
 
     - name: Assert sccache hit rate (Windows source-filter link)
@@ -1666,6 +1654,99 @@ runs:
         name: shard-${{ inputs.package }}-${{ inputs.platform }}-${{ runner.arch }}-py${{ inputs.python-version }}-cu${{ inputs.cuda-short }}-torch${{ inputs.pytorch-version }}-${{ inputs.shard-index }}-of-${{ inputs.shard-count }}
         path: shard-out/*.tar.gz
         retention-days: 1
+
+    - name: Windows failure forensics
+      # Runs AFTER the artifact upload on purpose. Everything here is
+      # diagnostics, and diagnostics must never sit between a finished wheel
+      # and its upload -- that ordering is exactly what discarded a built,
+      # linked, 7.1MB natten wheel on 2026-08-27.
+      #
+      # Two probes, both free, aimed at the one question three rounds of
+      # instrumentation could not answer: WHICH resource fails.
+      #
+      # Win32k Event 243 ("A desktop heap allocation failed") is Microsoft's
+      # own signal for desktop-heap exhaustion, logged once per session.
+      # Present after a 0xC0000142 proves desktop heap; absent across several
+      # failures refutes it. There is no user-mode API for desktop heap USAGE
+      # (dheapmon needs a kernel driver), so this event is the only way to
+      # observe it from CI at all.
+      #
+      # Application Error names the DLL whose DllMain returned FALSE. That is
+      # the single field separating a win32k/user32 failure from an injected
+      # third-party DLL (Defender, the Azure guest agent) failing its own init
+      # -- two independent investigations put 25-30% on that second family and
+      # neither could exclude it.
+      if: always() && inputs.platform == 'windows'
+      continue-on-error: true
+      shell: powershell
+      run: |
+        Write-Host "=== Win32k Event 243 (desktop heap allocation failed) ==="
+        try {
+          $ev = Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Win32k'; Id=243} -MaxEvents 20 -ErrorAction Stop
+          foreach ($e in $ev) { Write-Host "  [243] $($e.TimeCreated) $($e.Message)" }
+          Write-Host "::warning title=Desktop heap allocation failed::Win32k Event 243 present -- desktop heap exhaustion CONFIRMED for this session."
+        } catch { Write-Host "  none (desktop-heap exhaustion not indicated)" }
+        Write-Host "=== Application Error / faulting module ==="
+        try {
+          $ae = Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'} -MaxEvents 10 -ErrorAction Stop
+          foreach ($e in $ae) { Write-Host "  [AppError] $($e.TimeCreated) $(($e.Message -replace '\s+',' ').Substring(0,[Math]::Min(260,$e.Message.Length)))" }
+        } catch { Write-Host "  none" }
+        Write-Host "  session id: $((Get-Process -Id $PID).SessionId)"
+
+    - name: Memory pressure signal (Windows)
+      # Non-fatal, deliberately. This step is PURE DIAGNOSTICS: it kills the
+      # resmon background process and prints the high-water memory numbers.
+      # It compiles nothing and produces nothing. But it is an ordinary step,
+      # so its failure fails the JOB and GitHub then skips everything after
+      # it -- rename, METADATA fix, verify, and the artifact upload. A build
+      # that compiled correctly loses its wheel because a logging step could
+      # not start.
+      #
+      # That is not hypothetical. natten Windows, 2026-08-26: the log shows it
+      # linked libnatten.cp312-win_amd64.pyd and packaged a 3.3MB wheel, then
+      # this step died 5 seconds later and the whole job was discarded. Again
+      # on 2026-08-27 (job 98356015239), where the step failed 73ms after
+      # starting -- before executing a single line of its own body -- with
+      # exit code -1073741502 (0xC0000142, STATUS_DLL_INIT_FAILED), a
+      # process-LAUNCH failure. resmon's own last reading 34s earlier was
+      # 2.9/16GB used, 13.1GB available, pagefile 0.72/2.9GB: the runner was
+      # not short of memory, and 43k handles is nowhere near a ceiling.
+      # Nothing in the step's contents can prevent a failure to launch, so
+      # the only fix is to stop that failure discarding a finished wheel.
+      #
+      # NOT applied to the Linux twin ("Swap usage signal"): that one also
+      # `exit 1`s on purpose -- it is the swap gate that rejects an
+      # over-committed compile, and it caught dpvo_cuda's ARM failure the same
+      # day. Making it non-fatal would silently disable the gate.
+      continue-on-error: true
+      # The Windows counterpart of the Linux swap gate. Reports rather than
+      # fails: the Linux thresholds were tuned against months of Linux runs and
+      # there is no comparable history here yet, so this starts as an
+      # annotation. Promote it to a failure once the numbers are known -- and
+      # note the Linux gate needed BOTH conditions (swap used AND available
+      # memory bottomed out) because swap alone rejected a healthy build with
+      # 10GB free.
+      if: always() && inputs.platform == 'windows'
+      shell: powershell
+      run: |
+        # Kill the monitor BY ITS RECORDED PID. Never by name: this step is
+        # itself powershell, so Stop-Process -Name powershell would terminate
+        # the process running it.
+        $pidFile = "$env:RUNNER_TEMP\cuw_resmon.pid"
+        if (Test-Path $pidFile) {
+          Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue
+        }
+        $lw = "$env:RUNNER_TEMP\cuw_win_mem_lowwater"
+        $hw = "$env:RUNNER_TEMP\cuw_win_pf_highwater"
+        $memlow = if (Test-Path $lw) { [double](Get-Content $lw) } else { 999 }
+        $pfpeak = if (Test-Path $hw) { [double](Get-Content $hw) } else { 0 }
+        $cell = "${{ inputs.package }} py${{ inputs.python-version }} cu${{ inputs.cuda-version }} torch${{ inputs.pytorch-version }} windows"
+        Write-Host "[windows memory] available low-water ${memlow}GB, pagefile peak ${pfpeak}GB, max_jobs='${{ inputs.jobs }}' nvcc_threads='${{ inputs.nvcc-threads }}'"
+        if ($memlow -lt 2.0) {
+          Write-Host "::warning title=Windows build ran low on memory::${cell}: available memory fell to ${memlow}GB (pagefile peak ${pfpeak}GB). A compile this close to the ceiling is one template instantiation away from dying with an unexplained compiler crash -- lower max_jobs for this package."
+        } elseif ($pfpeak -gt 1.0) {
+          Write-Host "::warning title=Windows build touched the pagefile::${cell}: pagefile peak ${pfpeak}GB while available memory stayed at ${memlow}GB. Not over-committed, but worth watching."
+        }
 
     - name: Rename wheel with CUDA+PyTorch suffix (Linux)
       # Skip in compile-shard mode -- no wheel was kept. Also skip in
