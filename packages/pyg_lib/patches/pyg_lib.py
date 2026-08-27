@@ -271,58 +271,71 @@ _require(_final_ca.count("set(CMAKE_CUDA_ARCHITECTURES") >= 6,
          "injection -- a bare build would now have no architectures at all")
 
 
-# --- Do not record a dependency on NVRTC ------------------------------------
-# The Linux wheels vendor a 109 MB copy of libnvrtc that libpyg.so never calls:
+# --- RPATH: $ORIGIN only, never the build machine's paths --------------------
+# libpyg.so shipped with FOUR absolute RPATH entries and verify C4 rejected
+# every wheel on both CUDA lines:
 #
-#   $ readelf --dyn-syms -W libpyg.so | awk '$7=="UND"' | grep -ci nvrtc
-#   0                     # 398 undefined symbols, not one of them from nvrtc
-#   $ readelf -d libpyg.so | grep nvrtc
-#   (NEEDED) Shared library: [libnvrtc-a49e67e8.so.13.0.88]
+#   [elf_sanity] libpyg.so: non-$ORIGIN RPATH entry '/lib/intel64';
+#     '/lib/intel64_win'; '/lib/win-x64';
+#     '/opt/python/cp312-cp312/lib/python3.12/site-packages/torch/lib'
 #
-# The Windows wheel, same four CUDA modules, is 1.9 MB against Linux's 47.7 MB.
-# The vendored copy could not work anyway -- it dlopens libnvrtc-builtins.so.13.0
-# at runtime and that file is not in the wheel.
+# CMakeLists.txt:118 links ${TORCH_LIBRARIES} wholesale. That variable carries
+# torch's MKL search hints (the intel64/win-x64 triple, which are not even
+# Linux paths) and resolves torch's own libraries by absolute path, and cmake's
+# default is to bake the build-tree location of every linked library into the
+# binary's RPATH. The wheel is packaged from the build tree, so those paths
+# ship -- pointing at directories that exist only on the runner.
 #
-# Nothing in pyg_lib asks for NVRTC. It arrives transitively: torch's cmake puts
-# it in TORCH_LIBRARIES (torch uses NVRTC for its own JIT) and CMakeLists.txt:118
-# links that whole variable. auditwheel then does its job and vendors an
-# unexcluded NEEDED entry.
+# Same defect and same fix as natten. BUILD_WITH_INSTALL_RPATH is the operative
+# property: it applies INSTALL_RPATH to the build-tree binary, which is the one
+# that gets packaged. Setting INSTALL_RPATH alone would change nothing, because
+# no `make install` ever runs.
 #
-# Fixed at the linker rather than by adding an auditwheel --exclude. An exclude
-# gives the library NO rpath and assumes torch has already loaded it eagerly at
-# `import torch`; the action's own comment is explicit that a wrong exclude
-# costs a broken import. --as-needed is exact instead of assumed: the linker
-# records DT_NEEDED only for libraries that actually resolve a symbol, so
-# anything genuinely used (libtorch, libc10, libcudart) is untouched and only
-# the unreferenced entries disappear.
-_cml_ln = _pl.Path("CMakeLists.txt")
-_require(_cml_ln.exists(), "pyg_lib: CMakeLists.txt not found at source root")
-_c_ln = _cml_ln.read_text()
+# $ORIGIN is sufficient at runtime: `import torch` has already loaded libtorch
+# into the process before the extension is imported, so torch symbols resolve
+# from the loaded image rather than from disk -- which is exactly why every
+# setuptools-built extension in this farm works with no RPATH at all. auditwheel
+# still sets its own rpath for anything it vendors into pyg_lib.libs/.
+#
+# NOTE: the previous attempt here was `target_link_options(--as-needed)`, meant
+# to stop auditwheel vendoring 109MB of NVRTC that libpyg.so never calls (0 of
+# its 398 undefined symbols). It did NOT work -- the build log still shows
+# "libnvrtc.so shorthash is a49e67e8", so nvrtc was still vendored -- almost
+# certainly because the flag is positional and torch's cmake re-enables
+# --no-as-needed after it. Removed rather than left in place: it was unverified,
+# achieved nothing measurable, and an inert flag that looks load-bearing is
+# worse than no flag. The NVRTC bloat is real and still unfixed; the right lever
+# is filtering TORCH_LIBRARIES, not a link flag whose position we do not control.
+_cml_rp = _pl.Path("CMakeLists.txt")
+_require(_cml_rp.exists(), "pyg_lib: CMakeLists.txt not found at source root")
+_c_rp = _cml_rp.read_text()
 
-_ln_anchor = "target_link_libraries(${PROJECT_NAME} PRIVATE ${TORCH_LIBRARIES})"
+_rp_anchor = "target_link_libraries(${PROJECT_NAME} PRIVATE ${TORCH_LIBRARIES})"
 _require(
-    _ln_anchor in _c_ln,
+    _rp_anchor in _c_rp,
     "pyg_lib: the TORCH_LIBRARIES link line was not found in CMakeLists.txt, so "
-    "--as-needed cannot be scoped to it. Without it the wheel vendors 109MB of "
-    "NVRTC that nothing calls.",
+    "the RPATH block cannot be anchored. Without it C4 rejects every wheel for "
+    "shipping the runner's own paths.",
 )
 
-if "cuda-wheels as-needed" not in _c_ln:
-    _ln_new = (
-        "# --- cuda-wheels as-needed (injected; see packages/pyg_lib/patches) ---\n"
-        "# Record DT_NEEDED only for libraries that actually resolve a symbol.\n"
-        "# Drops the transitive libnvrtc that TORCH_LIBRARIES drags in and that\n"
-        "# libpyg.so never references (0 undefined nvrtc symbols of 398).\n"
-        "if(NOT WIN32)\n"
-        "  target_link_options(${PROJECT_NAME} PRIVATE \"LINKER:--as-needed\")\n"
-        "endif()\n"
-        + _ln_anchor
-    )
-    _c_ln = _c_ln.replace(_ln_anchor, _ln_new, 1)
-    _cml_ln.write_text(_c_ln)
-    print("pyg_lib patch: --as-needed on the torch link line (drops unused NVRTC)")
-else:
-    print("pyg_lib patch: as-needed block already present -- skipping")
+if "cuda-wheels RPATH hygiene" not in _c_rp:
+    _c_rp = _c_rp.replace(
+        _rp_anchor,
+        _rp_anchor + """
 
-_require("cuda-wheels as-needed" in _cml_ln.read_text(),
-         "pyg_lib: the as-needed block is NOT PRESENT in CMakeLists.txt on disk")
+# --- cuda-wheels RPATH hygiene (injected; see packages/pyg_lib/patches) ---
+# Do not bake the runner's MKL/torch paths into the shipped .so.
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH_USE_LINK_PATH FALSE)
+message(STATUS "cuda-wheels: ${PROJECT_NAME} RPATH pinned to $ORIGIN")
+# --- end cuda-wheels RPATH hygiene ---""", 1)
+    _cml_rp.write_text(_c_rp)
+    print("pyg_lib patch: RPATH pinned to $ORIGIN (was MKL + build-tree torch)")
+else:
+    print("pyg_lib patch: RPATH hygiene block already present -- skipping")
+
+_require("BUILD_WITH_INSTALL_RPATH TRUE" in _cml_rp.read_text(),
+         "pyg_lib: the RPATH hygiene block is NOT PRESENT in CMakeLists.txt on "
+         "disk -- C4 would block every wheel again")

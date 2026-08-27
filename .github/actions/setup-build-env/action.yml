@@ -81,7 +81,41 @@ runs:
         # against it -- 65.5.0 emits RELATIVE -I include dirs and nunchaku's
         # ninja compile then fails with C1083 (2026-08-24). Latent for every
         # Windows package, hence a farm-wide floor rather than extra_deps.
-        uv pip install --system wheel 'setuptools>=78' ninja numpy packaging pyyaml $EXTRA_DEPS
+        #
+        # <84 added 2026-08-27. setuptools 84.0.0 RENAMED the hook torch relies
+        # on: _distutils/compilers/C/msvc.py's compile() now ends in
+        # `self.call(args)` where every version through 83.0.0 ended in
+        # `self.spawn(args)`. Verified by diffing the two wheels.
+        #
+        # torch's BuildExtension, on Windows with use_ninja=False, dispatches
+        # .cu files to nvcc by monkeypatching self.compiler.spawn
+        # (cpp_extension.py win_wrap_single_compile). Under 84 that assignment
+        # still SUCCEEDS -- spawn survives as a deprecated shim -- and is then
+        # never called. The patch has already nulled extra_postargs, and .cu is
+        # already in _cpp_extensions, so distutils hands the CUDA source
+        # straight to cl.exe with no flags:
+        #
+        #   cl.exe /c /nologo /O2 ... /Tpcsrc\cuda\scatter_cuda.cu /Fo...obj
+        #
+        # MSVC parsing CUDA as C++ gives
+        #   atomics.cuh(140): error C3861: 'atomicCAS': identifier not found
+        #   scatter_cuda.cu(135): error C3409: empty attribute block
+        # It killed torch_scatter / torch_cluster / torch_spline_conv on
+        # Windows cu12.8 py3.10+3.11. torch_sparse, same family and same run,
+        # PASSED under 84 -- it does not set use_ninja=False.
+        #
+        # Only those two pythons because torch 2.8.0 declares setuptools solely
+        # for python>=3.12: 3.12/3.13 inherit 78.1.0 from the PyTorch index,
+        # while 3.10/3.11 fail the >=78 floor against the toolcache's 65.5.0
+        # and resolve from PyPI to the newest release. torch 2.11 declares it
+        # unconditionally, which is the ONLY reason cu13.0 escaped -- it has
+        # the identical broken monkeypatch and is one resolution away from the
+        # same failure. This ceiling closes that too.
+        #
+        # 83.0.0 still calls self.spawn(args) and still carries the relative-I
+        # fix the floor exists for, so the window is real, not a guess. Do not
+        # raise this without re-checking that hook.
+        uv pip install --system wheel 'setuptools>=78,<84' ninja numpy packaging pyyaml $EXTRA_DEPS
         # triton best-effort: some setup.pys import it at build time, but it
         # trails new pythons (no cp315 wheels while 3.15 is rc) -- a missing
         # triton must not kill every cell of a brand-new python line.
@@ -121,7 +155,41 @@ runs:
         # against it -- 65.5.0 emits RELATIVE -I include dirs and nunchaku's
         # ninja compile then fails with C1083 (2026-08-24). Latent for every
         # Windows package, hence a farm-wide floor rather than extra_deps.
-        uv pip install --system wheel 'setuptools>=78' ninja numpy packaging pyyaml $EXTRA_DEPS
+        #
+        # <84 added 2026-08-27. setuptools 84.0.0 RENAMED the hook torch relies
+        # on: _distutils/compilers/C/msvc.py's compile() now ends in
+        # `self.call(args)` where every version through 83.0.0 ended in
+        # `self.spawn(args)`. Verified by diffing the two wheels.
+        #
+        # torch's BuildExtension, on Windows with use_ninja=False, dispatches
+        # .cu files to nvcc by monkeypatching self.compiler.spawn
+        # (cpp_extension.py win_wrap_single_compile). Under 84 that assignment
+        # still SUCCEEDS -- spawn survives as a deprecated shim -- and is then
+        # never called. The patch has already nulled extra_postargs, and .cu is
+        # already in _cpp_extensions, so distutils hands the CUDA source
+        # straight to cl.exe with no flags:
+        #
+        #   cl.exe /c /nologo /O2 ... /Tpcsrc\cuda\scatter_cuda.cu /Fo...obj
+        #
+        # MSVC parsing CUDA as C++ gives
+        #   atomics.cuh(140): error C3861: 'atomicCAS': identifier not found
+        #   scatter_cuda.cu(135): error C3409: empty attribute block
+        # It killed torch_scatter / torch_cluster / torch_spline_conv on
+        # Windows cu12.8 py3.10+3.11. torch_sparse, same family and same run,
+        # PASSED under 84 -- it does not set use_ninja=False.
+        #
+        # Only those two pythons because torch 2.8.0 declares setuptools solely
+        # for python>=3.12: 3.12/3.13 inherit 78.1.0 from the PyTorch index,
+        # while 3.10/3.11 fail the >=78 floor against the toolcache's 65.5.0
+        # and resolve from PyPI to the newest release. torch 2.11 declares it
+        # unconditionally, which is the ONLY reason cu13.0 escaped -- it has
+        # the identical broken monkeypatch and is one resolution away from the
+        # same failure. This ceiling closes that too.
+        #
+        # 83.0.0 still calls self.spawn(args) and still carries the relative-I
+        # fix the floor exists for, so the window is real, not a guess. Do not
+        # raise this without re-checking that hook.
+        uv pip install --system wheel 'setuptools>=78,<84' ninja numpy packaging pyyaml $EXTRA_DEPS
 
     - name: Patch PyTorch header for Windows MSVC bug
       if: inputs.platform == 'windows'
