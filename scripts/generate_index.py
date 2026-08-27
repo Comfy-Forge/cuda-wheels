@@ -66,9 +66,21 @@ WITH_META = False
 
 
 def wheel_anchor(wheel, with_metadata=False):
-    """One PEP 503 anchor, optionally advertising its PEP 658 sidecar."""
+    """One PEP 503 anchor, optionally advertising its PEP 658 sidecar.
+
+    The href carries a PEP 503 `#sha256=` fragment when the digest is known
+    (it always is -- the Releases API serves one per asset, no downloads).
+    Release tags here are mutable (`<pkg>-latest`), so an unhashed anchor
+    pins a URL whose bytes can change under it; the fragment is what lets
+    pip/uv/pixi verify the artifact and lets a lockfile record a real hash.
+    Verified against pixi 0.75.0: the fragment survives into pixi.lock and
+    uv enforces it on a cold cache.
+    """
     attrs = _PEP658_ATTRS if with_metadata else ""
-    return f'<a href="{wheel["url"]}"{attrs}>{wheel["filename"]}</a><br>\n'
+    url = wheel["url"]
+    if wheel.get("sha256"):
+        url += f'#sha256={wheel["sha256"]}'
+    return f'<a href="{url}"{attrs}>{wheel["filename"]}</a><br>\n'
 
 
 def load_torch_free_packages() -> set:
@@ -155,6 +167,9 @@ def expand_torch_free_aliases(packages: dict, torch_free: set, grid: dict) -> in
                 wheels.append({
                     "filename": alias,
                     "url": wheel["url"],          # same asset, no second upload
+                    # Same asset, same digest: the alias must carry the hash
+                    # too, or aliased anchors would be the only unhashed ones.
+                    "sha256": wheel.get("sha256", ""),
                     "alias_of": wheel["filename"],
                 })
                 aliased += 1
