@@ -1418,6 +1418,31 @@ runs:
           Write-Host "[link-only] compile no-op fired $($w.Count) time(s): $($w -join '; ')"
         }
     - name: Memory pressure signal (Windows)
+      # Non-fatal, deliberately. This step is PURE DIAGNOSTICS: it kills the
+      # resmon background process and prints the high-water memory numbers.
+      # It compiles nothing and produces nothing. But it is an ordinary step,
+      # so its failure fails the JOB and GitHub then skips everything after
+      # it -- rename, METADATA fix, verify, and the artifact upload. A build
+      # that compiled correctly loses its wheel because a logging step could
+      # not start.
+      #
+      # That is not hypothetical. natten Windows, 2026-08-26: the log shows it
+      # linked libnatten.cp312-win_amd64.pyd and packaged a 3.3MB wheel, then
+      # this step died 5 seconds later and the whole job was discarded. Again
+      # on 2026-08-27 (job 98356015239), where the step failed 73ms after
+      # starting -- before executing a single line of its own body -- with
+      # exit code -1073741502 (0xC0000142, STATUS_DLL_INIT_FAILED), a
+      # process-LAUNCH failure. resmon's own last reading 34s earlier was
+      # 2.9/16GB used, 13.1GB available, pagefile 0.72/2.9GB: the runner was
+      # not short of memory, and 43k handles is nowhere near a ceiling.
+      # Nothing in the step's contents can prevent a failure to launch, so
+      # the only fix is to stop that failure discarding a finished wheel.
+      #
+      # NOT applied to the Linux twin ("Swap usage signal"): that one also
+      # `exit 1`s on purpose -- it is the swap gate that rejects an
+      # over-committed compile, and it caught dpvo_cuda's ARM failure the same
+      # day. Making it non-fatal would silently disable the gate.
+      continue-on-error: true
       # The Windows counterpart of the Linux swap gate. Reports rather than
       # fails: the Linux thresholds were tuned against months of Linux runs and
       # there is no comparable history here yet, so this starts as an
