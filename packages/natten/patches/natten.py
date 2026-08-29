@@ -752,3 +752,56 @@ else:
     )
 
 setup_file.write_text(content)
+
+
+# ---------------------------------------------------------------------------
+# Track torch's C++ standard in the CMake build.
+#
+# NATTEN is a CMake build, so patch_lib.strip_std_flags -- which edits Python
+# source -- cannot reach it, and setup.py contains no standard flag at all.
+# csrc/CMakeLists.txt pins it in two INDEPENDENT places:
+#     :7   set(CXX_STD "17" CACHE STRING "C++ standard")   -> :79 CMAKE_CXX_STANDARD
+#                                                          -> :91 CMAKE_CUDA_FLAGS
+#     :72  set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=c++17")
+# CMAKE_CXX_STANDARD=17 makes CMake emit /std:c++17 on MSVC, on the command
+# line, where it beats the CL env-var floor the build action sets. torch 2.13's
+# headers hard-require C++20 -- C7555 (designated initializers,
+# c10/util/StringUtil.h:169) and C7582 (bit-field NSDMIs,
+# c10/core/AutogradState.h:89) -- so every Windows torch2.13 cell died with
+# "cl : Command line warning D9025 : overriding '/std:c++20' with '/std:c++17'"
+# (run 33156257565, 2026-08-29).
+#
+# Mirror the floor's rule rather than pinning c++20 outright: torch < 2.7 on
+# Windows FAILS at c++20 (nvcc's EDG front end misparses ATen/core/ivalue_inl.h
+# -- see the note in scripts/patch_lib.py). torch 2.12 is where cpp_extension
+# flipped its own MSVC default to /std:c++20, so that is the boundary.
+import sys as _sys_std, pathlib as _pl_std
+_sys_std.path.insert(0, str(_pl_std.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import torch_mm as _torch_mm, require as _require_std  # noqa: E402
+
+_std = "20" if _torch_mm() >= (2, 12) else "17"
+
+_cm = Path("csrc/CMakeLists.txt")
+_ct = _cm.read_text()
+
+_old_cxx_std = 'set(CXX_STD "17" CACHE STRING "C++ standard")'
+_require_std(_old_cxx_std in _ct,
+             "natten: CXX_STD initializer not found in csrc/CMakeLists.txt -- "
+             "upstream changed; refusing to build at an unverified standard")
+_ct = _ct.replace(_old_cxx_std,
+                  f'set(CXX_STD "{_std}" CACHE STRING "C++ standard")', 1)
+
+# The second pin is a bare literal that does NOT read CXX_STD. Make it track,
+# so the two can never disagree again.
+_old_flag = 'set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=c++17")'
+_require_std(_old_flag in _ct,
+             "natten: hardcoded -std=c++17 not found in csrc/CMakeLists.txt -- "
+             "upstream changed; refusing to build at an unverified standard")
+_ct = _ct.replace(
+    _old_flag,
+    'set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=c++${CXX_STD}")', 1)
+
+_cm.write_text(_ct)
+print(f"natten patch: C++ standard -> c++{_std} "
+      f"(torch {'.'.join(map(str, _torch_mm()))}); CXX_STD and CMAKE_CXX_FLAGS "
+      f"now agree")

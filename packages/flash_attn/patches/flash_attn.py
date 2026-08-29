@@ -311,3 +311,29 @@ _sys_tl.path.insert(0, str(_pl_tl.Path(__file__).resolve().parents[3] / "scripts
 from patch_lib import exclude_top_level_packages as _excl_tl  # noqa: E402
 
 _excl_tl(["hopper"])
+
+
+# ---------------------------------------------------------------------------
+# Delete upstream's hardcoded C++ standard.
+#
+# setup.py pins the standard in five places, including the MSVC branch
+#     compiler_c17_flag=["-O2", "/std:c++17", "/Zc:__cplusplus"]
+# and that lands on the cl.exe COMMAND LINE, where it beats the CL env-var
+# floor the build action sets (CL is prepended, so the command line wins).
+# torch 2.13's headers hard-require C++20 -- C7555 (designated initializers,
+# c10/util/StringUtil.h:169) and C7582 (bit-field NSDMIs,
+# c10/core/AutogradState.h:89) -- so every Windows torch>=2.13 cell died with
+# "cl : Command line warning D9025 : overriding '/std:c++20' with '/std:c++17'"
+# immediately before the errors (runs 33156245388 / 33097255112, 2026-08-29).
+# Stripping hands the choice back to torch's cpp_extension, which selects the
+# standard the INSTALLED torch needs -- c++17 through 2.11, c++20 from 2.12.
+# That is why this is a strip and not a pin to c++20: torch < 2.7 on Windows
+# fails at c++20 (see patch_lib's note on nvcc's EDG front end).
+import sys as _sys_std, pathlib as _pl_std
+_sys_std.path.insert(0, str(_pl_std.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import strip_std_flags_in_file as _strip_std  # noqa: E402
+
+_n_std = _strip_std("setup.py", "flash_attn/setup.py")
+_require(_n_std > 0,
+         "flash_attn: no hardcoded C++-standard flag found in setup.py -- "
+         "upstream changed; refusing to build against an unverified flag set")

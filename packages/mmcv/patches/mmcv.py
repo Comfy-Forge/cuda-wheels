@@ -137,3 +137,29 @@ else:
     print("mmcv patch: pkg_resources import not found (already shimmed?)")
 
 _sp.write_text(_t)
+
+
+# ---------------------------------------------------------------------------
+# Delete upstream's hardcoded C++ standard.
+#
+# mmcv 1.7.2 pins the standard in ten places and most of them are -std=c++14,
+# which predates the C++17 floor torch itself requires; the MSVC path then
+# lands the flag on the cl.exe command line, beating the CL env-var floor
+# (CL is prepended, so the command line wins). torch 2.13's headers
+# hard-require C++20 -- C7555 (designated initializers,
+# c10/util/StringUtil.h:169) and C7582 (bit-field NSDMIs,
+# c10/core/AutogradState.h:89) -- which is why every Windows torch2.13 cell
+# was missing: 15 of them, cu126/cu130/cu132 x 5 pythons, all Windows
+# (measured 2026-08-29). Recorded independently in the build action's own
+# note at .github/actions/build-wheel/action.yml:1367-1369.
+# Stripping hands the choice to torch's cpp_extension, which picks what the
+# INSTALLED torch needs -- not a pin to c++20, because torch < 2.7 on Windows
+# fails at c++20 (see patch_lib's note on nvcc's EDG front end).
+import sys as _sys_std, pathlib as _pl_std
+_sys_std.path.insert(0, str(_pl_std.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import strip_std_flags_in_file as _strip_std, require as _require_std  # noqa: E402
+
+_n_std = _strip_std("setup.py", "mmcv/setup.py")
+_require_std(_n_std > 0,
+             "mmcv: no hardcoded C++-standard flag found in setup.py -- "
+             "upstream changed; refusing to build against an unverified flag set")

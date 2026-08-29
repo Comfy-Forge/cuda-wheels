@@ -460,3 +460,27 @@ else:
     print("WARNING: Could not find launch_kernel_on_cluster block in launch.h - source may have changed")
 
 lh_file.write_text(lh)
+
+
+# ---------------------------------------------------------------------------
+# Delete upstream's hardcoded C++ standard.
+#
+# The Windows branch above already rebuilds cxx_flags WITHOUT /std:, and the
+# comment there claimed that settled it. It did not: sageattention3_blackwell/
+# setup.py pins "-std=c++17" in three further places (the CXX_FLAGS list and
+# both "cxx" entries of extra_compile_args), and those still reach cl.exe on
+# the COMMAND LINE, where they beat the CL env-var floor -- the failing job
+# printed "cl : Command line warning D9025 : overriding '/std:c++20' with
+# '/std:c++17'" followed by C7555/C7582 (run 33173131374, 2026-08-29).
+# Hand-editing one list is exactly the failure mode patch_lib.strip_std_flags
+# exists to prevent; call the helper on the file so every spelling goes.
+# Measured before shipping: 3 flags stripped, 0 remaining, file still compiles.
+import sys as _sys_std, pathlib as _pl_std
+_sys_std.path.insert(0, str(_pl_std.Path(__file__).resolve().parents[3] / "scripts"))
+from patch_lib import strip_std_flags_in_file as _strip_std, require as _require_std  # noqa: E402
+
+_n_std = _strip_std("sageattention3_blackwell/setup.py", "sageattn3/setup.py")
+_require_std(_n_std > 0,
+             "sageattn3: no hardcoded C++-standard flag found in "
+             "sageattention3_blackwell/setup.py -- upstream changed; refusing "
+             "to build against an unverified flag set")
