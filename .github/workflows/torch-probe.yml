@@ -1,0 +1,101 @@
+# One-runner feasibility probe for compiling torch on the farm.
+# Measures, does not build: TU counts, per-TU compile cost (CUDA and C++),
+# disk and RAM headroom -- then prints the sharding arithmetic.
+name: Torch Probe
+on:
+  workflow_dispatch:
+    inputs:
+      torch_tag:
+        description: 'pytorch tag'
+        default: 'v2.8.0'
+      cuda:
+        description: 'CUDA version'
+        default: '12.6'
+      arch_list:
+        description: 'TORCH_CUDA_ARCH_LIST for costing'
+        default: '5.0;6.0;7.0;7.5;8.0;8.6;9.0'
+      sample:
+        description: 'TUs to sample-compile per side'
+        default: '20'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h / | tail -1
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Setup CUDA
+        uses: ./.github/actions/setup-cuda
+        with:
+          cuda-version: ${{ inputs.cuda }}
+          platform: linux
+
+      - name: Clone pytorch (shallow + submodules)
+        run: |
+          time git clone --depth 1 --branch "${{ inputs.torch_tag }}" \
+            --recurse-submodules --shallow-submodules --jobs 8 \
+            https://github.com/pytorch/pytorch /tmp/pytorch
+          du -sh /tmp/pytorch
+
+      - name: Configure (cmake only)
+        working-directory: /tmp/pytorch
+        run: |
+          pip install -r requirements.txt cmake ninja
+          export USE_CUDA=1 BUILD_TEST=0 USE_DISTRIBUTED=1
+          export TORCH_CUDA_ARCH_LIST="${{ inputs.arch_list }}"
+          export CMAKE_BUILD_TYPE=Release MAX_JOBS=4
+          time python setup.py build --cmake-only
+          ls build/build.ninja
+
+      - name: Count and sample
+        working-directory: /tmp/pytorch
+        run: |
+          python - <<'PY'
+          import json, os, random, re, resource, subprocess, time
+          os.chdir("build")
+          cmds = subprocess.run(["ninja","-t","commands"], capture_output=True, text=True).stdout.splitlines()
+          tgts = subprocess.run(["ninja","-t","targets","all"], capture_output=True, text=True).stdout.splitlines()
+          cu  = [t.split(":")[0] for t in tgts if t.split(":")[0].endswith(".cu.o")]
+          cpp = [t.split(":")[0] for t in tgts if re.search(r'\.(cpp|cc|c)\.o:', t)]
+          print(f"CUDA TUs: {len(cu)}   C/C++ TUs: {len(cpp)}")
+          random.seed(42)
+          N = int("${{ inputs.sample }}")
+          def cost(targets, label):
+              sample = random.sample(targets, min(N, len(targets)))
+              t0 = time.time()
+              subprocess.run(["ninja","-j","4"] + sample, check=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              dt = time.time() - t0
+              per = dt/len(sample)
+              print(f"{label}: {len(sample)} TUs in {dt:.0f}s wall @ -j4 -> {per:.1f}s/TU wall, ~{per*4:.0f}s/TU cpu")
+              return per
+          pc = cost(cpp, "C++")
+          pu = cost(cu,  "CUDA")
+          ru = resource.getrusage(resource.RUSAGE_CHILDREN)
+          print(f"peak child RSS: {ru.ru_maxrss/1e6:.1f} GB")
+          cpp_wall  = pc*len(cpp)
+          cu_total  = pu*len(cu)
+          print("\n=== SHARDING ARITHMETIC (6h=21600s jobs, 4 cores) ===")
+          print(f"full C++ side, one runner : {cpp_wall/3600:.1f} h wall")
+          print(f"full CUDA side, one runner: {cu_total/3600:.1f} h wall")
+          for shards in (10,20,30,40):
+              slice_t = cu_total/shards
+              tot = cpp_wall + slice_t
+              fits = "FITS" if tot < 19000 else "NO"
+              print(f"sharding {shards:>2}: C++ {cpp_wall/3600:.1f}h + slice {slice_t/3600:.1f}h = {tot/3600:.1f}h  [{fits}]")
+          print("\nIf no N fits: shards need a pre-warmed C++ cache wave, or sequential_checkpoint.")
+          PY
+          df -h / | tail -1
+          free -g | head -2
