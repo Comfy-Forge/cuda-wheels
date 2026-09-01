@@ -41,6 +41,9 @@ jobs:
         with:
           cuda-version: ${{ inputs.cuda }}
           platform: linux
+          # torch's configure HARD-requires CUDA::cufft and CUDA::cuFile
+          # targets (probe #1 died on exactly this); cudnn/cupti only warn.
+          extra-components: cufft_dev cufile_dev
 
       - name: Clone pytorch (shallow + submodules)
         run: |
